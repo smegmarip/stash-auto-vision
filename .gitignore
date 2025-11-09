@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+*.env.local
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Models (downloaded at runtime)
+*/models/*.onnx
+*/models/*.pth
+*/models/*.pt
+*/models/*.pkl
+*/models/*.bin
+!*/models/.gitkeep
+
+# Temp files
+/tmp/
+*.tmp
+*.bak
+
+# Test outputs
+results_*.json
+test_output/
+
+# Redis data
+redis_data/
+
+# development files
+.claude
+tests/data/*
+!tests/data/DATASETS.md

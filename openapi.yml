@@ -1,0 +1,738 @@
+openapi: 3.1.1
+info:
+  title: Stash Auto Vision API
+  description: |
+    Complete video analysis service providing frame extraction, scene detection,
+    face recognition, semantic analysis, and object detection capabilities.
+
+    Architecture: Microservices (6 services) coordinated via Vision API rollup endpoint.
+
+    Services:
+    - Frame Server (port 5001) - Frame extraction and caching
+    - Scenes Service (port 5002) - Scene boundary detection
+    - Faces Service (port 5003) - Face detection and recognition
+    - Semantics Service (port 5004) - CLIP-based scene understanding (stub - Phase 2)
+    - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
+    - Vision API (port 5010) - Orchestration and rollup endpoint
+
+    For detailed service documentation, see:
+    - docs/FRAME_SERVER.md
+    - docs/SCENES_SERVICE.md
+    - docs/FACES_SERVICE.md
+    - docs/SEMANTICS_SERVICE.md
+    - docs/OBJECTS_SERVICE.md
+    - docs/VISION_API.md
+  version: 1.0.0
+  contact:
+    name: Stash Auto Vision
+    url: https://github.com/stashapp/stash-auto-vision
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+
+servers:
+  - url: http://localhost:5010
+    description: Vision API (Rollup/Orchestrator)
+  - url: http://localhost:5001
+    description: Frame Server
+  - url: http://localhost:5002
+    description: Scenes Service
+  - url: http://localhost:5003
+    description: Faces Service
+  - url: http://localhost:5004
+    description: Semantics Service (Stub)
+  - url: http://localhost:5005
+    description: Objects Service (Stub)
+
+tags:
+  - name: vision-api
+    description: Orchestration and multi-module analysis
+  - name: frames
+    description: Frame extraction and serving
+  - name: scenes
+    description: Scene boundary detection
+  - name: faces
+    description: Face detection and recognition
+  - name: semantics
+    description: Semantic scene understanding (stub)
+  - name: objects
+    description: Object detection and classification (stub)
+  - name: health
+    description: Service health checks
+
+paths:
+  # ==================== VISION API (Rollup) ====================
+
+  /vision/analyze:
+    post:
+      tags: [vision-api]
+      summary: Analyze video (multi-module)
+      description: Submit a video for comprehensive analysis across multiple modules
+      operationId: analyzeVideo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '202':
+          description: Analysis job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vision/jobs/{job_id}/status:
+    get:
+      tags: [vision-api]
+      summary: Get analysis job status
+      operationId: getAnalysisStatus
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeJobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vision/jobs/{job_id}/results:
+    get:
+      tags: [vision-api]
+      summary: Get analysis results
+      operationId: getAnalysisResults
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Job not completed yet
+
+  /health:
+    get:
+      tags: [health, vision-api]
+      summary: Vision API health check
+      operationId: visionApiHealth
+      responses:
+        '200':
+          description: Service health with all downstream services
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionApiHealth'
+
+  # ==================== FRAME SERVER ====================
+
+  /extract:
+    post:
+      tags: [frames]
+      summary: Extract frames from video
+      operationId: extractFrames
+      servers:
+        - url: http://localhost:5001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractRequest'
+      responses:
+        '202':
+          description: Extraction job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/status:
+    get:
+      tags: [frames]
+      summary: Get extraction job status
+      operationId: getExtractionStatus
+      servers:
+        - url: http://localhost:5001
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractJobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/results:
+    get:
+      tags: [frames]
+      summary: Get extraction results
+      operationId: getExtractionResults
+      servers:
+        - url: http://localhost:5001
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Extraction results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /frames/{job_id}/{frame_index}:
+    get:
+      tags: [frames]
+      summary: Get specific frame
+      operationId: getFrame
+      servers:
+        - url: http://localhost:5001
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: frame_index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+        - name: wait
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Wait up to 30s for frame to be extracted
+      responses:
+        '200':
+          description: Frame image
+          headers:
+            X-Frame-Index:
+              schema:
+                type: integer
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '202':
+          description: Extraction in progress (if wait=false)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '408':
+          description: Timeout waiting for frame
+
+  /extract-frame:
+    get:
+      tags: [frames]
+      summary: Extract single frame
+      description: Extract a single frame without job tracking (for thumbnails/previews)
+      operationId: extractSingleFrame
+      servers:
+        - url: http://localhost:5001
+      parameters:
+        - name: video_path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: timestamp
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: output_format
+          in: query
+          schema:
+            type: string
+            enum: [jpeg, png]
+            default: jpeg
+        - name: quality
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 95
+      responses:
+        '200':
+          description: Frame image
+          headers:
+            X-Timestamp:
+              schema:
+                type: number
+            X-Frame-Number:
+              schema:
+                type: integer
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== SCENES SERVICE ====================
+
+  /detect:
+    post:
+      tags: [scenes]
+      summary: Detect scene boundaries
+      operationId: detectScenes
+      servers:
+        - url: http://localhost:5002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectScenesRequest'
+      responses:
+        '202':
+          description: Detection job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== FACES SERVICE ====================
+
+  /analyze:
+    post:
+      tags: [faces]
+      summary: Analyze faces in video
+      operationId: analyzeFaces
+      servers:
+        - url: http://localhost:5003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeFacesRequest'
+      responses:
+        '202':
+          description: Analysis job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacesJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Job identifier
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    # Vision API Schemas
+    AnalyzeRequest:
+      type: object
+      required:
+        - video_path
+        - scene_id
+      properties:
+        video_path:
+          type: string
+          description: Absolute path to video file
+          example: /media/videos/scene.mp4
+        scene_id:
+          type: string
+          description: Scene identifier
+        modules:
+          type: object
+          properties:
+            faces:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                parameters:
+                  $ref: '#/components/schemas/FacesParameters'
+            scenes:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                parameters:
+                  $ref: '#/components/schemas/ScenesParameters'
+            semantics:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+            objects:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+
+    AnalyzeJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        created_at:
+          type: string
+          format: date-time
+        services_enabled:
+          type: object
+          properties:
+            scenes:
+              type: boolean
+            faces:
+              type: boolean
+            semantics:
+              type: boolean
+            objects:
+              type: boolean
+        processing_mode:
+          type: string
+          enum: [sequential, parallel]
+
+    AnalyzeJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        processing_mode:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    AnalyzeResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+        scene_id:
+          type: string
+        status:
+          type: string
+        scenes:
+          type: object
+          nullable: true
+        faces:
+          type: object
+          nullable: true
+        semantics:
+          type: object
+          nullable: true
+        objects:
+          type: object
+          nullable: true
+        metadata:
+          type: object
+
+    VisionApiHealth:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        version:
+          type: string
+        services:
+          type: object
+          additionalProperties:
+            type: object
+
+    # Frame Server Schemas
+    ExtractRequest:
+      type: object
+      required:
+        - video_path
+      properties:
+        video_path:
+          type: string
+        job_id:
+          type: string
+        extraction_method:
+          type: string
+          enum: [opencv_cpu, opencv_cuda, ffmpeg, sprites]
+          default: opencv_cpu
+        sampling_strategy:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [interval, keyframe, uniform]
+              default: interval
+            interval_seconds:
+              type: number
+            num_frames:
+              type: integer
+        output_format:
+          type: string
+          enum: [jpeg, png]
+          default: jpeg
+        quality:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 95
+        cache_duration:
+          type: integer
+          default: 7200
+        use_sprites:
+          type: boolean
+          default: false
+        sprite_vtt_url:
+          type: string
+        sprite_image_url:
+          type: string
+
+    ExtractJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        cache_key:
+          type: string
+        estimated_frames:
+          type: integer
+
+    ExtractJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        progress:
+          type: number
+        stage:
+          type: string
+        message:
+          type: string
+        frames_extracted:
+          type: integer
+        frames_total:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+
+    ExtractResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        cache_key:
+          type: string
+        frames:
+          type: array
+          items:
+            type: object
+            properties:
+              frame_number:
+                type: integer
+              timestamp:
+                type: number
+              url:
+                type: string
+        metadata:
+          type: object
+
+    # Scenes Service Schemas
+    DetectScenesRequest:
+      type: object
+      required:
+        - video_path
+      properties:
+        video_path:
+          type: string
+        scene_id:
+          type: string
+        parameters:
+          $ref: '#/components/schemas/ScenesParameters'
+
+    ScenesParameters:
+      type: object
+      properties:
+        threshold:
+          type: number
+          default: 30.0
+          description: Content detection threshold
+        min_scene_length:
+          type: number
+          default: 1.0
+          description: Minimum scene duration in seconds
+        detection_method:
+          type: string
+          enum: [content, threshold, adaptive]
+          default: content
+
+    DetectJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        cache_key:
+          type: string
+        estimated_scenes:
+          type: integer
+
+    # Faces Service Schemas
+    AnalyzeFacesRequest:
+      type: object
+      required:
+        - video_path
+      properties:
+        video_path:
+          type: string
+        scene_id:
+          type: string
+        parameters:
+          $ref: '#/components/schemas/FacesParameters'
+
+    FacesParameters:
+      type: object
+      properties:
+        min_confidence:
+          type: number
+          default: 0.9
+          minimum: 0
+          maximum: 1
+        max_faces:
+          type: integer
+          default: 50
+          minimum: 1
+        sampling_interval:
+          type: number
+          default: 2.0
+          description: Seconds between sampled frames
+        enable_deduplication:
+          type: boolean
+          default: true
+        embedding_similarity_threshold:
+          type: number
+          default: 0.6
+          minimum: 0
+          maximum: 1
+
+    FacesJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
