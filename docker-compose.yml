@@ -1,0 +1,339 @@
+services:
+  # ============================================
+  # Infrastructure Services
+  # ============================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: vision-redis
+    hostname: vision-redis
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - vision_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  dependency-checker:
+    image: curlimages/curl:latest
+    container_name: vision-dependency-checker
+    hostname: vision-dependency-checker
+    command: sh -c "while true; do sleep 10; done"
+    networks:
+      - vision_network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "sh"
+        - "-c"
+        - |
+          curl -f http://frame-server:5001/health &&
+          curl -f http://scenes-service:5002/health &&
+          curl -f http://faces-service:5003/health
+      interval: 5s
+      timeout: 10s
+      retries: 1
+      start_period: 600s # 10 minutes for model loading
+
+  # ============================================
+  # Core Processing Services
+  # ============================================
+
+  frame-server:
+    build:
+      context: ./frame-server
+      dockerfile: ${FRAME_SERVER_DOCKERFILE:-Dockerfile}
+    container_name: vision-frame-server
+    hostname: vision-frame-server
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${FRAME_SERVER_PORT:-5001}:5001"
+    environment:
+      - EXTRACTION_METHOD=${FRAME_EXTRACTION_METHOD:-opencv_cuda}
+      - OPENCV_DEVICE=${OPENCV_DEVICE:-cuda}
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - FRAME_TTL_HOURS=${FRAME_TTL_HOURS:-2}
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./frame-server/app:/app/app
+      - frames_cache:/tmp/frames
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5001/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+
+  scenes-service:
+    build:
+      context: ./scenes-service
+      dockerfile: ${SCENES_DOCKERFILE:-Dockerfile}
+    container_name: vision-scenes-service
+    hostname: vision-scenes-service
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${SCENES_PORT:-5002}:5002"
+    environment:
+      - DETECTOR=${SCENES_DETECTOR:-pyscenedetect_cuda}
+      - OPENCV_DEVICE=${OPENCV_DEVICE:-cuda}
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./scenes-service/app:/app/app
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5002/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+
+  faces-service:
+    build:
+      context: ./faces-service
+      dockerfile: ${FACES_DOCKERFILE:-Dockerfile}
+    container_name: vision-faces-service
+    hostname: vision-faces-service
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "${FACES_PORT:-5003}:5003"
+    environment:
+      - INSIGHTFACE_MODEL=${INSIGHTFACE_MODEL:-buffalo_l}
+      - INSIGHTFACE_DEVICE=${INSIGHTFACE_DEVICE:-cuda}
+      - INSIGHTFACE_COMPUTE_TYPE=${INSIGHTFACE_COMPUTE_TYPE:-float16}
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./faces-service/app:/app/app
+      - ./faces-service/models:/app/models
+      - frames_cache:/tmp/frames
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      frame-server:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5003/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s # 10 minutes for model download
+    deploy:
+      resources:
+        limits:
+          memory: 20G
+
+  semantics-service:
+    build:
+      context: ./semantics-service
+      dockerfile: ${SEMANTICS_DOCKERFILE:-Dockerfile}
+    container_name: vision-semantics-service
+    hostname: vision-semantics-service
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${SEMANTICS_PORT:-5004}:5004"
+    environment:
+      - CLIP_MODEL=${CLIP_MODEL:-ViT-B/32}
+      - CLIP_DEVICE=${CLIP_DEVICE:-cuda}
+      - SCENES_SERVICE_URL=http://scenes-service:5002
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - STUB_MODE=${SEMANTICS_STUB_MODE:-true} # Phase 1: return not_implemented
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./semantics-service/app:/app/app
+      - ./semantics-service/models:/app/models
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      scenes-service:
+        condition: service_started
+      frame-server:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5004/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+
+  objects-service:
+    build:
+      context: ./objects-service
+      dockerfile: ${OBJECTS_DOCKERFILE:-Dockerfile}
+    container_name: vision-objects-service
+    hostname: vision-objects-service
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${OBJECTS_PORT:-5005}:5005"
+    environment:
+      - YOLO_MODEL=${YOLO_MODEL:-yolo-world-m}
+      - YOLO_DEVICE=${YOLO_DEVICE:-cuda}
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - STUB_MODE=${OBJECTS_STUB_MODE:-true} # Phase 1: return not_implemented
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./objects-service/app:/app/app
+      - ./objects-service/models:/app/models
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      frame-server:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:5005/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+
+  # ============================================
+  # Main API / Orchestrator
+  # ============================================
+
+  vision-api:
+    build:
+      context: ./vision-api
+      dockerfile: Dockerfile
+    container_name: vision-api
+    hostname: vision-api
+    ports:
+      - "${VISION_API_PORT:-5010}:5010"
+    environment:
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - SCENES_SERVICE_URL=http://scenes-service:5002
+      - FACES_SERVICE_URL=http://faces-service:5003
+      - SEMANTICS_SERVICE_URL=http://semantics-service:5004
+      - OBJECTS_SERVICE_URL=http://objects-service:5005
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PROCESSING_MODE=${PROCESSING_MODE:-sequential}
+    volumes:
+      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ./vision-api/app:/app/app
+    networks:
+      - vision_network
+    depends_on:
+      dependency-checker:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+# ============================================
+# Networks
+# ============================================
+
+networks:
+  vision_network:
+    name: ${DOCKER_NETWORK:-stash-auto-vision-network}
+    external: true
+
+# ============================================
+# Volumes
+# ============================================
+
+volumes:
+  redis_data:
+  frames_cache:
