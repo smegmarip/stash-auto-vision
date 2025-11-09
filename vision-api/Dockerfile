@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app/ /app/app/
+
+# Expose port
+EXPOSE 5000
+
+# Run FastAPI with uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]

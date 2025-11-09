@@ -1,0 +1,537 @@
+"""
+Faces Service - Main Application
+FastAPI server for face recognition using InsightFace
+"""
+
+import os
+import uuid
+import time
+import asyncio
+import httpx
+import cv2
+from typing import Optional
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+import logging
+
+from .models import (
+    AnalyzeFacesRequest,
+    AnalyzeJobResponse,
+    AnalyzeJobStatus,
+    AnalyzeJobResults,
+    Face,
+    Detection,
+    BoundingBox,
+    Landmarks,
+    Demographics,
+    VideoMetadata,
+    HealthResponse,
+    JobStatus,
+    ErrorResponse
+)
+from .cache_manager import CacheManager
+from .face_recognizer import FaceRecognizer
+
+# Environment configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+INSIGHTFACE_MODEL = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
+INSIGHTFACE_DEVICE = os.getenv("INSIGHTFACE_DEVICE", "cuda")
+FRAME_SERVER_URL = os.getenv("FRAME_SERVER_URL", "http://frame-server:5001")
+CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Global instances
+cache_manager: Optional[CacheManager] = None
+face_recognizer: Optional[FaceRecognizer] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager
+    Initialize services on startup, cleanup on shutdown
+    """
+    global cache_manager, face_recognizer
+
+    logger.info("Starting Faces Service...")
+
+    # Initialize cache manager
+    cache_manager = CacheManager(REDIS_URL, module="faces", ttl=CACHE_TTL)
+    await cache_manager.connect()
+    logger.info("Cache manager initialized")
+
+    # Initialize face recognizer
+    face_recognizer = FaceRecognizer(
+        model_name=INSIGHTFACE_MODEL,
+        device=INSIGHTFACE_DEVICE
+    )
+    model_info = face_recognizer.get_model_info()
+    logger.info(f"Face recognizer initialized: {model_info}")
+
+    yield
+
+    # Cleanup
+    logger.info("Shutting down Faces Service...")
+    if cache_manager:
+        await cache_manager.disconnect()
+    logger.info("Faces Service stopped")
+
+
+app = FastAPI(
+    title="Faces Service",
+    description="Face recognition service using InsightFace",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+
+async def request_frames(
+    video_path: str,
+    job_id: str,
+    parameters: dict
+) -> dict:
+    """
+    Request frame extraction from frame-server
+
+    Args:
+        video_path: Path to video file
+        job_id: Job identifier
+        parameters: Extraction parameters
+
+    Returns:
+        Frame extraction results
+    """
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            # Submit extraction job
+            response = await client.post(
+                f"{FRAME_SERVER_URL}/extract",
+                json={
+                    "video_path": video_path,
+                    "job_id": f"frames-{job_id}",
+                    "extraction_method": "opencv_cuda" if INSIGHTFACE_DEVICE == "cuda" else "opencv_cpu",
+                    "sampling_strategy": {
+                        "mode": "interval",
+                        "interval_seconds": parameters.get("sampling_interval", 2.0)
+                    },
+                    "scene_boundaries": parameters.get("scene_boundaries"),
+                    "use_sprites": parameters.get("use_sprites", False),
+                    "sprite_vtt_url": parameters.get("sprite_vtt_url"),
+                    "sprite_image_url": parameters.get("sprite_image_url"),
+                    "output_format": "jpeg",
+                    "quality": 95,
+                    "cache_duration": 3600
+                }
+            )
+
+            if response.status_code != 202:
+                raise ValueError(f"Frame extraction failed: {response.text}")
+
+            frame_job = response.json()
+            frame_job_id = frame_job["job_id"]
+
+            logger.info(f"Frame extraction job submitted: {frame_job_id}")
+
+            # Poll for completion
+            while True:
+                status_response = await client.get(
+                    f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/status"
+                )
+
+                status = status_response.json()
+
+                if status["status"] == "completed":
+                    break
+                elif status["status"] == "failed":
+                    raise ValueError(f"Frame extraction failed: {status.get('error')}")
+
+                await asyncio.sleep(2)
+
+            # Get results
+            results_response = await client.get(
+                f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/results"
+            )
+
+            return results_response.json()
+
+    except Exception as e:
+        logger.error(f"Error requesting frames: {e}")
+        raise
+
+
+async def process_analysis_job(
+    job_id: str,
+    cache_key: str,
+    request: AnalyzeFacesRequest
+):
+    """
+    Background task to process face analysis
+
+    Args:
+        job_id: Job identifier
+        cache_key: Content-based cache key
+        request: Analysis request parameters
+    """
+    try:
+        logger.info(f"Starting job {job_id}")
+
+        await cache_manager.update_job_status(
+            job_id,
+            status=JobStatus.PROCESSING.value,
+            progress=0.0,
+            stage="requesting_frames"
+        )
+
+        start_time = time.time()
+
+        # Request frames from frame-server
+        frame_results = await request_frames(
+            request.video_path,
+            job_id,
+            request.parameters.dict()
+        )
+
+        frames = frame_results["frames"]
+        total_frames = len(frames)
+
+        logger.info(f"Processing {total_frames} frames for job {job_id}")
+
+        await cache_manager.update_job_status(
+            job_id,
+            status=JobStatus.PROCESSING.value,
+            progress=0.1,
+            stage="detecting_faces"
+        )
+
+        # Process each frame
+        all_detections = []
+
+        for idx, frame_info in enumerate(frames):
+            # Load frame
+            frame_url = frame_info["url"]
+            frame_path = frame_url.replace("file://", "")
+
+            frame = cv2.imread(frame_path)
+
+            if frame is None:
+                logger.warning(f"Failed to load frame: {frame_path}")
+                continue
+
+            # Detect faces
+            logger.debug(f"Calling detect_faces with min_confidence={request.parameters.min_confidence}")
+            faces = face_recognizer.detect_faces(
+                frame,
+                min_confidence=request.parameters.min_confidence
+            )
+            logger.debug(f"detect_faces returned {len(faces)} faces")
+
+            # Add frame metadata to detections
+            for face in faces:
+                detection = {
+                    **face,
+                    "frame_index": frame_info["index"],
+                    "timestamp": frame_info["timestamp"]
+                }
+                all_detections.append(detection)
+
+            # Update progress
+            progress = 0.1 + (0.7 * (idx + 1) / total_frames)
+            if (idx + 1) % 10 == 0:
+                await cache_manager.update_job_status(
+                    job_id,
+                    status=JobStatus.PROCESSING.value,
+                    progress=progress,
+                    stage="detecting_faces",
+                    message=f"Processed {idx + 1}/{total_frames} frames"
+                )
+
+        logger.info(f"Found {len(all_detections)} total face detections")
+
+        # Cluster faces
+        await cache_manager.update_job_status(
+            job_id,
+            status=JobStatus.PROCESSING.value,
+            progress=0.8,
+            stage="clustering_faces"
+        )
+
+        if request.parameters.enable_deduplication:
+            clusters = face_recognizer.cluster_faces(
+                all_detections,
+                similarity_threshold=request.parameters.embedding_similarity_threshold
+            )
+        else:
+            # No clustering - each detection is a unique face
+            clusters = {f"face_{i}": [i] for i in range(len(all_detections))}
+
+        # Build face results
+        faces = []
+
+        for face_id, detection_indices in clusters.items():
+            # Get representative detection
+            rep_idx = face_recognizer.get_representative_detection(
+                all_detections,
+                detection_indices
+            )
+
+            rep_detection = all_detections[rep_idx]
+
+            # Build detections list
+            detections = [
+                Detection(
+                    frame_index=all_detections[i]["frame_index"],
+                    timestamp=all_detections[i]["timestamp"],
+                    bbox=BoundingBox(**all_detections[i]["bbox"]),
+                    confidence=all_detections[i]["confidence"],
+                    quality_score=all_detections[i]["quality_score"],
+                    pose=all_detections[i]["pose"],
+                    landmarks=Landmarks(**all_detections[i]["landmarks"])
+                )
+                for i in detection_indices
+            ]
+
+            # Build face object
+            face = Face(
+                face_id=face_id,
+                embedding=rep_detection["embedding"],
+                demographics=Demographics(**rep_detection["demographics"]) if rep_detection.get("demographics") else None,
+                detections=detections,
+                representative_detection=Detection(
+                    frame_index=rep_detection["frame_index"],
+                    timestamp=rep_detection["timestamp"],
+                    bbox=BoundingBox(**rep_detection["bbox"]),
+                    confidence=rep_detection["confidence"],
+                    quality_score=rep_detection["quality_score"],
+                    pose=rep_detection["pose"],
+                    landmarks=Landmarks(**rep_detection["landmarks"])
+                )
+            )
+
+            faces.append(face)
+
+        processing_time = time.time() - start_time
+
+        # Build metadata
+        metadata = VideoMetadata(
+            video_path=request.video_path,
+            total_frames=frame_results["metadata"]["total_frames"],
+            frames_processed=total_frames,
+            unique_faces=len(faces),
+            total_detections=len(all_detections),
+            processing_time_seconds=processing_time,
+            method=frame_results["metadata"]["extraction_method"],
+            model=INSIGHTFACE_MODEL
+        )
+
+        # Create results
+        results = AnalyzeJobResults(
+            job_id=job_id,
+            scene_id=request.scene_id,
+            status=JobStatus.COMPLETED,
+            faces=faces,
+            metadata=metadata
+        )
+
+        # Cache results
+        await cache_manager.cache_job_results(
+            job_id=job_id,
+            cache_key=cache_key,
+            results=results.dict(),
+            ttl=request.parameters.cache_duration
+        )
+
+        # Update final status
+        await cache_manager.update_job_status(
+            job_id,
+            status=JobStatus.COMPLETED.value,
+            progress=1.0,
+            stage="completed",
+            message=f"Found {len(faces)} unique faces in {processing_time:.2f}s"
+        )
+
+        logger.info(f"Job {job_id} completed: {len(faces)} faces in {processing_time:.2f}s")
+
+    except Exception as e:
+        logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+
+        await cache_manager.update_job_status(
+            job_id,
+            status=JobStatus.FAILED.value,
+            progress=0.0,
+            error=str(e)
+        )
+
+
+@app.post("/analyze", response_model=AnalyzeJobResponse, status_code=202)
+async def analyze_faces(
+    request: AnalyzeFacesRequest,
+    background_tasks: BackgroundTasks
+):
+    """Submit face analysis job"""
+    try:
+        if not os.path.exists(request.video_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Video not found: {request.video_path}"
+            )
+
+        # Generate cache key
+        params = request.parameters.dict()
+        cache_key = cache_manager.generate_cache_key(request.video_path, params)
+
+        # Check cache
+        cached_job_id = await cache_manager.get_cached_job_id(cache_key)
+
+        if cached_job_id:
+            metadata = await cache_manager.get_job_metadata(cached_job_id)
+            return AnalyzeJobResponse(
+                job_id=cached_job_id,
+                status=JobStatus(metadata.get("status", "completed")),
+                created_at=metadata.get("created_at", "")
+            )
+
+        # Create new job
+        job_id = request.job_id or str(uuid.uuid4())
+
+        metadata = {
+            "job_id": job_id,
+            "cache_key": cache_key,
+            "status": JobStatus.QUEUED.value,
+            "progress": 0.0,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+            "scene_id": request.scene_id
+        }
+
+        await cache_manager.cache_job_metadata(
+            job_id=job_id,
+            cache_key=cache_key,
+            metadata=metadata,
+            ttl=request.parameters.cache_duration
+        )
+
+        background_tasks.add_task(process_analysis_job, job_id, cache_key, request)
+
+        logger.info(f"Job {job_id} queued")
+
+        return AnalyzeJobResponse(
+            job_id=job_id,
+            status=JobStatus.QUEUED,
+            created_at=metadata["created_at"]
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting job: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jobs/{job_id}/status", response_model=AnalyzeJobStatus)
+async def get_job_status(job_id: str):
+    """Get job status"""
+    try:
+        metadata = await cache_manager.get_job_metadata(job_id)
+
+        if not metadata:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+        result_summary = None
+        if metadata.get("status") == JobStatus.COMPLETED.value:
+            results = await cache_manager.get_job_results(job_id)
+            if results:
+                result_summary = {
+                    "unique_faces": results["metadata"]["unique_faces"],
+                    "total_detections": results["metadata"]["total_detections"],
+                    "frames_processed": results["metadata"]["frames_processed"],
+                    "processing_time_seconds": results["metadata"]["processing_time_seconds"]
+                }
+
+        return AnalyzeJobStatus(
+            job_id=job_id,
+            status=JobStatus(metadata["status"]),
+            progress=metadata.get("progress", 0.0),
+            stage=metadata.get("stage"),
+            message=metadata.get("message"),
+            created_at=metadata["created_at"],
+            started_at=metadata.get("started_at"),
+            completed_at=metadata.get("completed_at"),
+            result_summary=result_summary,
+            error=metadata.get("error")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jobs/{job_id}/results", response_model=AnalyzeJobResults)
+async def get_job_results(job_id: str):
+    """Get job results"""
+    try:
+        metadata = await cache_manager.get_job_metadata(job_id)
+
+        if not metadata:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+        if metadata["status"] != JobStatus.COMPLETED.value:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Job not completed (status: {metadata['status']})"
+            )
+
+        results = await cache_manager.get_job_results(job_id)
+
+        if not results:
+            raise HTTPException(status_code=404, detail=f"Results not found for job: {job_id}")
+
+        return AnalyzeJobResults(**results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Service health check"""
+    try:
+        cache_size_mb = await cache_manager.get_cache_size()
+        active_jobs = await cache_manager.count_active_jobs()
+
+        gpu_available = INSIGHTFACE_DEVICE == "cuda"
+
+        return HealthResponse(
+            status="healthy",
+            service="faces-service",
+            version="1.0.0",
+            model=INSIGHTFACE_MODEL,
+            gpu_available=gpu_available,
+            active_jobs=active_jobs,
+            cache_size_mb=cache_size_mb
+        )
+
+    except Exception as e:
+        logger.error(f"Health check failed: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "error": str(e)}
+        )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import asyncio
+    uvicorn.run(app, host="0.0.0.0", port=5003)
