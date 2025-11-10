@@ -1,8 +1,7 @@
 # Frame Server Documentation
 
-**Service:** Frame Server (Internal)
-**Port:** 5001 (Internal Docker network only)
-**Access:** Not exposed via vision-api - internal service only
+**Service:** Frame Server
+**Port:** 5001
 **Status:** Phase 1 - Implemented
 **Version:** 1.0.0
 
@@ -10,7 +9,7 @@
 
 ## Summary
 
-The Frame Server is an internal microservice that provides GPU-accelerated frame extraction from video files. It supports multiple extraction methods (OpenCV CUDA, OpenCV CPU, FFmpeg, and WebVTT sprite sheets) and implements intelligent caching to avoid redundant processing.
+The Frame Server provides GPU-accelerated frame extraction from video files. It supports multiple extraction methods (OpenCV CUDA, OpenCV CPU, FFmpeg, and WebVTT sprite sheets) and implements intelligent caching to avoid redundant processing.
 
 ### Key Features
 
@@ -38,11 +37,13 @@ The Frame Server uses an async extract-once + TTL cleanup architecture:
 openapi: 3.0.3
 info:
   title: Frame Server API
-  description: Internal service for GPU-accelerated frame extraction
+  description: GPU-accelerated frame extraction service
   version: 1.0.0
 servers:
   - url: http://frame-server:5001
-    description: Internal Docker network
+    description: Docker network
+  - url: http://localhost:5001
+    description: External access
 
 paths:
   /extract:
