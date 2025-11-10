@@ -1,8 +1,8 @@
 # Frame Server Documentation
 
-**Service:** Frame Server
-**Port:** 5001
-**Path:** `/vision/_frameserver`
+**Service:** Frame Server (Internal)
+**Port:** 5001 (Internal Docker network only)
+**Access:** Not exposed via vision-api - internal service only
 **Status:** Phase 1 - Implemented
 **Version:** 1.0.0
 

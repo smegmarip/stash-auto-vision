@@ -34,7 +34,7 @@ servers:
   - url: http://localhost:5010
     description: Vision API (Rollup/Orchestrator)
   - url: http://localhost:5001
-    description: Frame Server
+    description: Frame Server (Internal - not exposed via vision-api)
   - url: http://localhost:5002
     description: Scenes Service
   - url: http://localhost:5003
@@ -334,6 +334,46 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /jobs/{job_id}/status:
+    get:
+      tags: [scenes]
+      summary: Get scene detection job status
+      operationId: getSceneDetectionStatus
+      servers:
+        - url: http://localhost:5002
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/results:
+    get:
+      tags: [scenes]
+      summary: Get scene detection results
+      operationId: getSceneDetectionResults
+      servers:
+        - url: http://localhost:5002
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Detection results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Job not completed yet
+
   # ==================== FACES SERVICE ====================
 
   /analyze:
@@ -360,6 +400,46 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/status:
+    get:
+      tags: [faces]
+      summary: Get face analysis job status
+      operationId: getFaceAnalysisStatus
+      servers:
+        - url: http://localhost:5003
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacesJobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/results:
+    get:
+      tags: [faces]
+      summary: Get face analysis results
+      operationId: getFaceAnalysisResults
+      servers:
+        - url: http://localhost:5003
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacesJobResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Job not completed yet
 
 components:
   parameters:
@@ -407,6 +487,14 @@ components:
         scene_id:
           type: string
           description: Scene identifier
+        job_id:
+          type: string
+          description: Job ID for tracking
+        processing_mode:
+          type: string
+          enum: [sequential, parallel]
+          default: sequential
+          description: Processing mode (sequential recommended to avoid GPU memory contention)
         modules:
           type: object
           properties:
@@ -432,12 +520,14 @@ components:
                 enabled:
                   type: boolean
                   default: false
+                description: Phase 2 - not yet implemented
             objects:
               type: object
               properties:
                 enabled:
                   type: boolean
                   default: false
+                description: Phase 3 - not yet implemented
 
     AnalyzeJobResponse:
       type: object
@@ -547,6 +637,7 @@ components:
           type: string
         job_id:
           type: string
+          description: Parent job ID for tracking
         extraction_method:
           type: string
           enum: [opencv_cpu, opencv_cuda, ffmpeg, sprites]
@@ -562,6 +653,16 @@ components:
               type: number
             num_frames:
               type: integer
+        scene_boundaries:
+          type: array
+          description: Scene boundaries from scenes-service for targeted extraction
+          items:
+            type: object
+            properties:
+              start_timestamp:
+                type: number
+              end_timestamp:
+                type: number
         output_format:
           type: string
           enum: [jpeg, png]
@@ -574,6 +675,7 @@ components:
         cache_duration:
           type: integer
           default: 7200
+          description: Cache TTL in seconds
         use_sprites:
           type: boolean
           default: false
@@ -606,17 +708,31 @@ components:
           type: string
         progress:
           type: number
+          minimum: 0.0
+          maximum: 1.0
         stage:
           type: string
+          nullable: true
         message:
           type: string
+          nullable: true
         frames_extracted:
           type: integer
+          nullable: true
         frames_total:
           type: integer
+          nullable: true
         created_at:
           type: string
           format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
         error:
           type: string
           nullable: true
@@ -633,16 +749,39 @@ components:
         frames:
           type: array
           items:
-            type: object
-            properties:
-              frame_number:
-                type: integer
-              timestamp:
-                type: number
-              url:
-                type: string
+            $ref: '#/components/schemas/FrameMetadata'
         metadata:
-          type: object
+          $ref: '#/components/schemas/VideoMetadata'
+
+    FrameMetadata:
+      type: object
+      properties:
+        index:
+          type: integer
+        timestamp:
+          type: number
+        url:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+
+    VideoMetadata:
+      type: object
+      properties:
+        video_path:
+          type: string
+        extraction_method:
+          type: string
+        total_frames:
+          type: integer
+        video_duration_seconds:
+          type: number
+        video_fps:
+          type: number
+        processing_time_seconds:
+          type: number
 
     # Scenes Service Schemas
     DetectScenesRequest:
@@ -654,24 +793,48 @@ components:
           type: string
         scene_id:
           type: string
-        parameters:
-          $ref: '#/components/schemas/ScenesParameters'
-
-    ScenesParameters:
-      type: object
-      properties:
-        threshold:
-          type: number
-          default: 30.0
-          description: Content detection threshold
-        min_scene_length:
-          type: number
-          default: 1.0
-          description: Minimum scene duration in seconds
+        job_id:
+          type: string
+          description: Parent job ID for tracking
         detection_method:
           type: string
           enum: [content, threshold, adaptive]
           default: content
+        threshold:
+          type: number
+          default: 27.0
+          minimum: 0.0
+          maximum: 100.0
+          description: Detection threshold
+        min_scene_length:
+          type: number
+          default: 0.6
+          minimum: 0.1
+          description: Minimum scene length in seconds
+        cache_duration:
+          type: integer
+          default: 3600
+          minimum: 0
+          description: Cache TTL in seconds
+
+    ScenesParameters:
+      type: object
+      properties:
+        detection_method:
+          type: string
+          enum: [content, threshold, adaptive]
+          default: content
+        threshold:
+          type: number
+          default: 27.0
+          minimum: 0.0
+          maximum: 100.0
+          description: Content detection threshold
+        min_scene_length:
+          type: number
+          default: 0.6
+          minimum: 0.1
+          description: Minimum scene duration in seconds
 
     DetectJobResponse:
       type: object
@@ -687,17 +850,107 @@ components:
           type: string
         estimated_scenes:
           type: integer
+          nullable: true
+
+    DetectJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        stage:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        scenes_detected:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    DetectJobResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        cache_key:
+          type: string
+        scenes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SceneBoundary'
+        metadata:
+          $ref: '#/components/schemas/ScenesVideoMetadata'
+
+    SceneBoundary:
+      type: object
+      properties:
+        scene_number:
+          type: integer
+        start_frame:
+          type: integer
+        end_frame:
+          type: integer
+        start_timestamp:
+          type: number
+        end_timestamp:
+          type: number
+        duration:
+          type: number
+
+    ScenesVideoMetadata:
+      type: object
+      properties:
+        video_path:
+          type: string
+        detection_method:
+          type: string
+        total_frames:
+          type: integer
+        video_duration_seconds:
+          type: number
+        video_fps:
+          type: number
+        processing_time_seconds:
+          type: number
 
     # Faces Service Schemas
     AnalyzeFacesRequest:
       type: object
       required:
         - video_path
+        - scene_id
       properties:
         video_path:
           type: string
+          description: Absolute path to video file
         scene_id:
           type: string
+          description: Scene ID for reference
+        job_id:
+          type: string
+          description: Parent job ID for tracking
         parameters:
           $ref: '#/components/schemas/FacesParameters'
 
@@ -713,18 +966,52 @@ components:
           type: integer
           default: 50
           minimum: 1
+          maximum: 1000
         sampling_interval:
           type: number
           default: 2.0
+          minimum: 0.1
+          maximum: 10.0
           description: Seconds between sampled frames
+        use_sprites:
+          type: boolean
+          default: false
+          description: Use sprite sheets if available
+        sprite_vtt_url:
+          type: string
+          description: URL to WebVTT sprite manifest
+        sprite_image_url:
+          type: string
+          description: URL to sprite sheet image
         enable_deduplication:
           type: boolean
           default: true
+          description: Cluster faces by embedding similarity
         embedding_similarity_threshold:
           type: number
           default: 0.6
           minimum: 0
           maximum: 1
+          description: Cosine similarity threshold for clustering
+        detect_demographics:
+          type: boolean
+          default: true
+          description: Detect age, gender, emotion
+        scene_boundaries:
+          type: array
+          description: Scene boundaries for targeted face detection
+          items:
+            type: object
+            properties:
+              start_timestamp:
+                type: number
+              end_timestamp:
+                type: number
+        cache_duration:
+          type: integer
+          default: 3600
+          minimum: 0
+          description: Cache TTL in seconds
 
     FacesJobResponse:
       type: object
@@ -736,3 +1023,180 @@ components:
         created_at:
           type: string
           format: date-time
+
+    FacesJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        stage:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_summary:
+          type: object
+          nullable: true
+          properties:
+            unique_faces:
+              type: integer
+            total_detections:
+              type: integer
+            frames_processed:
+              type: integer
+            processing_time_seconds:
+              type: number
+        error:
+          type: string
+          nullable: true
+
+    FacesJobResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+        scene_id:
+          type: string
+        status:
+          type: string
+        faces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Face'
+        metadata:
+          $ref: '#/components/schemas/FacesVideoMetadata'
+
+    Face:
+      type: object
+      properties:
+        face_id:
+          type: string
+        embedding:
+          type: array
+          items:
+            type: number
+          description: 512-D ArcFace embedding
+        demographics:
+          $ref: '#/components/schemas/Demographics'
+        detections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Detection'
+        representative_detection:
+          $ref: '#/components/schemas/Detection'
+
+    Detection:
+      type: object
+      properties:
+        frame_index:
+          type: integer
+        timestamp:
+          type: number
+        bbox:
+          $ref: '#/components/schemas/BoundingBox'
+        confidence:
+          type: number
+        quality_score:
+          type: number
+        pose:
+          type: string
+          description: "front, left, right, front-rotate-left, front-rotate-right"
+        landmarks:
+          $ref: '#/components/schemas/Landmarks'
+
+    BoundingBox:
+      type: object
+      properties:
+        x_min:
+          type: integer
+        y_min:
+          type: integer
+        x_max:
+          type: integer
+        y_max:
+          type: integer
+
+    Landmarks:
+      type: object
+      properties:
+        left_eye:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          maxItems: 2
+        right_eye:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          maxItems: 2
+        nose:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          maxItems: 2
+        mouth_left:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          maxItems: 2
+        mouth_right:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          maxItems: 2
+
+    Demographics:
+      type: object
+      nullable: true
+      properties:
+        age:
+          type: integer
+        gender:
+          type: string
+          enum: [M, F]
+        emotion:
+          type: string
+          enum: [neutral, happy, sad, angry, surprise, disgust, fear]
+
+    FacesVideoMetadata:
+      type: object
+      properties:
+        video_path:
+          type: string
+        total_frames:
+          type: integer
+        frames_processed:
+          type: integer
+        unique_faces:
+          type: integer
+        total_detections:
+          type: integer
+        processing_time_seconds:
+          type: number
+        method:
+          type: string
+        model:
+          type: string
