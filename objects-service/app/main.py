@@ -22,7 +22,7 @@ app = FastAPI(
 )
 
 
-@app.post("/analyze")
+@app.post("/analyze", status_code=202)
 async def analyze_objects(request: dict):
     """
     Stub endpoint for object analysis
@@ -35,15 +35,12 @@ async def analyze_objects(request: dict):
     """
     logger.info("Received objects analysis request (not implemented)")
 
-    return JSONResponse(
-        status_code=202,
-        content={
-            "job_id": f"objects-stub-{int(time.time())}",
-            "status": "not_implemented",
-            "message": "Objects analysis module is not yet implemented (Phase 3)",
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
-        }
-    )
+    return {
+        "job_id": f"objects-stub-{int(time.time())}",
+        "status": "not_implemented",
+        "message": "Objects analysis module is not yet implemented (Phase 3)",
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+    }
 
 
 @app.get("/jobs/{job_id}/status")

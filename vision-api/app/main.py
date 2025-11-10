@@ -347,7 +347,7 @@ async def process_video_analysis(
         )
 
 
-@app.post("/vision/analyze", response_model=AnalyzeJobResponse)
+@app.post("/vision/analyze", response_model=AnalyzeJobResponse, status_code=202)
 async def analyze_video(
     request: AnalyzeVideoRequest,
     background_tasks: BackgroundTasks
