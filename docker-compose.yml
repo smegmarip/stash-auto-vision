@@ -8,8 +8,9 @@ services:
     container_name: vision-redis
     hostname: vision-redis
     command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # Security: Redis should NOT be exposed to host - only accessible within Docker network
+    # ports:
+    #   - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
