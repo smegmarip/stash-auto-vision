@@ -18,7 +18,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 COPY app/ /app/app/
 
 # Expose port
-EXPOSE 5000
+EXPOSE 5010
 
 # Run FastAPI with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5010"]
