@@ -70,7 +70,8 @@ services:
       - CACHE_TTL=${CACHE_TTL:-3600}
       - FRAME_TTL_HOURS=${FRAME_TTL_HOURS:-2}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./frame-server/app:/app/app
       - frames_cache:/tmp/frames
     networks:
@@ -80,13 +81,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5001/health",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -111,8 +106,10 @@ services:
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
+      - SCENES_THRESHOLD=${SCENES_THRESHOLD:-27.0}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./scenes-service/app:/app/app
     networks:
       - vision_network
@@ -121,13 +118,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5002/health",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -156,8 +147,10 @@ services:
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
+      - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./faces-service/app:/app/app
       - ./faces-service/models:/app/models
       - frames_cache:/tmp/frames
@@ -170,13 +163,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5003/health",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -204,8 +191,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
       - STUB_MODE=${SEMANTICS_STUB_MODE:-true} # Phase 1: return not_implemented
+      - SEMANTICS_MIN_CONFIDENCE=${SEMANTICS_MIN_CONFIDENCE:-0.5}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./semantics-service/app:/app/app
       - ./semantics-service/models:/app/models
     networks:
@@ -219,13 +208,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5004/health",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -252,8 +235,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
       - STUB_MODE=${OBJECTS_STUB_MODE:-true} # Phase 1: return not_implemented
+      - OBJECTS_MIN_CONFIDENCE=${OBJECTS_MIN_CONFIDENCE:-0.5}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./objects-service/app:/app/app
       - ./objects-service/models:/app/models
     networks:
@@ -265,13 +250,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:5005/health",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -302,8 +281,13 @@ services:
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PROCESSING_MODE=${PROCESSING_MODE:-sequential}
+      - SCENES_THRESHOLD=${SCENES_THRESHOLD:-27.0}
+      - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
+      - SEMANTICS_MIN_CONFIDENCE=${SEMANTICS_MIN_CONFIDENCE:-0.5}
+      - OBJECTS_MIN_CONFIDENCE=${OBJECTS_MIN_CONFIDENCE:-0.5}
     volumes:
-      - ${SERVER_MEDIA_PATH}:/media/videos:ro
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
       - ./vision-api/app:/app/app
     networks:
       - vision_network
