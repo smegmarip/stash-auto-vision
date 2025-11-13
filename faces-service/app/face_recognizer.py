@@ -55,14 +55,14 @@ class FaceRecognizer:
     def detect_faces(
         self,
         image: np.ndarray,
-        min_confidence: float = 0.9
+        face_min_confidence: float = 0.9
     ) -> List[Dict]:
         """
         Detect faces in image
 
         Args:
             image: Image array (BGR format from OpenCV)
-            min_confidence: Minimum detection confidence
+            face_min_confidence: Minimum detection confidence
 
         Returns:
             List of face detection dicts
@@ -71,7 +71,7 @@ class FaceRecognizer:
             # Detect faces
             faces = self.app.get(image)
 
-            logger.debug(f"InsightFace raw detection: found {len(faces)} faces (min_confidence={min_confidence})")
+            logger.debug(f"InsightFace raw detection: found {len(faces)} faces (face_min_confidence={face_min_confidence})")
             for i, face in enumerate(faces):
                 logger.debug(f"  Face {i}: confidence={face.det_score:.3f}")
 
@@ -79,8 +79,8 @@ class FaceRecognizer:
             results = []
 
             for face in faces:
-                if face.det_score < min_confidence:
-                    logger.debug(f"Skipping face with confidence {face.det_score:.3f} < {min_confidence}")
+                if face.det_score < face_min_confidence:
+                    logger.debug(f"Skipping face with confidence {face.det_score:.3f} < {face_min_confidence}")
                     continue
 
                 # Get bounding box

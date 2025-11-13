@@ -130,7 +130,7 @@ async def process_detection_job(
         scenes_raw = scene_detector.detect_scenes(
             video_path=request.video_path,
             detection_method=request.detection_method.value,
-            threshold=request.threshold,
+            scene_threshold=request.scene_threshold,
             min_scene_length=request.min_scene_length
         )
 

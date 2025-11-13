@@ -71,7 +71,7 @@ class SceneDetector:
         self,
         video_path: str,
         detection_method: str = "content",
-        threshold: float = 27.0,
+        scene_threshold: float = 27.0,
         min_scene_length: float = 0.6
     ) -> List[Tuple[int, int, float, float]]:
         """
@@ -80,7 +80,7 @@ class SceneDetector:
         Args:
             video_path: Path to video file
             detection_method: content, threshold, or adaptive
-            threshold: Detection threshold (method-specific)
+            scene_threshold: Detection threshold (method-specific)
             min_scene_length: Minimum scene length in seconds
 
         Returns:
@@ -91,7 +91,7 @@ class SceneDetector:
                 raise FileNotFoundError(f"Video not found: {video_path}")
 
             logger.info(f"Starting scene detection: {video_path}")
-            logger.info(f"Method: {detection_method}, Threshold: {threshold}, Min length: {min_scene_length}s")
+            logger.info(f"Method: {detection_method}, Threshold: {scene_threshold}, Min length: {min_scene_length}s")
 
             start_time = time.time()
 
@@ -103,11 +103,11 @@ class SceneDetector:
 
             # Add detector based on method
             if detection_method == "content":
-                detector = ContentDetector(threshold=threshold, min_scene_len=min_scene_length)
+                detector = ContentDetector(threshold=scene_threshold, min_scene_len=min_scene_length)
             elif detection_method == "threshold":
-                detector = ThresholdDetector(threshold=threshold, min_scene_len=min_scene_length)
+                detector = ThresholdDetector(threshold=scene_threshold, min_scene_len=min_scene_length)
             elif detection_method == "adaptive":
-                detector = AdaptiveDetector(adaptive_threshold=threshold, min_scene_len=min_scene_length)
+                detector = AdaptiveDetector(adaptive_threshold=scene_threshold, min_scene_len=min_scene_length)
             else:
                 raise ValueError(f"Unknown detection method: {detection_method}")
 

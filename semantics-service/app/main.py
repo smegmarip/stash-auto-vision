@@ -80,7 +80,8 @@ async def health_check():
         "version": "1.0.0",
         "implemented": False,
         "phase": 2,
-        "message": "Stub service - awaiting CLIP integration"
+        "message": "Stub service - awaiting CLIP integration",
+        "default_min_confidence": float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5"))
     }
 
 

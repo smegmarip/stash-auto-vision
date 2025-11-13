@@ -3,6 +3,7 @@ Scenes Service - Data Models
 Pydantic models for request/response validation
 """
 
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
@@ -29,7 +30,7 @@ class DetectScenesRequest(BaseModel):
     video_path: str = Field(..., description="Absolute path to video file")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     detection_method: DetectionMethod = DetectionMethod.CONTENT_DETECTOR
-    threshold: float = Field(default=27.0, ge=0.0, le=100.0, description="Detection threshold")
+    scene_threshold: float = Field(default=float(os.getenv("SCENES_THRESHOLD", "27.0")), ge=0.0, le=100.0, description="Detection threshold")
     min_scene_length: float = Field(default=0.6, ge=0.1, description="Minimum scene length in seconds")
     cache_duration: int = Field(default=3600, ge=0, description="Cache TTL in seconds")
 

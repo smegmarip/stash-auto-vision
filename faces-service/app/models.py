@@ -3,6 +3,7 @@ Faces Service - Data Models
 Pydantic models for request/response validation
 """
 
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
@@ -19,7 +20,7 @@ class JobStatus(str, Enum):
 
 class FaceAnalysisParameters(BaseModel):
     """Face analysis configuration"""
-    min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    face_min_confidence: float = Field(default=float(os.getenv("FACES_MIN_CONFIDENCE", "0.9")), ge=0.0, le=1.0)
     max_faces: int = Field(default=50, ge=1, le=1000)
     sampling_interval: float = Field(default=2.0, ge=0.1, le=10.0)
     use_sprites: bool = Field(default=False)

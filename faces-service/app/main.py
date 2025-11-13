@@ -227,10 +227,10 @@ async def process_analysis_job(
                 continue
 
             # Detect faces
-            logger.debug(f"Calling detect_faces with min_confidence={request.parameters.min_confidence}")
+            logger.debug(f"Calling detect_faces with face_min_confidence={request.parameters.face_min_confidence}")
             faces = face_recognizer.detect_faces(
                 frame,
-                min_confidence=request.parameters.min_confidence
+                face_min_confidence=request.parameters.face_min_confidence
             )
             logger.debug(f"detect_faces returned {len(faces)} faces")
 

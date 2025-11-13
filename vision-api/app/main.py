@@ -194,7 +194,7 @@ async def process_video_analysis(
                     "video_path": request.video_path,
                     "job_id": f"scenes-{job_id}",
                     "detection_method": request.parameters.get("scene_detection_method", "content"),
-                    "threshold": request.parameters.get("scene_threshold", 27.0),
+                    "scene_threshold": request.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
                     "min_scene_length": request.parameters.get("min_scene_length", 0.6)
                 }
 
@@ -222,7 +222,7 @@ async def process_video_analysis(
                     "scene_id": request.scene_id,
                     "job_id": f"faces-{job_id}",
                     "parameters": {
-                        "min_confidence": request.parameters.get("face_min_confidence", 0.9),
+                        "face_min_confidence": request.parameters.get("face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))),
                         "max_faces": request.parameters.get("max_faces", 50),
                         "sampling_interval": request.parameters.get("face_sampling_interval", 2.0),
                         "enable_deduplication": request.parameters.get("enable_deduplication", True),
@@ -242,7 +242,10 @@ async def process_video_analysis(
 
                 semantics_request = {
                     "video_path": request.video_path,
-                    "scene_id": request.scene_id
+                    "scene_id": request.scene_id,
+                    "parameters": {
+                        "semantics_min_confidence": request.parameters.get("semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")))
+                    }
                 }
 
                 semantics_result = await call_service("semantics", SEMANTICS_SERVICE_URL, semantics_request)
@@ -255,7 +258,10 @@ async def process_video_analysis(
 
                 objects_request = {
                     "video_path": request.video_path,
-                    "scene_id": request.scene_id
+                    "scene_id": request.scene_id,
+                    "parameters": {
+                        "objects_min_confidence": request.parameters.get("objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5")))
+                    }
                 }
 
                 objects_result = await call_service("objects", OBJECTS_SERVICE_URL, objects_request)
