@@ -236,6 +236,19 @@ OPENCV_DEVICE=cpu
 VISION_API_PORT=5010  # macOS: port 5000 conflicts with AirPlay
 ```
 
+### Confidence Thresholds
+
+Environment variables set default confidence thresholds, overridable per-request:
+
+```bash
+FACES_MIN_CONFIDENCE=0.9      # face_min_confidence parameter (0.7-0.8 for low quality)
+SCENES_THRESHOLD=27.0          # scene_threshold parameter (PySceneDetect scale)
+SEMANTICS_MIN_CONFIDENCE=0.5   # semantics_min_confidence parameter (Phase 2)
+OBJECTS_MIN_CONFIDENCE=0.5     # objects_min_confidence parameter (Phase 3)
+```
+
+Request parameter names are service-prefixed to avoid collisions in the vision-api rollup endpoint.
+
 See [Deployment Guide](docs/DEPLOYMENT.md) for full configuration options.
 
 ---

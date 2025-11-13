@@ -268,6 +268,20 @@ See [Future Work](#future-work) section below.
 - TTL: 2 hours (configurable via FRAME_TTL_HOURS)
 - Cleanup: Cron job runs hourly inside frame-server
 
+**Confidence Thresholds:**
+- Environment variables set default confidence thresholds for each service
+- Per-request parameters override environment defaults
+- Precedence: Request parameter > Environment variable > Hard-coded default
+
+| Service | Request Parameter | Environment Variable | Default | Range | Notes |
+|---------|------------------|---------------------|---------|-------|-------|
+| Faces | `face_min_confidence` | `FACES_MIN_CONFIDENCE` | 0.9 | 0.0-1.0 | Lower for challenging lighting (0.7-0.8) |
+| Scenes | `scene_threshold` | `SCENES_THRESHOLD` | 27.0 | 0.0-100.0 | PySceneDetect ContentDetector scale |
+| Semantics | `semantics_min_confidence` | `SEMANTICS_MIN_CONFIDENCE` | 0.5 | 0.0-1.0 | CLIP classification (Phase 2) |
+| Objects | `objects_min_confidence` | `OBJECTS_MIN_CONFIDENCE` | 0.5 | 0.0-1.0 | YOLO detection (Phase 3) |
+
+Example: Set `FACES_MIN_CONFIDENCE=0.7` in `.env` for lower quality videos, or override per-request with `face_min_confidence` parameter.
+
 ### Caching Strategy
 
 **Content-Based Keys:**

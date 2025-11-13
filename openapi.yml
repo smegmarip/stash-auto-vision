@@ -490,44 +490,74 @@ components:
         job_id:
           type: string
           description: Job ID for tracking
+        enable_scenes:
+          type: boolean
+          default: true
+          description: Enable scene detection
+        enable_faces:
+          type: boolean
+          default: true
+          description: Enable face recognition
+        enable_semantics:
+          type: boolean
+          default: false
+          description: Enable CLIP semantic analysis (Phase 2 - not implemented)
+        enable_objects:
+          type: boolean
+          default: false
+          description: Enable YOLO object detection (Phase 3 - not implemented)
         processing_mode:
           type: string
           enum: [sequential, parallel]
           default: sequential
           description: Processing mode (sequential recommended to avoid GPU memory contention)
-        modules:
+        parameters:
           type: object
+          description: Service-specific parameters with service-prefixed names to avoid collisions
           properties:
-            faces:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                parameters:
-                  $ref: '#/components/schemas/FacesParameters'
-            scenes:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                parameters:
-                  $ref: '#/components/schemas/ScenesParameters'
-            semantics:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                description: Phase 2 - not yet implemented
-            objects:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                description: Phase 3 - not yet implemented
+            scene_threshold:
+              type: number
+              default: 27.0
+              minimum: 0.0
+              maximum: 100.0
+              description: Scene detection threshold (env SCENES_THRESHOLD)
+            scene_detection_method:
+              type: string
+              enum: [content, threshold, adaptive]
+              default: content
+            min_scene_length:
+              type: number
+              default: 0.6
+              minimum: 0.1
+            face_min_confidence:
+              type: number
+              default: 0.9
+              minimum: 0.0
+              maximum: 1.0
+              description: Face detection confidence threshold (env FACES_MIN_CONFIDENCE)
+            max_faces:
+              type: integer
+              default: 50
+            face_sampling_interval:
+              type: number
+              default: 2.0
+            enable_deduplication:
+              type: boolean
+              default: true
+            similarity_threshold:
+              type: number
+              default: 0.6
+            detect_demographics:
+              type: boolean
+              default: true
+            semantics_min_confidence:
+              type: number
+              default: 0.5
+              description: CLIP confidence threshold (env SEMANTICS_MIN_CONFIDENCE)
+            objects_min_confidence:
+              type: number
+              default: 0.5
+              description: YOLO confidence threshold (env OBJECTS_MIN_CONFIDENCE)
 
     AnalyzeJobResponse:
       type: object
@@ -800,7 +830,7 @@ components:
           type: string
           enum: [content, threshold, adaptive]
           default: content
-        threshold:
+        scene_threshold:
           type: number
           default: 27.0
           minimum: 0.0
@@ -824,7 +854,7 @@ components:
           type: string
           enum: [content, threshold, adaptive]
           default: content
-        threshold:
+        scene_threshold:
           type: number
           default: 27.0
           minimum: 0.0
@@ -957,11 +987,12 @@ components:
     FacesParameters:
       type: object
       properties:
-        min_confidence:
+        face_min_confidence:
           type: number
           default: 0.9
           minimum: 0
           maximum: 1
+          description: Minimum detection confidence threshold
         max_faces:
           type: integer
           default: 50
