@@ -51,3 +51,4 @@ redis_data/
 .claude
 tests/data/*
 !tests/data/DATASETS.md
+.history
