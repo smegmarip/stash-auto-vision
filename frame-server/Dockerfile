@@ -1,6 +1,6 @@
 FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 
-# Install system dependencies including cron for cleanup
+# Install system dependencies including cron for cleanup and PyAV build deps
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
@@ -9,6 +9,15 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
     cron \
+    build-essential \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libavfilter-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

@@ -1,12 +1,21 @@
 FROM python:3.10-slim
 
-# Install system dependencies including cron for cleanup
+# Install system dependencies including cron for cleanup and PyAV build deps
 RUN apt-get update && apt-get install -y \
     curl \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
     cron \
+    build-essential \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libavfilter-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
