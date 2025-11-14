@@ -422,59 +422,41 @@ components:
 
 ### Frame Extraction Methods
 
-#### 1. opencv_cuda (Production - GPU)
+**Per-Frame Fallback:** By default, the frame server uses automatic fallback. If one method fails for a specific frame, it tries the next method in the chain.
 
-Uses OpenCV with CUDA acceleration for maximum performance.
+**Fallback Chain:** `opencv_cuda/opencv_cpu` → `pyav_hw` → `pyav_sw` → `ffmpeg`
 
-**Performance:** 200-400 FPS
-**Memory:** ~2GB VRAM
-**Use Case:** Production GPU mode
+Configure with `ENABLE_FALLBACK=true` (default).
 
-```python
-import cv2
+#### 1. opencv_cuda / opencv_cpu
 
-cv2.ocl.setUseOpenCL(True)
-cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
-cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
-cap.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
-ret, frame = cap.read()
-```
+OpenCV with optional CUDA acceleration.
 
-#### 2. opencv_cpu (Development)
+**Performance:** GPU: 200-400 FPS, CPU: 30-60 FPS
+**Use Case:** Primary extraction method, fast but may fail on corrupted videos
 
-CPU-only OpenCV for development and testing.
+#### 2. pyav_hw (PyAV Hardware)
 
-**Performance:** 30-60 FPS
-**Memory:** ~500MB RAM
-**Use Case:** Mac development, CPU-only systems
+FFmpeg via PyAV with hardware acceleration.
 
-```python
-cap = cv2.VideoCapture(video_path)
-cap.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
-ret, frame = cap.read()
-```
+**Performance:** ~100-200 FPS
+**Use Case:** Automatic fallback, robust for damaged videos
 
-#### 3. ffmpeg (Fallback)
+#### 3. pyav_sw (PyAV Software)
 
-External FFmpeg process for maximum compatibility.
+FFmpeg via PyAV with software decoding.
+
+**Performance:** ~30-60 FPS
+**Use Case:** Maximum compatibility for problematic encodes
+
+#### 4. ffmpeg (CLI)
+
+External FFmpeg subprocess.
 
 **Performance:** 10-30 FPS
-**Memory:** ~100MB RAM per process
-**Use Case:** Fallback when OpenCV fails
+**Use Case:** Last-resort fallback
 
-```python
-ffmpeg_cmd = [
-    "ffmpeg",
-    "-ss", str(timestamp),
-    "-i", video_path,
-    "-vframes", "1",
-    "-q:v", "2",
-    output_path
-]
-subprocess.run(ffmpeg_cmd)
-```
-
-#### 4. sprites (Sprite Sheets)
+#### 5. sprites (Sprite Sheets)
 
 Parses WebVTT + JPEG grid for ultra-fast access.
 
@@ -602,8 +584,9 @@ Environment variables:
 
 ```bash
 # Frame extraction
-EXTRACTION_METHOD=opencv_cuda    # opencv_cuda, opencv_cpu, ffmpeg
+EXTRACTION_METHOD=opencv_cuda    # opencv_cuda, opencv_cpu, pyav_hw, pyav_sw, ffmpeg
 OPENCV_DEVICE=cuda               # cuda or cpu
+ENABLE_FALLBACK=true             # Per-frame fallback chain (default: true)
 
 # Storage
 FRAME_DIR=/tmp/frames
@@ -621,10 +604,12 @@ LOG_LEVEL=INFO
 
 | Method | GPU Mode | CPU Mode | Use Case |
 |--------|----------|----------|----------|
-| opencv_cuda | 200-400 FPS | N/A | Production |
-| opencv_cpu | N/A | 30-60 FPS | Development |
-| ffmpeg | 50-100 FPS | 15-20 FPS | Fallback |
-| sprites | 100+ FPS | 100+ FPS | Ultra-fast |
+| opencv_cuda | 200-400 FPS | N/A | Primary (fast, fragile) |
+| opencv_cpu | N/A | 30-60 FPS | Primary (fast, fragile) |
+| pyav_hw | 100-200 FPS | 50-100 FPS | Fallback (robust + fast) |
+| pyav_sw | 30-60 FPS | 30-60 FPS | Fallback (robust) |
+| ffmpeg | 50-100 FPS | 15-20 FPS | Last resort |
+| sprites | 100+ FPS | 100+ FPS | Ultra-fast (pre-extracted) |
 
 **Disk Usage Example (10-min video @ 2fps):**
 - Frames: 1200 × 100KB = ~120MB
@@ -634,5 +619,5 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-09
-**Status:** Implemented and Tested
+**Last Updated:** 2025-11-14
+**Status:** Implemented and Tested (with PyAV fallback)

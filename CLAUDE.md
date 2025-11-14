@@ -75,8 +75,10 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Health check aggregation across all services
 
 **frame-server (Internal Service)**
-- GPU-accelerated frame extraction (OpenCV CUDA)
-- FFmpeg fallback for compatibility
+- Multi-method frame extraction with per-frame fallback
+- Primary: OpenCV CUDA/CPU (fastest)
+- Fallback: PyAV hw/sw (robust FFmpeg bindings)
+- Last resort: FFmpeg CLI
 - WebVTT sprite sheet parsing
 - On-demand frame serving with polling support
 - Frame storage with TTL-based cleanup (cron job every hour)
@@ -126,6 +128,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - **Docker Compose** - 8-service orchestration
 - **NVIDIA CUDA** - GPU acceleration (12.3.2)
 - **OpenCV** - CUDA-accelerated video processing
+- **PyAV** - FFmpeg Python bindings for robust frame extraction
 
 ### Deployment
 - **GPU Mode:** NVIDIA runtime, buffalo_l model, CUDA providers
