@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OPENCV_DEVICE = os.getenv("OPENCV_DEVICE", "cuda")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
+ENABLE_FALLBACK = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
 
 # Global instances
 cache_manager: Optional[CacheManager] = None
@@ -64,8 +65,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize frame extractor
     extraction_method = "opencv_cuda" if OPENCV_DEVICE == "cuda" else "opencv_cpu"
-    frame_extractor = FrameExtractor(extraction_method=extraction_method)
-    logger.info(f"Frame extractor initialized (method: {extraction_method})")
+    frame_extractor = FrameExtractor(
+        extraction_method=extraction_method,
+        enable_fallback=ENABLE_FALLBACK
+    )
+    logger.info(f"Frame extractor initialized (method: {extraction_method}, fallback: {ENABLE_FALLBACK})")
 
     # Initialize sprite parser
     sprite_parser = SpriteParser()
@@ -613,15 +617,23 @@ async def health_check():
         # Check GPU availability
         gpu_available = OPENCV_DEVICE == "cuda"
 
+        # Check PyAV availability
+        from .frame_extractor import PYAV_AVAILABLE
+
+        methods = [
+            "opencv_cuda" if gpu_available else "opencv_cpu",
+            "ffmpeg",
+            "sprites"
+        ]
+        if PYAV_AVAILABLE:
+            methods.insert(1, "pyav_hw")
+            methods.insert(2, "pyav_sw")
+
         return HealthResponse(
             status="healthy",
             service="frame-server",
             version="1.0.0",
-            extraction_methods=[
-                "opencv_cuda" if gpu_available else "opencv_cpu",
-                "ffmpeg",
-                "sprites"
-            ],
+            extraction_methods=methods,
             gpu_available=gpu_available,
             active_jobs=active_jobs,
             cache_size_mb=cache_size_mb
