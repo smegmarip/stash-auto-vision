@@ -44,6 +44,27 @@ class SamplingStrategy(BaseModel):
     timestamps: Optional[List[float]] = None
 
 
+class EnhancementModel(str, Enum):
+    """Face enhancement models"""
+    GFPGAN = "gfpgan"
+    CODEFORMER = "codeformer"  # Future implementation
+
+
+class EnhancementOptions(BaseModel):
+    """Face enhancement configuration"""
+    enabled: bool = Field(default=False, description="Enable face enhancement")
+    model: EnhancementModel = Field(default=EnhancementModel.GFPGAN, description="Enhancement model to use")
+    fidelity_weight: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Balance between quality and fidelity (0=preserve original, 1=max enhancement)"
+    )
+    upscale: int = Field(default=2, ge=1, le=4, description="Upscaling factor")
+    only_center_face: bool = Field(default=False, description="Only enhance the most centered face")
+    paste_back: bool = Field(default=True, description="Paste enhanced faces back to original image")
+
+
 class ExtractFramesRequest(BaseModel):
     """Request to extract frames from video"""
     video_path: str = Field(..., description="Absolute path to video file")
@@ -59,6 +80,7 @@ class ExtractFramesRequest(BaseModel):
     )
     output_format: OutputFormat = OutputFormat.JPEG
     quality: int = Field(default=95, ge=1, le=100, description="JPEG quality")
+    enhancement: EnhancementOptions = Field(default_factory=EnhancementOptions, description="Face enhancement options")
     cache_duration: int = Field(default=3600, ge=0, description="Cache TTL in seconds")
 
 
@@ -103,6 +125,9 @@ class VideoMetadata(BaseModel):
     video_duration_seconds: float
     video_fps: float
     processing_time_seconds: float
+    enhancement_enabled: bool = False
+    enhancement_model: Optional[str] = None
+    faces_enhanced: Optional[int] = None
 
 
 class ExtractJobResults(BaseModel):

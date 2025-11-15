@@ -26,16 +26,23 @@ logger = logging.getLogger(__name__)
 class FrameExtractor:
     """Extract frames from video files"""
 
-    def __init__(self, extraction_method: str = "opencv_cuda", enable_fallback: bool = True):
+    def __init__(
+        self,
+        extraction_method: str = "opencv_cuda",
+        enable_fallback: bool = True,
+        face_enhancer=None
+    ):
         """
         Initialize frame extractor
 
         Args:
             extraction_method: opencv_cuda, opencv_cpu, pyav_hw, pyav_sw, or ffmpeg
             enable_fallback: Enable automatic fallback to other methods on failure
+            face_enhancer: Optional FaceEnhancer instance for enhancement
         """
         self.extraction_method = extraction_method
         self.enable_fallback = enable_fallback
+        self.face_enhancer = face_enhancer
         self.temp_dir = Path("/tmp/frames")
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -409,8 +416,9 @@ class FrameExtractor:
         job_id: str,
         idx: int,
         output_format: str = "jpeg",
-        quality: int = 95
-    ) -> Optional[Tuple[int, float, str, int, int]]:
+        quality: int = 95,
+        enhancement_options: Optional[dict] = None
+    ) -> Optional[Tuple[int, float, str, int, int, int]]:
         """
         Extract a single frame with automatic fallback across methods
 
@@ -421,15 +429,18 @@ class FrameExtractor:
             idx: Frame index
             output_format: jpeg or png
             quality: Image quality (1-100)
+            enhancement_options: Optional dict with enhancement settings
 
         Returns:
-            Tuple of (index, timestamp, file_path, width, height) or None
+            Tuple of (index, timestamp, file_path, width, height, faces_enhanced) or None
         """
         job_dir = self.temp_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
         ext = "jpg" if output_format == "jpeg" else "png"
         frame_path = job_dir / f"frame_{idx:06d}.{ext}"
+
+        faces_enhanced = 0
 
         for method in self.fallback_methods:
             frame = None
@@ -446,14 +457,31 @@ class FrameExtractor:
 
                 elif method == "ffmpeg":
                     if self.extract_frame_ffmpeg_single(video_path, timestamp, str(frame_path)):
-                        # FFmpeg already saved the file, just get dimensions
-                        img = cv2.imread(str(frame_path))
-                        if img is not None:
-                            height, width = img.shape[:2]
-                            return (idx, timestamp, str(frame_path), width, height)
+                        # FFmpeg already saved the file, load it for potential enhancement
+                        frame = cv2.imread(str(frame_path))
+                        if frame is None:
+                            continue
 
-                # If we got a frame from OpenCV/PyAV, save it
+                # If we got a frame, apply enhancement if requested
                 if frame is not None:
+                    # Apply face enhancement if enabled
+                    if enhancement_options and enhancement_options.get("enabled", False):
+                        if self.face_enhancer and self.face_enhancer.is_available():
+                            try:
+                                frame, faces_enhanced = self.face_enhancer.enhance_frame(
+                                    frame,
+                                    fidelity_weight=enhancement_options.get("fidelity_weight", 0.7),
+                                    upscale=enhancement_options.get("upscale", 2),
+                                    only_center_face=enhancement_options.get("only_center_face", False),
+                                    paste_back=enhancement_options.get("paste_back", True)
+                                )
+                                if faces_enhanced > 0:
+                                    logger.debug(f"Enhanced {faces_enhanced} face(s) in frame {idx}")
+                            except Exception as e:
+                                logger.warning(f"Face enhancement failed for frame {idx}: {e}")
+                                faces_enhanced = 0
+
+                    # Save the frame (enhanced or not)
                     if output_format == "jpeg":
                         cv2.imwrite(
                             str(frame_path),
@@ -465,7 +493,7 @@ class FrameExtractor:
 
                     height, width = frame.shape[:2]
                     logger.debug(f"Frame {idx} extracted successfully with {method}")
-                    return (idx, timestamp, str(frame_path), width, height)
+                    return (idx, timestamp, str(frame_path), width, height, faces_enhanced)
 
             except Exception as e:
                 logger.debug(f"Method {method} failed for frame {idx}: {e}")
@@ -522,8 +550,9 @@ class FrameExtractor:
         sampling_interval: float = 2.0,
         scene_boundaries: Optional[List[dict]] = None,
         output_format: str = "jpeg",
-        quality: int = 95
-    ) -> List[Tuple[int, float, str, int, int]]:
+        quality: int = 95,
+        enhancement_options: Optional[dict] = None
+    ) -> List[Tuple[int, float, str, int, int, int]]:
         """
         Extract frames from video with automatic fallback
 
@@ -534,9 +563,10 @@ class FrameExtractor:
             scene_boundaries: Optional scene boundaries for adaptive sampling
             output_format: jpeg or png
             quality: Image quality (1-100)
+            enhancement_options: Optional dict with enhancement settings
 
         Returns:
-            List of (index, timestamp, file_path, width, height)
+            List of (index, timestamp, file_path, width, height, faces_enhanced)
         """
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
@@ -549,34 +579,44 @@ class FrameExtractor:
 
         # Extract frames with per-frame fallback if enabled
         if self.enable_fallback:
-            logger.info(f"Extracting {len(timestamps)} frames with fallback enabled")
+            enhance_msg = " with face enhancement" if enhancement_options and enhancement_options.get("enabled") else ""
+            logger.info(f"Extracting {len(timestamps)} frames with fallback enabled{enhance_msg}")
             frames = []
+            total_faces_enhanced = 0
 
             for idx, timestamp in enumerate(timestamps):
                 frame_result = self.extract_single_frame_with_fallback(
-                    video_path, timestamp, job_id, idx, output_format, quality
+                    video_path, timestamp, job_id, idx, output_format, quality, enhancement_options
                 )
 
                 if frame_result is not None:
                     frames.append(frame_result)
+                    # Accumulate face enhancement count
+                    if len(frame_result) > 5:  # New format includes faces_enhanced
+                        total_faces_enhanced += frame_result[5]
 
                 if (idx + 1) % 100 == 0:
                     logger.info(f"Extracted {len(frames)}/{idx + 1} frames ({len(frames) / (idx + 1) * 100:.1f}% success)")
 
-            logger.info(f"Extraction complete: {len(frames)}/{len(timestamps)} frames ({len(frames) / len(timestamps) * 100:.1f}% success)")
+            if enhancement_options and enhancement_options.get("enabled"):
+                logger.info(f"Extraction complete: {len(frames)}/{len(timestamps)} frames ({len(frames) / len(timestamps) * 100:.1f}% success), {total_faces_enhanced} total faces enhanced")
+            else:
+                logger.info(f"Extraction complete: {len(frames)}/{len(timestamps)} frames ({len(frames) / len(timestamps) * 100:.1f}% success)")
             return frames
 
-        # Legacy single-method extraction
+        # Legacy single-method extraction (without enhancement)
         else:
             logger.info(f"Extracting {len(timestamps)} frames with {self.extraction_method} (no fallback)")
             if self.extraction_method.startswith("opencv"):
-                return self.extract_frames_opencv(
+                results = self.extract_frames_opencv(
                     video_path, job_id, timestamps, output_format, quality
                 )
             else:
-                return self.extract_frames_ffmpeg(
+                results = self.extract_frames_ffmpeg(
                     video_path, job_id, timestamps, output_format, quality
                 )
+            # Convert to new format (add faces_enhanced=0)
+            return [(r[0], r[1], r[2], r[3], r[4], 0) for r in results]
 
     def cleanup_job(self, job_id: str):
         """

@@ -41,11 +41,14 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OPENCV_DEVICE = os.getenv("OPENCV_DEVICE", "cuda")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
 ENABLE_FALLBACK = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
+ENABLE_ENHANCEMENT = os.getenv("ENABLE_ENHANCEMENT", "false").lower() == "true"
+ENHANCEMENT_MODEL = os.getenv("ENHANCEMENT_MODEL", "gfpgan")
 
 # Global instances
 cache_manager: Optional[CacheManager] = None
 frame_extractor: Optional[FrameExtractor] = None
 sprite_parser: Optional[SpriteParser] = None
+face_enhancer: Optional['FaceEnhancer'] = None
 
 
 @asynccontextmanager
@@ -54,7 +57,7 @@ async def lifespan(app: FastAPI):
     Application lifespan manager
     Initialize services on startup, cleanup on shutdown
     """
-    global cache_manager, frame_extractor, sprite_parser
+    global cache_manager, frame_extractor, sprite_parser, face_enhancer
 
     logger.info("Starting Frame Server...")
 
@@ -63,11 +66,32 @@ async def lifespan(app: FastAPI):
     await cache_manager.connect()
     logger.info("Cache manager initialized")
 
+    # Initialize face enhancer (optional)
+    if ENABLE_ENHANCEMENT:
+        try:
+            from .face_enhancer import FaceEnhancer
+            device = OPENCV_DEVICE  # Use same device as OpenCV
+            face_enhancer = FaceEnhancer(
+                model_name=ENHANCEMENT_MODEL,
+                device=device
+            )
+            if face_enhancer.is_available():
+                logger.info(f"Face enhancer initialized (model: {ENHANCEMENT_MODEL}, device: {device})")
+            else:
+                logger.warning("Face enhancer initialization failed - enhancement disabled")
+                face_enhancer = None
+        except Exception as e:
+            logger.error(f"Failed to initialize face enhancer: {e}")
+            face_enhancer = None
+    else:
+        logger.info("Face enhancement disabled")
+
     # Initialize frame extractor
     extraction_method = "opencv_cuda" if OPENCV_DEVICE == "cuda" else "opencv_cpu"
     frame_extractor = FrameExtractor(
         extraction_method=extraction_method,
-        enable_fallback=ENABLE_FALLBACK
+        enable_fallback=ENABLE_FALLBACK,
+        face_enhancer=face_enhancer
     )
     logger.info(f"Frame extractor initialized (method: {extraction_method}, fallback: {ENABLE_FALLBACK})")
 
@@ -79,6 +103,8 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Shutting down Frame Server...")
+    if face_enhancer:
+        face_enhancer.cleanup()
     if cache_manager:
         await cache_manager.disconnect()
     logger.info("Frame Server stopped")
@@ -155,13 +181,15 @@ async def process_extraction_job(
             )
 
             # Extract frames
+            enhancement_opts = request.enhancement.dict() if request.enhancement.enabled else None
             frames_data = frame_extractor.extract(
                 video_path=request.video_path,
                 job_id=job_id,
                 sampling_interval=request.sampling_strategy.interval_seconds or 2.0,
                 scene_boundaries=request.scene_boundaries,
                 output_format=request.output_format.value,
-                quality=request.quality
+                quality=request.quality,
+                enhancement_options=enhancement_opts
             )
 
             extraction_method = request.extraction_method.value
@@ -172,16 +200,23 @@ async def process_extraction_job(
         processing_time = time.time() - start_time
 
         # Convert frame data to FrameMetadata objects
-        frames = [
-            FrameMetadata(
+        # Handle both old format (5 elements) and new format (6 elements with faces_enhanced)
+        total_faces_enhanced = 0
+        frames = []
+        for frame_tuple in frames_data:
+            if len(frame_tuple) == 6:
+                idx, timestamp, file_path, width, height, faces_enhanced = frame_tuple
+                total_faces_enhanced += faces_enhanced
+            else:
+                idx, timestamp, file_path, width, height = frame_tuple
+
+            frames.append(FrameMetadata(
                 index=idx,
                 timestamp=timestamp,
                 url=f"file://{file_path}",  # Local file URL
                 width=width,
                 height=height
-            )
-            for idx, timestamp, file_path, width, height in frames_data
-        ]
+            ))
 
         # Create metadata
         metadata = VideoMetadata(
@@ -190,7 +225,10 @@ async def process_extraction_job(
             total_frames=total_frames,
             video_duration_seconds=duration,
             video_fps=fps,
-            processing_time_seconds=processing_time
+            processing_time_seconds=processing_time,
+            enhancement_enabled=request.enhancement.enabled,
+            enhancement_model=request.enhancement.model.value if request.enhancement.enabled else None,
+            faces_enhanced=total_faces_enhanced if request.enhancement.enabled else None
         )
 
         # Create results
@@ -417,7 +455,9 @@ async def extract_single_frame(
     video_path: str,
     timestamp: float,
     output_format: str = "jpeg",
-    quality: int = 95
+    quality: int = 95,
+    enhance: int = 0,
+    fidelity_weight: float = 0.7
 ):
     """
     Extract a single frame from video at specific timestamp
@@ -433,6 +473,8 @@ async def extract_single_frame(
         timestamp: Timestamp in seconds
         output_format: jpeg or png
         quality: JPEG quality (1-100)
+        enhance: Enable face enhancement (0 = disabled, 1 = enabled)
+        fidelity_weight: Enhancement fidelity (0.0-1.0, lower = preserve original)
 
     Returns:
         FileResponse with extracted frame
@@ -447,6 +489,17 @@ async def extract_single_frame(
                 detail=f"Video not found: {video_path}"
             )
 
+        # Build enhancement options
+        enhancement_opts = None
+        if enhance == 1:
+            enhancement_opts = {
+                "enabled": True,
+                "fidelity_weight": max(0.0, min(1.0, fidelity_weight)),
+                "upscale": 2,
+                "only_center_face": False,
+                "paste_back": True
+            }
+
         # Use fallback extraction (robust)
         job_id = f"single_{uuid.uuid4().hex[:8]}"
         result = frame_extractor.extract_single_frame_with_fallback(
@@ -455,7 +508,8 @@ async def extract_single_frame(
             job_id=job_id,
             idx=0,
             output_format=output_format,
-            quality=quality
+            quality=quality,
+            enhancement_options=enhancement_opts
         )
 
         if result is None:
@@ -464,7 +518,12 @@ async def extract_single_frame(
                 detail=f"Failed to extract frame at timestamp {timestamp}s (all methods failed)"
             )
 
-        idx, ts, frame_path, width, height = result
+        # Handle both old format (5 elements) and new format (6 elements)
+        if len(result) == 6:
+            idx, ts, frame_path, width, height, faces_enhanced = result
+        else:
+            idx, ts, frame_path, width, height = result
+            faces_enhanced = 0
 
         # Get FPS for frame number calculation
         try:
@@ -473,15 +532,20 @@ async def extract_single_frame(
         except Exception:
             frame_number = 0
 
+        # Build response headers
+        headers = {
+            "X-Timestamp": str(timestamp),
+            "X-Frame-Number": str(frame_number),
+            "X-Resolution": f"{width}x{height}"
+        }
+        if enhance == 1:
+            headers["X-Faces-Enhanced"] = str(faces_enhanced)
+
         # Return frame and schedule cleanup
         return FileResponse(
             frame_path,
             media_type=f"image/{output_format}",
-            headers={
-                "X-Timestamp": str(timestamp),
-                "X-Frame-Number": str(frame_number),
-                "X-Resolution": f"{width}x{height}"
-            },
+            headers=headers,
             background=None  # File will be cleaned by cron
         )
 
