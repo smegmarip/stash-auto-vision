@@ -425,6 +425,9 @@ async def extract_single_frame(
     Lightweight endpoint for one-off frame extraction without job tracking.
     Useful for thumbnails, previews, and poster frames.
 
+    Uses automatic fallback across extraction methods (OpenCV → PyAV → FFmpeg)
+    for robust handling of corrupted or poorly-encoded videos.
+
     Args:
         video_path: Absolute path to video file
         timestamp: Timestamp in seconds
@@ -436,9 +439,6 @@ async def extract_single_frame(
     """
     try:
         from fastapi.responses import FileResponse
-        import tempfile
-        import cv2
-        from pathlib import Path
 
         # Validate video exists
         if not os.path.exists(video_path):
@@ -447,55 +447,40 @@ async def extract_single_frame(
                 detail=f"Video not found: {video_path}"
             )
 
-        # Open video
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot open video: {video_path}"
-            )
-
-        # Get FPS and seek to timestamp
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_number = int(timestamp * fps)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-
-        # Read frame
-        ret, frame = cap.read()
-        cap.release()
-
-        if not ret:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to read frame at timestamp {timestamp}s"
-            )
-
-        # Save to temporary file
-        ext = "jpg" if output_format == "jpeg" else "png"
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=f".{ext}",
-            dir="/tmp/frames"
+        # Use fallback extraction (robust)
+        job_id = f"single_{uuid.uuid4().hex[:8]}"
+        result = frame_extractor.extract_single_frame_with_fallback(
+            video_path=video_path,
+            timestamp=timestamp,
+            job_id=job_id,
+            idx=0,
+            output_format=output_format,
+            quality=quality
         )
-        temp_path = temp_file.name
-        temp_file.close()
 
-        if output_format == "jpeg":
-            cv2.imwrite(
-                temp_path,
-                frame,
-                [cv2.IMWRITE_JPEG_QUALITY, quality]
+        if result is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to extract frame at timestamp {timestamp}s (all methods failed)"
             )
-        else:
-            cv2.imwrite(temp_path, frame)
+
+        idx, ts, frame_path, width, height = result
+
+        # Get FPS for frame number calculation
+        try:
+            duration, fps, total_frames = frame_extractor.get_video_info(video_path)
+            frame_number = int(timestamp * fps)
+        except Exception:
+            frame_number = 0
 
         # Return frame and schedule cleanup
         return FileResponse(
-            temp_path,
+            frame_path,
             media_type=f"image/{output_format}",
             headers={
                 "X-Timestamp": str(timestamp),
-                "X-Frame-Number": str(frame_number)
+                "X-Frame-Number": str(frame_number),
+                "X-Resolution": f"{width}x{height}"
             },
             background=None  # File will be cleaned by cron
         )
