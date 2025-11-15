@@ -10,8 +10,9 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ### Phase 1 (Current)
 - ✅ **Face Recognition** - InsightFace (99.86% accuracy, 512-D embeddings)
+- ✅ **Face Enhancement** - GFPGAN v1.4 (optional, CodeFormer planned)
 - ✅ **Scene Detection** - GPU-accelerated PySceneDetect (300-800 FPS)
-- ✅ **Frame Server** - Efficient frame extraction and caching
+- ✅ **Frame Server** - Multi-method extraction with PyAV fallback
 - ✅ **Smart Caching** - Content-based Redis caching with automatic invalidation
 
 ### Phase 2+ (Planned)
@@ -167,12 +168,12 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 ## Documentation
 
+- **[How to Use](docs/HOW_TO_USE.md)** - Quick start, API examples, troubleshooting
 - **[Project Specification](CLAUDE.md)** - Architecture, status, development notes
 - **[OpenAPI Specification](openapi.yml)** - Complete API schemas for all services
 - **[Frame Server](docs/FRAME_SERVER.md)** - Frame extraction, sprite parsing, on-demand serving
 - **[Scenes Service](docs/SCENES_SERVICE.md)** - PySceneDetect algorithms, boundary detection
-- **[Testing Guide](docs/TESTING.md)** - Comprehensive test scenarios and results
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Setup instructions and troubleshooting
+- **[Testing Guide](docs/TESTING.md)** - Test scenarios and results
 
 ---
 

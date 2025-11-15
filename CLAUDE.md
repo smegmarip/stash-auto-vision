@@ -22,8 +22,9 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 **Phase 1 (Implemented):**
 - Video face detection and recognition (InsightFace buffalo_l, 99.86% accuracy)
+- Optional face enhancement (GFPGAN v1.4, CodeFormer planned)
 - Scene boundary detection (GPU-accelerated PySceneDetect)
-- Frame extraction with multiple methods (OpenCV CUDA, FFmpeg, sprite sheets)
+- Frame extraction with multiple methods (OpenCV CUDA, PyAV, FFmpeg fallback)
 - 512-D ArcFace embeddings with quality scoring
 - Face clustering via embedding similarity (cosine distance)
 - Content-based caching with SHA-256 keys
@@ -188,6 +189,9 @@ See [Future Work](#future-work) section below.
 - **[Faces Service](docs/FACES_SERVICE.md)** - InsightFace integration, clustering, embeddings
 - **[Semantics Service](docs/SEMANTICS_SERVICE.md)** - CLIP integration [Phase 2]
 - **[Objects Service](docs/OBJECTS_SERVICE.md)** - YOLO-World integration [Phase 3]
+
+### User Guides
+- **[How to Use](docs/HOW_TO_USE.md)** - Quick start, API examples, troubleshooting
 
 ### Infrastructure Documentation
 - **[Docker Architecture](docs/DOCKER_ARCHITECTURE.md)** - Service topology, health checks, dependencies
