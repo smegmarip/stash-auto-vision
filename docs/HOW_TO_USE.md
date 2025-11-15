@@ -78,6 +78,7 @@ curl "http://localhost:5001/extract-frame?video_path=/media/videos/scene.mp4&tim
 ```
 
 **Fidelity weight:** 0.0 (preserve original) to 1.0 (max enhancement). Default: 0.7
+**Note:** First run downloads models (~500MB). Enhancement upscales 2x, some detail loss possible.
 
 ## Scene Detection
 
@@ -159,8 +160,10 @@ VISION_API_PORT=5010
 # Check if enabled
 docker compose logs frame-server | grep -i enhancement
 
-# First run downloads models (~500MB)
-docker compose logs frame-server | grep -i download
+# First run downloads models (~500MB, ~40s on startup)
+docker compose logs frame-server | grep -i "Downloading\|GFPGAN initialized"
+
+# Service will fail to start if ENABLE_ENHANCEMENT=true but init fails
 ```
 
 ## API Documentation

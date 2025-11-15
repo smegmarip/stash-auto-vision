@@ -78,11 +78,11 @@ async def lifespan(app: FastAPI):
             if face_enhancer.is_available():
                 logger.info(f"Face enhancer initialized (model: {ENHANCEMENT_MODEL}, device: {device})")
             else:
-                logger.warning("Face enhancer initialization failed - enhancement disabled")
-                face_enhancer = None
+                logger.error("Face enhancer initialization failed but ENABLE_ENHANCEMENT=true")
+                raise RuntimeError("Face enhancement enabled but failed to initialize")
         except Exception as e:
             logger.error(f"Failed to initialize face enhancer: {e}")
-            face_enhancer = None
+            raise  # Fail startup if enhancement required but unavailable
     else:
         logger.info("Face enhancement disabled")
 
