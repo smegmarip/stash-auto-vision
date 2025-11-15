@@ -69,6 +69,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
       - FRAME_TTL_HOURS=${FRAME_TTL_HOURS:-2}
+      - ENABLE_FALLBACK=${ENABLE_FALLBACK:-true}
+      - ENABLE_ENHANCEMENT=${ENABLE_ENHANCEMENT:-false}
+      - ENHANCEMENT_MODEL=${ENHANCEMENT_MODEL:-gfpgan}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
