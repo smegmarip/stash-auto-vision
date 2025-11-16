@@ -400,7 +400,8 @@ async def process_analysis_job(
             total_detections=len(all_detections),
             processing_time_seconds=processing_time,
             method=frame_results["metadata"]["extraction_method"],
-            model=INSIGHTFACE_MODEL
+            model=INSIGHTFACE_MODEL,
+            frame_enhancement=request.parameters.enhancement if request.parameters.enhancement.enabled else None
         )
 
         # Create results

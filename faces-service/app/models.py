@@ -128,6 +128,10 @@ class VideoMetadata(BaseModel):
     processing_time_seconds: float
     method: str
     model: str
+    frame_enhancement: Optional[EnhancementParameters] = Field(
+        default=None,
+        description="Frame enhancement settings used (if enhancement was enabled)"
+    )
 
 
 class AnalyzeJobResults(BaseModel):

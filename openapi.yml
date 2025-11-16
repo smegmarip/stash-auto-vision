@@ -1344,3 +1344,8 @@ components:
           type: string
         model:
           type: string
+        frame_enhancement:
+          allOf:
+            - $ref: '#/components/schemas/EnhancementParameters'
+          nullable: true
+          description: Frame enhancement settings used (null if enhancement was disabled)
