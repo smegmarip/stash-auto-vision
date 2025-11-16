@@ -517,7 +517,7 @@ LOG_LEVEL=INFO
 **Example Request:**
 ```json
 {
-  "video_path": "/media/videos/scene.mp4",
+  "source": "/media/videos/scene.mp4",
   "scene_id": "12345",
   "parameters": {
     "min_confidence": 0.9,

@@ -551,7 +551,7 @@ import time
 
 # Submit job
 response = requests.post("http://localhost:5010/vision/analyze", json={
-    "video_path": "/media/videos/scene.mp4",
+    "source": "/media/videos/scene.mp4",
     "scene_id": "12345",
     "enable_scenes": True,
     "enable_faces": True,
@@ -595,7 +595,7 @@ for face in faces:
 
 ```python
 response = requests.post("http://localhost:5010/vision/analyze", json={
-    "video_path": "/media/videos/scene.mp4",
+    "source": "/media/videos/scene.mp4",
     "scene_id": "12345",
     "enable_faces": True,
     "parameters": {

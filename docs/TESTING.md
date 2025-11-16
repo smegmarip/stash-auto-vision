@@ -173,7 +173,7 @@ python generate_compound_videos.py
 curl -X POST http://localhost:5001/extract \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/charades/dataset/001YG.mp4",
+    "source": "/media/videos/charades/dataset/001YG.mp4",
     "extraction_method": "opencv_cpu"
   }'
 ```
@@ -231,7 +231,7 @@ curl http://localhost:5001/health | jq .
 curl -X POST http://localhost:5001/extract \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
+    "source": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
     "extraction_method": "opencv_cpu",
     "sampling_strategy": {
       "mode": "interval",
@@ -279,7 +279,7 @@ file frame_5.jpg
 curl -X POST http://localhost:5001/extract \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
+    "source": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
     "extraction_method": "ffmpeg",
     "sampling_strategy": {
       "mode": "interval",
@@ -320,7 +320,7 @@ curl http://localhost:5002/health | jq .
 curl -X POST http://localhost:5002/detect \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
+    "source": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
     "detection_method": "content",
     "threshold": 27.0,
     "min_scene_length": 0.6
@@ -352,7 +352,7 @@ curl "http://localhost:5002/jobs/$JOB_ID/results" | jq '{
 curl -X POST http://localhost:5002/detect \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/scenes-service/gradual_transitions.mp4",
+    "source": "/media/videos/compound/scenes-service/gradual_transitions.mp4",
     "detection_method": "threshold",
     "threshold": 12.0
   }' | jq .
@@ -391,7 +391,7 @@ curl http://localhost:5003/health | jq .
 RESPONSE=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "test_face_001",
     "parameters": {
       "min_confidence": 0.9,
@@ -487,7 +487,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/multiple_persons.mp4",
+    "source": "/media/videos/compound/faces-service/multiple_persons.mp4",
     "scene_id": "test_face_multi",
     "parameters": {
       "enable_deduplication": true,
@@ -534,7 +534,7 @@ curl http://localhost:5010/health | jq .
 curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/vision-api/complete_analysis.mp4",
+    "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
     "scene_id": "test_vision_001",
     "modules": {
       "scenes": {"enabled": true},
@@ -597,7 +597,7 @@ curl http://localhost:5004/health | jq .
 curl -X POST http://localhost:5004/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/test.mp4",
+    "source": "/media/videos/test.mp4",
     "scene_id": "test"
   }' | jq .
 ```
@@ -619,7 +619,7 @@ curl http://localhost:5005/health | jq .
 curl -X POST http://localhost:5005/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/test.mp4",
+    "source": "/media/videos/test.mp4",
     "scene_id": "test"
   }' | jq .
 ```
@@ -649,7 +649,7 @@ LOGS_PID=$!
 curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "integration_test_001"
   }' | jq .
 
@@ -666,7 +666,7 @@ kill $LOGS_PID
 JOB_ID=$(curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/vision-api/complete_analysis.mp4",
+    "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
     "scene_id": "boundary_test_001",
     "modules": {
       "scenes": {"enabled": true},
@@ -711,7 +711,7 @@ docker-compose logs faces-service | grep "scene_boundaries"
 JOB1=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
@@ -723,7 +723,7 @@ sleep 30
 JOB2=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
@@ -741,7 +741,7 @@ fi
 JOB3=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "cache_test_001",
     "parameters": {"min_confidence": 0.8}
   }' | jq -r '.job_id')
@@ -762,7 +762,7 @@ touch /Users/x/dev/resources/repo/stash-auto-vision/tests/data/compound/faces-se
 JOB4=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
@@ -831,7 +831,7 @@ START=$(date +%s)
 JOB_ID=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "perf_test_001",
     "parameters": {
       "min_confidence": 0.9,
@@ -885,7 +885,7 @@ START=$(date +%s)
 JOB_ID=$(curl -X POST http://localhost:5002/detect \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
+    "source": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
     "detection_method": "content",
     "threshold": 27.0
   }' | jq -r '.job_id')
@@ -938,7 +938,7 @@ curl http://localhost:5010/health | jq .
 curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "quick_test_001"
   }' | jq .
 

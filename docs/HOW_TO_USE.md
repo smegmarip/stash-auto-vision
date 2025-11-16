@@ -13,7 +13,7 @@ curl http://localhost:5010/health
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene_12345.mp4",
+    "source": "/media/videos/scene_12345.mp4",
     "scene_id": "12345"
   }'
 
@@ -31,7 +31,7 @@ curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene.mp4",
+    "source": "/media/videos/scene.mp4",
     "scene_id": "123"
   }'
 ```
@@ -39,7 +39,7 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
 **With options:**
 ```json
 {
-  "video_path": "/media/videos/scene.mp4",
+  "source": "/media/videos/scene.mp4",
   "scene_id": "123",
   "parameters": {
     "min_confidence": 0.9,
@@ -64,7 +64,7 @@ docker compose restart frame-server
 **Use in requests:**
 ```json
 {
-  "video_path": "/media/videos/scene.mp4",
+  "source": "/media/videos/scene.mp4",
   "enhancement": {
     "enabled": true,
     "fidelity_weight": 0.7
@@ -86,7 +86,7 @@ curl "http://localhost:5001/extract-frame?video_path=/media/videos/scene.mp4&tim
 curl -X POST http://localhost:5010/vision/analyze/scenes \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene.mp4",
+    "source": "/media/videos/scene.mp4",
     "scene_id": "123",
     "parameters": {
       "threshold": 27.0
@@ -100,7 +100,7 @@ curl -X POST http://localhost:5010/vision/analyze/scenes \
 curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene.mp4",
+    "source": "/media/videos/scene.mp4",
     "scene_id": "123",
     "modules": {
       "scenes": {"enabled": true},

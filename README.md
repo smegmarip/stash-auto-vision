@@ -71,7 +71,7 @@ open http://localhost:5010/docs
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "quick_test_001",
     "parameters": {
       "min_confidence": 0.9,
@@ -122,7 +122,7 @@ curl "http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/results" | jq .
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene_12345.mp4",
+    "source": "/media/videos/scene_12345.mp4",
     "scene_id": "12345",
     "parameters": {
       "min_confidence": 0.9,
@@ -156,7 +156,7 @@ curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
 curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/scene_12345.mp4",
+    "source": "/media/videos/scene_12345.mp4",
     "scene_id": "12345",
     "modules": {
       "scenes": {"enabled": true},

@@ -364,7 +364,7 @@ curl http://localhost:5010/health
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
-    "video_path": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
+    "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
     "scene_id": "test_001"
   }'
 ```
