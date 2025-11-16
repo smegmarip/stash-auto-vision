@@ -231,7 +231,7 @@ async def process_video_analysis(
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "scene_id": request.scene_id,
-            "video_path": request.video_path,
+            "video_path": request.source,
             "processing_mode": request.processing_mode
         }
 
@@ -252,16 +252,16 @@ async def process_video_analysis(
         if request.processing_mode == "sequential":
             # Calculate progress weights based on enabled services
             enabled_count = sum([
-                request.enable_scenes,
-                request.enable_faces,
-                request.enable_semantics,
-                request.enable_objects
+                request.modules.scenes.enabled,
+                request.modules.faces.enabled,
+                request.modules.semantics.enabled,
+                request.modules.objects.enabled
             ])
             progress_per_service = 1.0 / enabled_count if enabled_count > 0 else 0.25
             progress = 0.0
 
             # Step 1: Scene detection
-            if request.enable_scenes:
+            if request.modules.scenes.enabled:
                 logger.info("Running scene detection...")
                 await update_metadata(
                     job_id, metadata,
@@ -271,11 +271,11 @@ async def process_video_analysis(
                 )
 
                 scenes_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "job_id": f"scenes-{job_id}",
-                    "detection_method": request.parameters.get("scene_detection_method", "content"),
-                    "scene_threshold": request.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
-                    "min_scene_length": request.parameters.get("min_scene_length", 0.6)
+                    "detection_method": request.modules.scenes.parameters.get("scene_detection_method", "content"),
+                    "scene_threshold": request.modules.scenes.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
+                    "min_scene_length": request.modules.scenes.parameters.get("min_scene_length", 0.6)
                 }
 
                 scenes_result = await call_service(
@@ -297,7 +297,7 @@ async def process_video_analysis(
                 )
 
             # Step 2: Face recognition
-            if request.enable_faces:
+            if request.modules.faces.enabled:
                 logger.info("Running face recognition...")
                 # Don't update progress here - it's already set from previous service
                 await update_metadata(
@@ -318,16 +318,16 @@ async def process_video_analysis(
                     ]
 
                 faces_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "scene_id": request.scene_id,
                     "job_id": f"faces-{job_id}",
                     "parameters": {
-                        "face_min_confidence": request.parameters.get("face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))),
-                        "max_faces": request.parameters.get("max_faces", 50),
-                        "sampling_interval": request.parameters.get("face_sampling_interval", 2.0),
-                        "enable_deduplication": request.parameters.get("enable_deduplication", True),
-                        "embedding_similarity_threshold": request.parameters.get("similarity_threshold", 0.6),
-                        "detect_demographics": request.parameters.get("detect_demographics", True),
+                        "face_min_confidence": request.modules.faces.parameters.get("face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))),
+                        "max_faces": request.modules.faces.parameters.get("max_faces", 50),
+                        "sampling_interval": request.modules.faces.parameters.get("face_sampling_interval", 2.0),
+                        "enable_deduplication": request.modules.faces.parameters.get("enable_deduplication", True),
+                        "embedding_similarity_threshold": request.modules.faces.parameters.get("similarity_threshold", 0.6),
+                        "detect_demographics": request.modules.faces.parameters.get("detect_demographics", True),
                         "scene_boundaries": scene_boundaries
                     }
                 }
@@ -353,7 +353,7 @@ async def process_video_analysis(
                 )
 
             # Step 3: Semantics (stub)
-            if request.enable_semantics:
+            if request.modules.semantics.enabled:
                 logger.info("Running semantics analysis (stubbed)...")
                 await update_metadata(
                     job_id, metadata,
@@ -362,10 +362,10 @@ async def process_video_analysis(
                 )
 
                 semantics_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "scene_id": request.scene_id,
                     "parameters": {
-                        "semantics_min_confidence": request.parameters.get("semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")))
+                        "semantics_min_confidence": request.modules.semantics.parameters.get("semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")))
                     }
                 }
 
@@ -388,7 +388,7 @@ async def process_video_analysis(
                 )
 
             # Step 4: Objects (stub)
-            if request.enable_objects:
+            if request.modules.objects.enabled:
                 logger.info("Running object detection (stubbed)...")
                 await update_metadata(
                     job_id, metadata,
@@ -397,10 +397,10 @@ async def process_video_analysis(
                 )
 
                 objects_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "scene_id": request.scene_id,
                     "parameters": {
-                        "objects_min_confidence": request.parameters.get("objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5")))
+                        "objects_min_confidence": request.modules.objects.parameters.get("objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5")))
                     }
                 }
 
@@ -426,16 +426,16 @@ async def process_video_analysis(
         else:
             tasks = []
 
-            if request.enable_scenes:
+            if request.modules.scenes.enabled:
                 scenes_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "job_id": f"scenes-{job_id}"
                 }
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
 
-            if request.enable_faces:
+            if request.modules.faces.enabled:
                 faces_request = {
-                    "video_path": request.video_path,
+                    "video_path": request.source,
                     "scene_id": request.scene_id,
                     "job_id": f"faces-{job_id}"
                 }
@@ -449,9 +449,9 @@ async def process_video_analysis(
                 if isinstance(result, Exception):
                     logger.error(f"Task {idx} failed: {result}")
                 else:
-                    if idx == 0 and request.enable_scenes:
+                    if idx == 0 and request.modules.scenes.enabled:
                         results["scenes"] = result
-                    elif idx == 1 and request.enable_faces:
+                    elif idx == 1 and request.modules.faces.enabled:
                         results["faces"] = result
 
         processing_time = time.time() - start_time
@@ -477,10 +477,10 @@ async def process_video_analysis(
                 "processing_time_seconds": processing_time,
                 "processing_mode": request.processing_mode,
                 "services_used": {
-                    "scenes": request.enable_scenes,
-                    "faces": request.enable_faces,
-                    "semantics": request.enable_semantics,
-                    "objects": request.enable_objects
+                    "scenes": request.modules.scenes.enabled,
+                    "faces": request.modules.faces.enabled,
+                    "semantics": request.modules.semantics.enabled,
+                    "objects": request.modules.objects.enabled
                 }
             }
         }
@@ -537,10 +537,10 @@ async def analyze_video(
 ):
     """Submit comprehensive video analysis job"""
     try:
-        if not os.path.exists(request.video_path):
+        if not os.path.exists(request.source):
             raise HTTPException(
                 status_code=404,
-                detail=f"Video not found: {request.video_path}"
+                detail=f"Video not found: {request.source}"
             )
 
         job_id = request.job_id or str(uuid.uuid4())
@@ -555,10 +555,10 @@ async def analyze_video(
             status="queued",
             created_at=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             services_enabled={
-                "scenes": request.enable_scenes,
-                "faces": request.enable_faces,
-                "semantics": request.enable_semantics,
-                "objects": request.enable_objects
+                "scenes": request.modules.scenes.enabled,
+                "faces": request.modules.faces.enabled,
+                "semantics": request.modules.semantics.enabled,
+                "objects": request.modules.objects.enabled
             },
             processing_mode=request.processing_mode
         )
