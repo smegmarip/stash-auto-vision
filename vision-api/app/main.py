@@ -271,7 +271,7 @@ async def process_video_analysis(
                 )
 
                 scenes_request = {
-                    "source": request.source,
+                    "video_path": request.source,
                     "job_id": f"scenes-{job_id}",
                     "detection_method": request.modules.scenes.parameters.get("scene_detection_method", "content"),
                     "scene_threshold": request.modules.scenes.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
@@ -428,7 +428,7 @@ async def process_video_analysis(
 
             if request.modules.scenes.enabled:
                 scenes_request = {
-                    "source": request.source,
+                    "video_path": request.source,
                     "job_id": f"scenes-{job_id}"
                 }
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
