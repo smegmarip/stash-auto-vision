@@ -283,6 +283,28 @@ paths:
             minimum: 1
             maximum: 100
             default: 95
+        - name: enhance
+          in: query
+          schema:
+            type: integer
+            enum: [0, 1]
+            default: 0
+          description: Enable face enhancement (0=disabled, 1=enabled)
+        - name: model
+          in: query
+          schema:
+            type: string
+            enum: [gfpgan, codeformer]
+            default: gfpgan
+          description: Enhancement model to use
+        - name: fidelity_weight
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.7
+          description: Enhancement fidelity (0.0=preserve original, 1.0=max enhancement)
       responses:
         '200':
           description: Frame image
@@ -713,6 +735,44 @@ components:
           type: string
         sprite_image_url:
           type: string
+        enhancement:
+          $ref: '#/components/schemas/FrameEnhancementOptions'
+
+    FrameEnhancementModel:
+      type: string
+      enum: [gfpgan, codeformer]
+      description: Face enhancement model
+
+    FrameEnhancementOptions:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+          description: Enable face enhancement
+        model:
+          $ref: '#/components/schemas/FrameEnhancementModel'
+          default: gfpgan
+        fidelity_weight:
+          type: number
+          default: 0.7
+          minimum: 0
+          maximum: 1
+          description: Balance between quality and fidelity (0=preserve original, 1=max enhancement)
+        upscale:
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 4
+          description: Upscaling factor
+        only_center_face:
+          type: boolean
+          default: false
+          description: Only enhance the most centered face
+        paste_back:
+          type: boolean
+          default: true
+          description: Paste enhanced faces back to original image
 
     ExtractJobResponse:
       type: object
@@ -812,6 +872,18 @@ components:
           type: number
         processing_time_seconds:
           type: number
+        enhancement_enabled:
+          type: boolean
+          default: false
+          description: Whether face enhancement was enabled for this extraction
+        enhancement_model:
+          type: string
+          nullable: true
+          description: Enhancement model used (gfpgan or codeformer), null if enhancement disabled
+        faces_enhanced:
+          type: integer
+          nullable: true
+          description: Total number of faces enhanced across all frames, null if enhancement disabled
 
     # Scenes Service Schemas
     DetectScenesRequest:
