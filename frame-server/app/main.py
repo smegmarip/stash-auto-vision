@@ -457,6 +457,7 @@ async def extract_single_frame(
     output_format: str = "jpeg",
     quality: int = 95,
     enhance: int = 0,
+    model: str = "gfpgan",
     fidelity_weight: float = 0.7
 ):
     """
@@ -494,6 +495,7 @@ async def extract_single_frame(
         if enhance == 1:
             enhancement_opts = {
                 "enabled": True,
+                "model": model,
                 "fidelity_weight": max(0.0, min(1.0, fidelity_weight)),
                 "upscale": 2,
                 "only_center_face": False,

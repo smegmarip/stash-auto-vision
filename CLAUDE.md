@@ -22,7 +22,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 **Phase 1 (Implemented):**
 - Video face detection and recognition (InsightFace buffalo_l, 99.86% accuracy)
-- Optional face enhancement (GFPGAN v1.4, CodeFormer planned)
+- Production-grade face enhancement (CodeFormer, Nero-equivalent quality)
 - Scene boundary detection (GPU-accelerated PySceneDetect)
 - Frame extraction with multiple methods (OpenCV CUDA, PyAV, FFmpeg fallback)
 - 512-D ArcFace embeddings with quality scoring

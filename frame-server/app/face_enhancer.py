@@ -1,40 +1,20 @@
 """
-Frame Server - Face Enhancer
-Enhance faces in frames using CodeFormer or GFPGAN
+Frame Server - Face Enhancer Factory
 """
 
-import cv2
-import os
 import logging
 import numpy as np
-from typing import Optional, Tuple
-from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+from .enhancers.base import BaseEnhancer
+from .enhancers.gfpgan_enhancer import GFPGANEnhancer
+from .enhancers.codeformer_enhancer import CodeFormerEnhancer
 
 logger = logging.getLogger(__name__)
 
-# Try importing face enhancement libraries
-try:
-    import torch
-    from basicsr.archs.rrdbnet_arch import RRDBNet
-    from gfpgan import GFPGANer
-    GFPGAN_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"GFPGAN not available: {e}")
-    GFPGAN_AVAILABLE = False
-    torch = None
-    GFPGANer = None
-
-try:
-    from basicsr.utils import imwrite
-    from basicsr.utils.download_util import load_file_from_url
-    BASICSR_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"BasicSR utilities not available: {e}")
-    BASICSR_AVAILABLE = False
-
 
 class FaceEnhancer:
-    """Enhance faces in images using CodeFormer or GFPGAN"""
+    """Face enhancement factory that wraps different enhancement models"""
 
     def __init__(
         self,
@@ -43,111 +23,67 @@ class FaceEnhancer:
         model_dir: str = "/tmp/face_enhancement_models"
     ):
         """
-        Initialize face enhancer
+        Initialize face enhancer with lazy model loading
 
         Args:
-            model_name: "gfpgan" or "codeformer" (only GFPGAN implemented for now)
+            model_name: Default model ("gfpgan" or "codeformer")
             device: "cuda" or "cpu"
             model_dir: Directory to store downloaded models
         """
-        self.model_name = model_name
+        self.default_model_name = model_name
         self.device = device
-        self.model_dir = Path(model_dir)
-        self.model_dir.mkdir(parents=True, exist_ok=True)
+        self.model_dir = model_dir
 
-        self.enhancer = None
-        self.bg_upsampler = None
+        # Cache for lazy-loaded models
+        self.models: Dict[str, Optional[BaseEnhancer]] = {}
 
-        # Check availability
-        if not GFPGAN_AVAILABLE:
-            logger.error("GFPGAN dependencies not available - face enhancement disabled")
-            return
+        # Initialize default model
+        self._get_or_create_model(model_name)
 
-        # Initialize model based on selection
+    def _get_or_create_model(self, model_name: str) -> Optional[BaseEnhancer]:
+        """
+        Get or create a model instance (lazy loading with caching)
+
+        Args:
+            model_name: "gfpgan" or "codeformer"
+
+        Returns:
+            BaseEnhancer instance or None if model unknown/failed
+        """
+        # Return cached model if available
+        if model_name in self.models:
+            return self.models[model_name]
+
+        # Create new model instance
+        logger.info(f"Initializing {model_name} enhancer...")
+        enhancer: Optional[BaseEnhancer] = None
+
         if model_name == "gfpgan":
-            self._init_gfpgan()
+            enhancer = GFPGANEnhancer(device=self.device, model_dir=self.model_dir)
+        elif model_name == "codeformer":
+            enhancer = CodeFormerEnhancer(device=self.device, model_dir=self.model_dir)
         else:
-            logger.warning(f"Model {model_name} not yet implemented, falling back to GFPGAN")
-            self._init_gfpgan()
+            logger.error(f"Unknown model: {model_name}")
 
-    def _init_gfpgan(self):
-        """Initialize GFPGAN model"""
-        try:
-            logger.info(f"Initializing GFPGAN on {self.device}...")
+        # Cache the result (even if None)
+        self.models[model_name] = enhancer
+        return enhancer
 
-            # GFPGAN v1.4 model URLs
-            model_url = "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth"
-            model_path = self.model_dir / "GFPGANv1.4.pth"
+    def is_available(self, model_name: Optional[str] = None) -> bool:
+        """
+        Check if enhancement is available for a specific model
 
-            # Download model if needed
-            if not model_path.exists():
-                logger.info(f"Downloading GFPGAN model to {model_path}...")
-                if BASICSR_AVAILABLE:
-                    load_file_from_url(
-                        url=model_url,
-                        model_dir=str(self.model_dir),
-                        progress=True,
-                        file_name="GFPGANv1.4.pth"
-                    )
-                else:
-                    logger.error("Cannot download model - basicsr utilities not available")
-                    return
-
-            # Initialize background upsampler (optional, for better quality)
-            bg_model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"
-            bg_model_path = self.model_dir / "RealESRGAN_x2plus.pth"
-
-            if not bg_model_path.exists():
-                logger.info("Downloading background upsampler...")
-                if BASICSR_AVAILABLE:
-                    load_file_from_url(
-                        url=bg_model_url,
-                        model_dir=str(self.model_dir),
-                        progress=True,
-                        file_name="RealESRGAN_x2plus.pth"
-                    )
-
-            # Create background upsampler
-            if bg_model_path.exists():
-                from realesrgan import RealESRGANer
-                bg_model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
-                self.bg_upsampler = RealESRGANer(
-                    scale=2,
-                    model_path=str(bg_model_path),
-                    model=bg_model,
-                    tile=400,
-                    tile_pad=10,
-                    pre_pad=0,
-                    half=False if self.device == "cpu" else True,
-                    device=self.device
-                )
-                logger.info("Background upsampler initialized")
-            else:
-                logger.warning("Background upsampler not available - faces only")
-
-            # Create GFPGAN enhancer
-            self.enhancer = GFPGANer(
-                model_path=str(model_path),
-                upscale=2,
-                arch='clean',
-                channel_multiplier=2,
-                bg_upsampler=self.bg_upsampler,
-                device=self.device
-            )
-
-            logger.info("GFPGAN initialized successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize GFPGAN: {e}", exc_info=True)
-            self.enhancer = None
-
-    def is_available(self) -> bool:
-        """Check if enhancement is available"""
-        return self.enhancer is not None
+        Args:
+            model_name: Model to check, defaults to default_model_name
+        """
+        model_name = model_name or self.default_model_name
+        enhancer = self._get_or_create_model(model_name)
+        return enhancer is not None and enhancer.is_available()
 
     def enhance_frame(
         self,
         frame: np.ndarray,
+        model: Optional[str] = None,
         fidelity_weight: float = 0.7,
         upscale: int = 2,
         only_center_face: bool = False,
@@ -159,9 +95,8 @@ class FaceEnhancer:
 
         Args:
             frame: Input frame (BGR format from OpenCV)
+            model: Enhancement model to use ("gfpgan" or "codeformer"), defaults to default_model_name
             fidelity_weight: Balance between quality and fidelity (0.0-1.0)
-                           Lower = preserve original details
-                           Higher = maximum enhancement
             upscale: Upscaling factor (1, 2, 3, 4)
             only_center_face: Only enhance the most centered face
             aligned: Whether input face is aligned
@@ -170,34 +105,21 @@ class FaceEnhancer:
         Returns:
             Tuple of (enhanced_frame, num_faces_enhanced)
         """
-        if not self.is_available():
-            logger.warning("Enhancement not available - returning original frame")
+        model_name = model or self.default_model_name
+        enhancer = self._get_or_create_model(model_name)
+
+        if enhancer is None or not enhancer.is_available():
+            logger.warning(f"Enhancement not available for model {model_name} - returning original frame")
             return frame, 0
 
-        try:
-            # GFPGAN expects BGR input (OpenCV format)
-            # Returns: cropped_faces, restored_faces, restored_img
-            _, _, restored_img = self.enhancer.enhance(
-                frame,
-                has_aligned=aligned,
-                only_center_face=only_center_face,
-                paste_back=paste_back,
-                weight=fidelity_weight  # GFPGAN v1.4 supports fidelity weight
-            )
-
-            if restored_img is None:
-                logger.warning("Enhancement returned None - using original frame")
-                return frame, 0
-
-            # Count faces enhanced (estimate based on detection)
-            # In production, we could get this from the enhancer's face detector
-            num_faces = 1 if restored_img is not None else 0
-
-            return restored_img, num_faces
-
-        except Exception as e:
-            logger.error(f"Enhancement failed: {e}", exc_info=True)
-            return frame, 0
+        return enhancer.enhance_frame(
+            frame=frame,
+            fidelity_weight=fidelity_weight,
+            upscale=upscale,
+            only_center_face=only_center_face,
+            aligned=aligned,
+            paste_back=paste_back
+        )
 
     def enhance_face_region(
         self,
@@ -223,7 +145,7 @@ class FaceEnhancer:
             x, y, w, h = bbox
 
             # Extract face region with padding
-            padding = int(max(w, h) * 0.2)  # 20% padding
+            padding = int(max(w, h) * 0.2)
             x1 = max(0, x - padding)
             y1 = max(0, y - padding)
             x2 = min(frame.shape[1], x + w + padding)
@@ -252,16 +174,8 @@ class FaceEnhancer:
     def cleanup(self):
         """Cleanup resources"""
         if self.enhancer is not None:
-            del self.enhancer
+            self.enhancer.cleanup()
             self.enhancer = None
-
-        if self.bg_upsampler is not None:
-            del self.bg_upsampler
-            self.bg_upsampler = None
-
-        # Clear CUDA cache if using GPU
-        if torch is not None and self.device == "cuda":
-            torch.cuda.empty_cache()
 
         logger.info("Face enhancer cleanup complete")
 

@@ -470,6 +470,7 @@ class FrameExtractor:
                             try:
                                 frame, faces_enhanced = self.face_enhancer.enhance_frame(
                                     frame,
+                                    model=enhancement_options.get("model", None),
                                     fidelity_weight=enhancement_options.get("fidelity_weight", 0.7),
                                     upscale=enhancement_options.get("upscale", 2),
                                     only_center_face=enhancement_options.get("only_center_face", False),

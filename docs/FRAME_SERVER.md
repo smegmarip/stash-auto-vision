@@ -165,7 +165,7 @@ paths:
   /extract-frame:
     get:
       summary: Extract single frame
-      description: Extract one frame without job tracking (for thumbnails)
+      description: Extract one frame without job tracking (for thumbnails, optionally with face enhancement)
       operationId: extractSingleFrame
       parameters:
         - name: video_path
@@ -192,9 +192,38 @@ paths:
             minimum: 1
             maximum: 100
             default: 95
+        - name: enhance
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Enable face enhancement
+        - name: model
+          in: query
+          schema:
+            type: string
+            enum: [gfpgan, codeformer]
+            default: gfpgan
+          description: Face enhancement model to use
+        - name: fidelity_weight
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0.0
+            maximum: 1.0
+            default: 0.7
+          description: Fidelity vs quality tradeoff (higher = more original details)
+        - name: upscale
+          in: query
+          schema:
+            type: integer
+            enum: [1, 2, 4]
+            default: 2
+          description: Upscaling factor for enhancement
       responses:
         '200':
-          description: Frame image
+          description: Frame image (enhanced if requested)
           content:
             image/jpeg:
               schema:
@@ -508,6 +537,83 @@ Extract representative frames per scene:
 
 Extracts 3 frames per scene (start, middle, end).
 
+### Face Enhancement
+
+Frame Server includes optional face enhancement using AI models for upscaling and quality improvement.
+
+#### Available Models
+
+**1. GFPGAN (GAN-based)**
+- **Method:** Generative Adversarial Network approach
+- **Speed:** ~5-10ms per face (CPU mode)
+- **Quality:** Good general-purpose enhancement, may over-smooth
+- **Use Case:** Quick enhancement for less critical applications
+
+**2. CodeFormer (Transformer-based)** ⭐ **Recommended**
+- **Method:** VQ codebook with transformer, [-1,1] normalized tensors
+- **Speed:** ~10-15ms per face (CPU mode)
+- **Quality:** **Production-grade, comparable to commercial solutions (e.g., Nero)**
+- **Tuning Guide:** Lower fidelity (0.1-0.3) for heavy enhancement, higher (0.5-0.7) for detail preservation
+- **Use Case:** **Primary recommendation for all face enhancement tasks**
+
+#### Enhancement Parameters
+
+**fidelity_weight** (0.0 - 1.0, default: 0.5)
+- Controls tradeoff between enhancement and fidelity to original
+- **Lower values (0.1-0.3):** Maximum enhancement, smoothest results (best for low-quality sources)
+- **Medium values (0.4-0.6):** Balanced enhancement (general-purpose, HuggingFace default: 0.5)
+- **Higher values (0.7-1.0):** Maximum fidelity, minimal enhancement (best for high-quality sources)
+
+**upscale** (1, 2, or 4, default: 2)
+- Upscaling factor for output resolution
+- 1x: No upscaling (enhancement only)
+- 2x: 640×480 → 1280×960
+- 4x: 640×480 → 2560×1920
+
+**model** (gfpgan or codeformer, default: codeformer)
+- **CodeFormer:** Production-grade quality, comparable to commercial solutions
+- **GFPGAN:** Legacy option, may over-smooth details
+
+#### Usage Examples
+
+**Recommended: CodeFormer with balanced settings:**
+```bash
+curl "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.5"
+```
+
+**Low-quality source (heavy enhancement):**
+```bash
+curl "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.25"
+```
+
+**High-quality source (detail preservation):**
+```bash
+curl "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.7"
+```
+
+**4x upscaling for thumbnail:**
+```bash
+curl "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&upscale=4"
+```
+
+#### Implementation Details
+
+**Architecture:**
+- Modular design with `BaseEnhancer` abstract class
+- Separate modules: `gfpgan_enhancer.py`, `codeformer_enhancer.py`
+- Factory pattern in `face_enhancer.py`
+
+**Dependencies:**
+- GFPGAN: `gfpgan==1.3.8`, `realesrgan==0.3.0`
+- CodeFormer: `codeformer-pip==0.0.4`, `lpips`, `gdown`
+- Shared: `torch==2.0.1`, `torchvision==0.15.2`, `basicsr==1.4.2`, `facexlib==0.3.0`
+
+**Model Storage:**
+- Models auto-download to `/tmp/face_enhancement_models/`
+- GFPGAN: `GFPGANv1.4.pth` (~332MB)
+- CodeFormer: `codeformer.pth` (~376MB)
+- Background upsampler: `RealESRGAN_x2plus.pth` (~67MB)
+
 ### Sprite Sheet Processing
 
 Frame Server can parse WebVTT sprite coordinates and extract tiles from grid images.
@@ -619,5 +725,5 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-14
-**Status:** Implemented and Tested (with PyAV fallback)
+**Last Updated:** 2025-11-15
+**Status:** Implemented and Tested (with PyAV fallback and Face Enhancement)
