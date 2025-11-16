@@ -86,9 +86,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
-      start_period: 60s
+      start_period: 120s  # Allow time for enhancement models to load
     deploy:
       resources:
         limits:
@@ -151,6 +151,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
       - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
+      - FACES_MIN_QUALITY=${FACES_MIN_QUALITY:-0.0}
+      - FACES_ENHANCEMENT_QUALITY_TRIGGER=${FACES_ENHANCEMENT_QUALITY_TRIGGER:-0.5}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro

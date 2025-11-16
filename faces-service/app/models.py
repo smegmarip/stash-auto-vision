@@ -18,9 +18,18 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
+class EnhancementParameters(BaseModel):
+    """Face enhancement configuration"""
+    enabled: bool = Field(default=False, description="Enable face enhancement")
+    quality_trigger: float = Field(default=float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")), ge=0.0, le=1.0, description="Trigger enhancement if quality below this")
+    model: str = Field(default="codeformer", description="Enhancement model: 'gfpgan' or 'codeformer'")
+    fidelity_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="Fidelity vs quality tradeoff")
+
+
 class FaceAnalysisParameters(BaseModel):
     """Face analysis configuration"""
     face_min_confidence: float = Field(default=float(os.getenv("FACES_MIN_CONFIDENCE", "0.9")), ge=0.0, le=1.0)
+    face_min_quality: float = Field(default=float(os.getenv("FACES_MIN_QUALITY", "0.0")), ge=0.0, le=1.0, description="Minimum quality threshold (filter below this)")
     max_faces: int = Field(default=50, ge=1, le=1000)
     sampling_interval: float = Field(default=2.0, ge=0.1, le=10.0)
     use_sprites: bool = Field(default=False)
@@ -31,11 +40,13 @@ class FaceAnalysisParameters(BaseModel):
     detect_demographics: bool = Field(default=True)
     scene_boundaries: Optional[List[Dict[str, float]]] = None
     cache_duration: int = Field(default=3600, ge=0)
+    enhancement: EnhancementParameters = Field(default_factory=EnhancementParameters)
 
 
 class AnalyzeFacesRequest(BaseModel):
-    """Request to analyze faces in video"""
-    video_path: str = Field(..., description="Absolute path to video file")
+    """Request to analyze faces in video/image"""
+    video_path: str = Field(..., description="Path or URL to video/image file")
+    source_type: Optional[str] = Field(default=None, description="Source type: 'video', 'image', 'url' (auto-detected if omitted)")
     scene_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     parameters: FaceAnalysisParameters = Field(default_factory=FaceAnalysisParameters)
@@ -74,6 +85,7 @@ class Detection(BaseModel):
     quality_score: float
     pose: str  # "front", "left", "right", "front-rotate-left", "front-rotate-right"
     landmarks: Landmarks
+    enhanced: bool = False  # Indicates if face was enhanced via CodeFormer/GFPGAN
 
 
 class Face(BaseModel):
