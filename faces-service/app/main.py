@@ -245,7 +245,7 @@ async def process_analysis_job(
 
         # Request frames from frame-server
         frame_results = await request_frames(
-            request.video_path,
+            request.source,
             job_id,
             request.parameters.dict()
         )
@@ -281,7 +281,7 @@ async def process_analysis_job(
             if request.parameters.enhancement.enabled:
                 faces = await face_recognizer.detect_and_enhance_faces(
                     image=frame,
-                    video_path=request.video_path,
+                    video_path=request.source,
                     timestamp=frame_info["timestamp"],
                     frame_client=frame_client,
                     face_min_confidence=request.parameters.face_min_confidence,
@@ -393,7 +393,7 @@ async def process_analysis_job(
 
         # Build metadata
         metadata = VideoMetadata(
-            video_path=request.video_path,
+            source=request.source,
             total_frames=frame_results["metadata"]["total_frames"],
             frames_processed=total_frames,
             unique_faces=len(faces),
@@ -450,15 +450,15 @@ async def analyze_faces(
 ):
     """Submit face analysis job"""
     try:
-        if not os.path.exists(request.video_path):
+        if not os.path.exists(request.source):
             raise HTTPException(
                 status_code=404,
-                detail=f"Video not found: {request.video_path}"
+                detail=f"Video not found: {request.source}"
             )
 
         # Generate cache key
         params = request.parameters.dict()
-        cache_key = cache_manager.generate_cache_key(request.video_path, params)
+        cache_key = cache_manager.generate_cache_key(request.source, params)
 
         # Check cache
         cached_job_id = await cache_manager.get_cached_job_id(cache_key)

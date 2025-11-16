@@ -499,12 +499,12 @@ components:
     AnalyzeRequest:
       type: object
       required:
-        - video_path
+        - source
         - scene_id
       properties:
-        video_path:
+        source:
           type: string
-          description: Absolute path to video file
+          description: Path, URL, or image source to analyze
           example: /media/videos/scene.mp4
         scene_id:
           type: string
@@ -512,74 +512,55 @@ components:
         job_id:
           type: string
           description: Job ID for tracking
-        enable_scenes:
-          type: boolean
-          default: true
-          description: Enable scene detection
-        enable_faces:
-          type: boolean
-          default: true
-          description: Enable face recognition
-        enable_semantics:
-          type: boolean
-          default: false
-          description: Enable CLIP semantic analysis (Phase 2 - not implemented)
-        enable_objects:
-          type: boolean
-          default: false
-          description: Enable YOLO object detection (Phase 3 - not implemented)
         processing_mode:
           type: string
           enum: [sequential, parallel]
           default: sequential
           description: Processing mode (sequential recommended to avoid GPU memory contention)
-        parameters:
+        modules:
           type: object
-          description: Service-specific parameters with service-prefixed names to avoid collisions
+          description: Module configuration with explicit parameter schemas
           properties:
-            scene_threshold:
-              type: number
-              default: 27.0
-              minimum: 0.0
-              maximum: 100.0
-              description: Scene detection threshold (env SCENES_THRESHOLD)
-            scene_detection_method:
-              type: string
-              enum: [content, threshold, adaptive]
-              default: content
-            min_scene_length:
-              type: number
-              default: 0.6
-              minimum: 0.1
-            face_min_confidence:
-              type: number
-              default: 0.9
-              minimum: 0.0
-              maximum: 1.0
-              description: Face detection confidence threshold (env FACES_MIN_CONFIDENCE)
-            max_faces:
-              type: integer
-              default: 50
-            face_sampling_interval:
-              type: number
-              default: 2.0
-            enable_deduplication:
-              type: boolean
-              default: true
-            similarity_threshold:
-              type: number
-              default: 0.6
-            detect_demographics:
-              type: boolean
-              default: true
-            semantics_min_confidence:
-              type: number
-              default: 0.5
-              description: CLIP confidence threshold (env SEMANTICS_MIN_CONFIDENCE)
-            objects_min_confidence:
-              type: number
-              default: 0.5
-              description: YOLO confidence threshold (env OBJECTS_MIN_CONFIDENCE)
+            scenes:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: true
+                  description: Enable scene detection
+                parameters:
+                  allOf:
+                    - $ref: '#/components/schemas/ScenesParameters'
+            faces:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: true
+                  description: Enable face recognition
+                parameters:
+                  allOf:
+                    - $ref: '#/components/schemas/FacesParameters'
+            semantics:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                  description: Enable CLIP semantic analysis (Phase 2 - not implemented)
+                parameters:
+                  type: object
+                  description: Semantic analysis parameters (Phase 2)
+            objects:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                  description: Enable YOLO object detection (Phase 3 - not implemented)
+                parameters:
+                  type: object
+                  description: Object detection parameters (Phase 3)
 
     AnalyzeJobResponse:
       type: object
@@ -1041,12 +1022,12 @@ components:
     AnalyzeFacesRequest:
       type: object
       required:
-        - video_path
+        - source
         - scene_id
       properties:
-        video_path:
+        source:
           type: string
-          description: Path or URL to video/image file
+          description: Path, URL, or image source to analyze
         source_type:
           type: string
           enum: [video, image, url]
@@ -1328,7 +1309,7 @@ components:
     FacesVideoMetadata:
       type: object
       properties:
-        video_path:
+        source:
           type: string
         total_frames:
           type: integer

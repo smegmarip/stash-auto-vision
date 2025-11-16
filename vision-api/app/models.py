@@ -7,17 +7,27 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class ModuleConfig(BaseModel):
+    """Configuration for a single module"""
+    enabled: bool = Field(default=True)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ModulesConfig(BaseModel):
+    """Module configurations"""
+    scenes: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=True))
+    faces: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=True))
+    semantics: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
+    objects: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
+
+
 class AnalyzeVideoRequest(BaseModel):
     """Request to analyze video with all services"""
-    video_path: str = Field(..., description="Absolute path to video file")
+    source: str = Field(..., description="Path, URL, or image source to analyze")
     scene_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Job ID for tracking")
-    enable_scenes: bool = Field(default=True)
-    enable_faces: bool = Field(default=True)
-    enable_semantics: bool = Field(default=False, description="Phase 2 - not implemented")
-    enable_objects: bool = Field(default=False, description="Phase 3 - not implemented")
     processing_mode: str = Field(default="sequential", description="sequential or parallel")
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    modules: ModulesConfig = Field(default_factory=ModulesConfig)
 
 
 class AnalyzeJobResponse(BaseModel):

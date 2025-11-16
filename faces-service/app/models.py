@@ -45,7 +45,7 @@ class FaceAnalysisParameters(BaseModel):
 
 class AnalyzeFacesRequest(BaseModel):
     """Request to analyze faces in video/image"""
-    video_path: str = Field(..., description="Path or URL to video/image file")
+    source: str = Field(..., description="Path, URL, or image source to analyze")
     source_type: Optional[str] = Field(default=None, description="Source type: 'video', 'image', 'url' (auto-detected if omitted)")
     scene_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
@@ -120,7 +120,7 @@ class AnalyzeJobStatus(BaseModel):
 
 class VideoMetadata(BaseModel):
     """Video file metadata"""
-    video_path: str
+    source: str
     total_frames: int
     frames_processed: int
     unique_faces: int
