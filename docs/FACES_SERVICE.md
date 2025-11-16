@@ -18,9 +18,81 @@ The service integrates with the Frame Server for frame extraction and uses Retin
 - **High-Accuracy Detection:** InsightFace buffalo_l model with 99.86% LFW accuracy
 - **512-D ArcFace Embeddings:** State-of-the-art face recognition vectors
 - **Quality Scoring:** Multi-factor assessment (pose, size, confidence)
+- **Face Enhancement:** Optional CodeFormer/GFPGAN enhancement for low-quality detections
+- **Three-Tier Quality System:** Detection confidence, quality trigger, minimum quality filtering
 - **Face Deduplication:** Cosine similarity clustering (default threshold: 0.6)
 - **Pose Estimation:** front, left, right, front-rotate-left, front-rotate-right
 - **Smart Caching:** Content-based keys with automatic invalidation
+
+### Face Enhancement
+
+The service supports optional face enhancement for low-quality detections using production-grade AI models.
+
+#### Three-Tier Quality Gate System
+
+1. **face_min_confidence** (0.0-1.0, default 0.7 CPU / 0.9 GPU)
+   - Initial detection threshold
+   - Only faces above this confidence are considered
+   - Environment variable: `FACES_MIN_CONFIDENCE`
+
+2. **enhancement.quality_trigger** (0.0-1.0, default 0.5)
+   - Triggers enhancement when quality score falls below this threshold
+   - Applied to high-confidence, low-quality faces
+   - Environment variable: `FACES_ENHANCEMENT_QUALITY_TRIGGER`
+
+3. **face_min_quality** (0.0-1.0, default 0.0)
+   - Final filtering threshold after enhancement
+   - Only faces meeting this quality are returned
+   - Environment variable: `FACES_MIN_QUALITY`
+
+#### Enhancement Workflow
+
+```
+1. Detect faces with InsightFace (confidence >= face_min_confidence)
+2. Calculate quality scores for each detection
+3. For faces with quality < enhancement.quality_trigger:
+   a. Request enhanced frame from frame-server
+   b. Re-run InsightFace detection on enhanced frame
+   c. Update quality_score and confidence
+4. Filter: Keep only faces with quality >= face_min_quality
+5. Mark enhanced faces with enhanced=true flag in detection metadata
+```
+
+#### Enhancement Models
+
+**CodeFormer (Recommended):**
+- Production-grade quality comparable to commercial solutions (Nero)
+- GPU: 10-15x faster than CPU (~10-15ms per face)
+- Fidelity weight: 0.0-1.0 (0.25 for heavy enhancement, 0.5 balanced, 0.7 for preservation)
+
+**GFPGAN:**
+- Legacy option, may over-smooth details
+- Faster but lower quality than CodeFormer
+
+#### Enhancement Parameters
+
+```json
+{
+  "parameters": {
+    "min_confidence": 0.7,
+    "min_quality": 0.4,
+    "enhancement": {
+      "enabled": true,
+      "quality_trigger": 0.5,
+      "model": "codeformer",
+      "fidelity_weight": 0.5
+    }
+  }
+}
+```
+
+#### Performance Characteristics
+
+- **Enhancement Decision:** Automatic based on quality scores
+- **Enhanced Flag:** `detection.enhanced = true` for enhanced faces
+- **GPU Speedup:** 10-15x faster enhancement on GPU vs CPU
+- **Frame Caching:** Enhanced frames cached to avoid re-processing
+- **Batch Optimization:** Single frame enhancement for multiple faces
 
 ### Processing Pipeline
 
@@ -314,12 +386,17 @@ components:
 | Parameter | Default | Range | Description |
 |-----------|---------|-------|-------------|
 | min_confidence | 0.9 | 0.0-1.0 | Detection threshold (0.7 for challenging, 0.9 for clean) |
+| min_quality | 0.0 | 0.0-1.0 | Minimum quality score to keep (0.0 = no filtering) |
 | max_faces | 50 | 1+ | Max unique faces (10-20 typical, 50+ crowds) |
 | sampling_interval | 2.0 | 0.5+ | Frame interval seconds (1.0-3.0 recommended) |
 | enable_deduplication | true | bool | Cluster faces by similarity |
 | embedding_similarity_threshold | 0.6 | 0.0-1.0 | Cosine threshold (0.5 loose, 0.6 balanced, 0.7 strict) |
 | scene_boundaries | null | array | Scene timestamps for optimized sampling |
 | cache_duration | 3600 | int | Redis TTL in seconds |
+| enhancement.enabled | false | bool | Enable face enhancement for low-quality detections |
+| enhancement.quality_trigger | 0.5 | 0.0-1.0 | Trigger enhancement if quality below this threshold |
+| enhancement.model | codeformer | string | Enhancement model: "codeformer" or "gfpgan" |
+| enhancement.fidelity_weight | 0.5 | 0.0-1.0 | Quality vs fidelity tradeoff (CodeFormer only) |
 
 ### Face Deduplication
 
@@ -409,6 +486,11 @@ faces:cache:{cache_key}:job_id    # Cache lookup
 # Model
 INSIGHTFACE_MODEL=buffalo_l      # buffalo_l, buffalo_s, buffalo_sc
 INSIGHTFACE_DEVICE=cuda          # cuda or cpu
+
+# Quality Thresholds
+FACES_MIN_CONFIDENCE=0.9         # Detection confidence threshold (0.7 CPU, 0.9 GPU)
+FACES_MIN_QUALITY=0.0            # Minimum quality to keep (0.0 = no filtering)
+FACES_ENHANCEMENT_QUALITY_TRIGGER=0.5  # Trigger enhancement below this quality
 
 # Integration
 FRAME_SERVER_URL=http://frame-server:5001

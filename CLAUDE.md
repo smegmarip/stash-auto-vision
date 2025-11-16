@@ -22,7 +22,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 **Phase 1 (Implemented):**
 - Video face detection and recognition (InsightFace buffalo_l, 99.86% accuracy)
-- Production-grade face enhancement (CodeFormer, Nero-equivalent quality)
+- Optional face enhancement via CodeFormer/GFPGAN (production-grade quality)
+- Three-tier quality system (detection confidence, quality trigger, minimum quality)
 - Scene boundary detection (GPU-accelerated PySceneDetect)
 - Frame extraction with multiple methods (OpenCV CUDA, PyAV, FFmpeg fallback)
 - 512-D ArcFace embeddings with quality scoring
@@ -93,6 +94,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 **faces-service**
 - InsightFace (buffalo_l model on GPU, buffalo_l on CPU for accuracy parity)
 - RetinaFace detection + ArcFace 512-D embeddings
+- Optional face enhancement (CodeFormer/GFPGAN) for low-quality detections
+- Three-tier quality gate: detection confidence, quality trigger, minimum quality
 - Face clustering via cosine similarity (threshold 0.6)
 - Quality scoring and pose estimation (front, left, right, rotated)
 - Optional demographics detection (age, gender)
@@ -158,6 +161,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] Content-based caching with SHA-256 keys
 - [x] Frame TTL management (2 hours with cron cleanup)
 - [x] Sequential processing (scenes → faces)
+- [x] Face enhancement with CodeFormer/GFPGAN (optional)
+- [x] Three-tier quality system with enhanced flag tracking
 - [x] Health check aggregation
 - [x] GPU/CPU mode parity
 - [x] Docker Compose deployment
@@ -282,12 +287,20 @@ See [Future Work](#future-work) section below.
 
 | Service | Request Parameter | Environment Variable | Default | Range | Notes |
 |---------|------------------|---------------------|---------|-------|-------|
-| Faces | `face_min_confidence` | `FACES_MIN_CONFIDENCE` | 0.9 | 0.0-1.0 | Lower for challenging lighting (0.7-0.8) |
+| Faces | `face_min_confidence` | `FACES_MIN_CONFIDENCE` | 0.9 | 0.0-1.0 | Detection threshold (0.7 CPU, 0.9 GPU) |
+| Faces | `face_min_quality` | `FACES_MIN_QUALITY` | 0.0 | 0.0-1.0 | Minimum quality to keep (0.0 = no filtering) |
+| Faces | N/A (nested in enhancement) | `FACES_ENHANCEMENT_QUALITY_TRIGGER` | 0.5 | 0.0-1.0 | Trigger enhancement if quality below this |
 | Scenes | `scene_threshold` | `SCENES_THRESHOLD` | 27.0 | 0.0-100.0 | PySceneDetect ContentDetector scale |
 | Semantics | `semantics_min_confidence` | `SEMANTICS_MIN_CONFIDENCE` | 0.5 | 0.0-1.0 | CLIP classification (Phase 2) |
 | Objects | `objects_min_confidence` | `OBJECTS_MIN_CONFIDENCE` | 0.5 | 0.0-1.0 | YOLO detection (Phase 3) |
 
 Example: Set `FACES_MIN_CONFIDENCE=0.7` in `.env` for lower quality videos, or override per-request with `face_min_confidence` parameter.
+
+**Face Enhancement Parameters:**
+- `enhancement.enabled`: Enable face enhancement (default: false)
+- `enhancement.quality_trigger`: Trigger enhancement if quality below this threshold (default: 0.5)
+- `enhancement.model`: "codeformer" (recommended) or "gfpgan" (default: "codeformer")
+- `enhancement.fidelity_weight`: Quality vs fidelity tradeoff, 0.0-1.0 (default: 0.5)
 
 ### Caching Strategy
 

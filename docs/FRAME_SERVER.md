@@ -694,6 +694,9 @@ EXTRACTION_METHOD=opencv_cuda    # opencv_cuda, opencv_cpu, pyav_hw, pyav_sw, ff
 OPENCV_DEVICE=cuda               # cuda or cpu
 ENABLE_FALLBACK=true             # Per-frame fallback chain (default: true)
 
+# Face enhancement
+ENABLE_ENHANCEMENT=true          # Enable face enhancement endpoints (default: true)
+
 # Storage
 FRAME_DIR=/tmp/frames
 FRAME_TTL_HOURS=2               # Cleanup TTL

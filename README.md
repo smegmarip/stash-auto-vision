@@ -10,7 +10,8 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ### Phase 1 (Current)
 - ✅ **Face Recognition** - InsightFace (99.86% accuracy, 512-D embeddings)
-- ✅ **Face Enhancement** - GFPGAN v1.4 (optional, CodeFormer planned)
+- ✅ **Face Enhancement** - Optional CodeFormer/GFPGAN for low-quality faces
+- ✅ **Quality-Based Filtering** - Three-tier quality system with enhancement triggering
 - ✅ **Scene Detection** - GPU-accelerated PySceneDetect (300-800 FPS)
 - ✅ **Frame Server** - Multi-method extraction with PyAV fallback
 - ✅ **Smart Caching** - Content-based Redis caching with automatic invalidation
