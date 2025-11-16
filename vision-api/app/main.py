@@ -231,7 +231,7 @@ async def process_video_analysis(
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "scene_id": request.scene_id,
-            "video_path": request.source,
+            "source": request.source,
             "processing_mode": request.processing_mode
         }
 
@@ -271,7 +271,7 @@ async def process_video_analysis(
                 )
 
                 scenes_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "job_id": f"scenes-{job_id}",
                     "detection_method": request.modules.scenes.parameters.get("scene_detection_method", "content"),
                     "scene_threshold": request.modules.scenes.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
@@ -318,7 +318,7 @@ async def process_video_analysis(
                     ]
 
                 faces_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "scene_id": request.scene_id,
                     "job_id": f"faces-{job_id}",
                     "parameters": {
@@ -362,7 +362,7 @@ async def process_video_analysis(
                 )
 
                 semantics_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "scene_id": request.scene_id,
                     "parameters": {
                         "semantics_min_confidence": request.modules.semantics.parameters.get("semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")))
@@ -397,7 +397,7 @@ async def process_video_analysis(
                 )
 
                 objects_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "scene_id": request.scene_id,
                     "parameters": {
                         "objects_min_confidence": request.modules.objects.parameters.get("objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5")))
@@ -428,14 +428,14 @@ async def process_video_analysis(
 
             if request.modules.scenes.enabled:
                 scenes_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "job_id": f"scenes-{job_id}"
                 }
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
 
             if request.modules.faces.enabled:
                 faces_request = {
-                    "video_path": request.source,
+                    "source": request.source,
                     "scene_id": request.scene_id,
                     "job_id": f"faces-{job_id}"
                 }
