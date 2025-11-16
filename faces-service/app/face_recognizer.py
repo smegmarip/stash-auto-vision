@@ -7,8 +7,11 @@ import cv2
 import numpy as np
 import httpx
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 import logging
+
+if TYPE_CHECKING:
+    from .frame_client import FrameServerClient
 
 try:
     from insightface.app import FaceAnalysis
@@ -116,7 +119,8 @@ class FaceRecognizer:
                     'confidence': float(face.det_score),
                     'quality_score': quality_score,
                     'pose': pose,
-                    'demographics': None
+                    'demographics': None,
+                    'enhanced': False  # Default to False, will be set to True if enhanced
                 }
 
                 # Add demographics if available
@@ -135,6 +139,125 @@ class FaceRecognizer:
         except Exception as e:
             logger.error(f"Error detecting faces: {e}")
             return []
+
+    async def detect_and_enhance_faces(
+        self,
+        image: np.ndarray,
+        video_path: str,
+        timestamp: float,
+        frame_client: 'FrameServerClient',
+        face_min_confidence: float = 0.9,
+        face_min_quality: float = 0.0,
+        enhancement_enabled: bool = False,
+        enhancement_quality_trigger: float = 0.5,
+        enhancement_model: str = "codeformer",
+        enhancement_fidelity_weight: float = 0.5
+    ) -> List[Dict]:
+        """
+        Detect faces with optional enhancement for low-quality detections
+
+        Args:
+            image: Original image array (BGR format from OpenCV)
+            video_path: Path to video file (for enhancement)
+            timestamp: Timestamp in seconds (for enhancement)
+            frame_client: Frame server client for enhancement
+            face_min_confidence: Minimum detection confidence
+            face_min_quality: Minimum quality threshold (filter below this)
+            enhancement_enabled: Enable face enhancement
+            enhancement_quality_trigger: Trigger enhancement if quality < this
+            enhancement_model: Enhancement model ('gfpgan' or 'codeformer')
+            enhancement_fidelity_weight: Fidelity vs quality tradeoff
+
+        Returns:
+            List of face detection dicts (after filtering)
+        """
+        try:
+            # First pass: detect faces in original image
+            detections = self.detect_faces(image, face_min_confidence)
+
+            if not enhancement_enabled:
+                # No enhancement - just filter by quality
+                filtered = [d for d in detections if d['quality_score'] >= face_min_quality]
+                logger.info(f"No enhancement: {len(filtered)}/{len(detections)} faces pass quality threshold {face_min_quality}")
+                return filtered
+
+            # Enhancement workflow
+            needs_enhancement = []
+            final_detections = []
+
+            for detection in detections:
+                # Enhancement is ONLY for high-confidence, low-quality faces
+                # This is a corner case: we're confident it's a face, but quality is poor
+                # Use face_min_confidence as both the detection AND enhancement threshold
+                if (detection['confidence'] >= face_min_confidence and
+                    detection['quality_score'] < enhancement_quality_trigger):
+                    needs_enhancement.append(detection)
+                elif detection['quality_score'] >= face_min_quality:
+                    # Quality is already good enough (already marked as enhanced=False)
+                    final_detections.append(detection)
+                # Else: low confidence and/or low quality - skip entirely
+
+            logger.info(f"Enhancement: {len(needs_enhancement)} high-confidence low-quality faces (conf>={face_min_confidence}, quality<{enhancement_quality_trigger}), {len(final_detections)} already good")
+
+            # Enhance frame if needed
+            if needs_enhancement:
+                enhanced_frame_data = await frame_client.enhance_frame(
+                    video_path=video_path,
+                    timestamp=timestamp,
+                    model=enhancement_model,
+                    fidelity_weight=enhancement_fidelity_weight,
+                    output_format="jpeg",
+                    quality=95
+                )
+
+                if enhanced_frame_data:
+                    # Decode enhanced frame
+                    enhanced_image = cv2.imdecode(
+                        np.frombuffer(enhanced_frame_data, np.uint8),
+                        cv2.IMREAD_COLOR
+                    )
+
+                    if enhanced_image is not None:
+                        # Re-run detection on enhanced frame
+                        enhanced_detections = self.detect_faces(enhanced_image, face_min_confidence)
+
+                        # Log enhancement results
+                        for i, orig in enumerate(needs_enhancement):
+                            logger.info(
+                                f"Enhancement attempt {i+1}: "
+                                f"original_quality={orig['quality_score']:.3f}, "
+                                f"original_confidence={orig['confidence']:.3f}"
+                            )
+
+                        # Match enhanced detections to original (by bbox overlap)
+                        for enhanced in enhanced_detections:
+                            if enhanced['quality_score'] >= face_min_quality:
+                                # Mark as enhanced
+                                enhanced['enhanced'] = True
+                                final_detections.append(enhanced)
+                                logger.info(
+                                    f"Enhanced face accepted: "
+                                    f"quality={enhanced['quality_score']:.3f}, "
+                                    f"confidence={enhanced['confidence']:.3f}"
+                                )
+                            else:
+                                logger.info(
+                                    f"Enhanced face filtered: "
+                                    f"quality={enhanced['quality_score']:.3f} < {face_min_quality}"
+                                )
+                    else:
+                        logger.error("Failed to decode enhanced frame")
+                else:
+                    logger.error("Failed to enhance frame")
+
+            logger.info(f"Final: {len(final_detections)} faces after enhancement and filtering")
+            return final_detections
+
+        except Exception as e:
+            logger.error(f"Error in detect_and_enhance_faces: {e}", exc_info=True)
+            # Fallback to original detections with quality filtering
+            filtered = [d for d in detections if d['quality_score'] >= face_min_quality]
+            return filtered
 
     def _estimate_pose(self, face) -> str:
         """

@@ -974,7 +974,11 @@ components:
       properties:
         video_path:
           type: string
-          description: Absolute path to video file
+          description: Path or URL to video/image file
+        source_type:
+          type: string
+          enum: [video, image, url]
+          description: Source type (auto-detected if omitted)
         scene_id:
           type: string
           description: Scene ID for reference
@@ -992,7 +996,13 @@ components:
           default: 0.9
           minimum: 0
           maximum: 1
-          description: Minimum detection confidence threshold
+          description: Minimum detection confidence threshold (default configurable via FACES_MIN_CONFIDENCE env var)
+        face_min_quality:
+          type: number
+          default: 0.0
+          minimum: 0
+          maximum: 1
+          description: Minimum quality threshold (filter faces below this, default configurable via FACES_MIN_QUALITY env var)
         max_faces:
           type: integer
           default: 50
@@ -1043,6 +1053,33 @@ components:
           default: 3600
           minimum: 0
           description: Cache TTL in seconds
+        enhancement:
+          $ref: '#/components/schemas/EnhancementParameters'
+
+    EnhancementParameters:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+          description: Enable face enhancement via CodeFormer/GFPGAN
+        quality_trigger:
+          type: number
+          default: 0.5
+          minimum: 0
+          maximum: 1
+          description: Trigger enhancement if quality score below this threshold (default configurable via FACES_ENHANCEMENT_QUALITY_TRIGGER env var)
+        model:
+          type: string
+          enum: [gfpgan, codeformer]
+          default: codeformer
+          description: Enhancement model to use
+        fidelity_weight:
+          type: number
+          default: 0.5
+          minimum: 0
+          maximum: 1
+          description: Fidelity vs quality tradeoff (0=quality, 1=fidelity)
 
     FacesJobResponse:
       type: object
@@ -1152,6 +1189,10 @@ components:
           description: "front, left, right, front-rotate-left, front-rotate-right"
         landmarks:
           $ref: '#/components/schemas/Landmarks'
+        enhanced:
+          type: boolean
+          default: false
+          description: Indicates if this face was enhanced via CodeFormer/GFPGAN
 
     BoundingBox:
       type: object

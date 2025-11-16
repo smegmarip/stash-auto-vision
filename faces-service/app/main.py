@@ -9,6 +9,7 @@ import time
 import asyncio
 import httpx
 import cv2
+import magic
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -33,6 +34,7 @@ from .models import (
 )
 from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
+from .frame_client import FrameServerClient
 
 # Environment configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -52,6 +54,7 @@ logger = logging.getLogger(__name__)
 # Global instances
 cache_manager: Optional[CacheManager] = None
 face_recognizer: Optional[FaceRecognizer] = None
+frame_client: Optional[FrameServerClient] = None
 
 
 @asynccontextmanager
@@ -60,7 +63,7 @@ async def lifespan(app: FastAPI):
     Application lifespan manager
     Initialize services on startup, cleanup on shutdown
     """
-    global cache_manager, face_recognizer
+    global cache_manager, face_recognizer, frame_client
 
     logger.info("Starting Faces Service...")
 
@@ -77,12 +80,17 @@ async def lifespan(app: FastAPI):
     model_info = face_recognizer.get_model_info()
     logger.info(f"Face recognizer initialized: {model_info}")
 
+    # Initialize frame-server client for enhancement
+    frame_client = FrameServerClient(FRAME_SERVER_URL)
+
     yield
 
     # Cleanup
     logger.info("Shutting down Faces Service...")
     if cache_manager:
         await cache_manager.disconnect()
+    if frame_client:
+        await frame_client.close()
     logger.info("Faces Service stopped")
 
 
@@ -92,6 +100,48 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+
+def detect_source_type(source: str, source_type: Optional[str] = None) -> str:
+    """
+    Auto-detect source type from path/URL using MIME type detection
+
+    Args:
+        source: File path or URL
+        source_type: Explicit type override (video, image, url)
+
+    Returns:
+        Detected source type: 'video', 'image', or 'url'
+    """
+    if source_type:
+        return source_type
+
+    # URL detection
+    if source.startswith("http://") or source.startswith("https://"):
+        return "url"
+
+    # File type detection using magic (MIME type)
+    try:
+        if os.path.exists(source):
+            mime = magic.Magic(mime=True)
+            mime_type = mime.from_file(source)
+
+            if mime_type.startswith("video/"):
+                return "video"
+            elif mime_type.startswith("image/"):
+                return "image"
+            else:
+                logger.warning(f"Unknown MIME type {mime_type} for {source}, falling back to extension")
+        else:
+            logger.warning(f"File not found: {source}, falling back to extension detection")
+    except Exception as e:
+        logger.warning(f"Error detecting MIME type: {e}, falling back to extension")
+
+    # Fallback to extension-based detection
+    if source.lower().endswith((".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v")):
+        return "video"
+    else:
+        return "image"
 
 
 async def request_frames(
@@ -226,13 +276,30 @@ async def process_analysis_job(
                 logger.warning(f"Failed to load frame: {frame_path}")
                 continue
 
-            # Detect faces
-            logger.debug(f"Calling detect_faces with face_min_confidence={request.parameters.face_min_confidence}")
-            faces = face_recognizer.detect_faces(
-                frame,
-                face_min_confidence=request.parameters.face_min_confidence
-            )
-            logger.debug(f"detect_faces returned {len(faces)} faces")
+            # Detect faces (with optional enhancement)
+            logger.debug(f"Enhancement enabled: {request.parameters.enhancement.enabled}, quality_trigger: {request.parameters.enhancement.quality_trigger}")
+            if request.parameters.enhancement.enabled:
+                faces = await face_recognizer.detect_and_enhance_faces(
+                    image=frame,
+                    video_path=request.video_path,
+                    timestamp=frame_info["timestamp"],
+                    frame_client=frame_client,
+                    face_min_confidence=request.parameters.face_min_confidence,
+                    face_min_quality=request.parameters.face_min_quality,
+                    enhancement_enabled=True,
+                    enhancement_quality_trigger=request.parameters.enhancement.quality_trigger,
+                    enhancement_model=request.parameters.enhancement.model,
+                    enhancement_fidelity_weight=request.parameters.enhancement.fidelity_weight
+                )
+            else:
+                faces = face_recognizer.detect_faces(
+                    frame,
+                    face_min_confidence=request.parameters.face_min_confidence
+                )
+                # Apply quality filtering
+                faces = [f for f in faces if f['quality_score'] >= request.parameters.face_min_quality]
+
+            logger.debug(f"Frame {idx}: {len(faces)} faces after detection and filtering")
 
             # Add frame metadata to detections
             for face in faces:
@@ -243,9 +310,11 @@ async def process_analysis_job(
                 }
                 all_detections.append(detection)
 
-            # Update progress
+            # Update progress every 5 frames or on the last frame
             progress = 0.1 + (0.7 * (idx + 1) / total_frames)
-            if (idx + 1) % 10 == 0:
+            logger.debug(f"Frame {idx + 1}/{total_frames}: progress={progress:.2f}, should_update={(idx + 1) % 5 == 0 or (idx + 1) == total_frames}")
+            if (idx + 1) % 5 == 0 or (idx + 1) == total_frames:
+                logger.info(f"Updating progress: {idx + 1}/{total_frames} frames")
                 await cache_manager.update_job_status(
                     job_id,
                     status=JobStatus.PROCESSING.value,
@@ -294,7 +363,8 @@ async def process_analysis_job(
                     confidence=all_detections[i]["confidence"],
                     quality_score=all_detections[i]["quality_score"],
                     pose=all_detections[i]["pose"],
-                    landmarks=Landmarks(**all_detections[i]["landmarks"])
+                    landmarks=Landmarks(**all_detections[i]["landmarks"]),
+                    enhanced=all_detections[i].get("enhanced", False)
                 )
                 for i in detection_indices
             ]
@@ -312,7 +382,8 @@ async def process_analysis_job(
                     confidence=rep_detection["confidence"],
                     quality_score=rep_detection["quality_score"],
                     pose=rep_detection["pose"],
-                    landmarks=Landmarks(**rep_detection["landmarks"])
+                    landmarks=Landmarks(**rep_detection["landmarks"]),
+                    enhanced=rep_detection.get("enhanced", False)
                 )
             )
 
