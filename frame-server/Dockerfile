@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    git \
     cron \
     build-essential \
     pkg-config \
@@ -27,6 +28,12 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
+# Install basicsr separately with PEP 517 to bypass hash checking issue
+RUN pip3 install --no-cache-dir --use-pep517 basicsr==1.4.2 || \
+    pip3 install --no-cache-dir basicsr==1.4.2 --no-deps && \
+    pip3 install --no-cache-dir addict future lmdb numpy opencv-python Pillow pyyaml requests scikit-image scipy tb-nightly tqdm yapf
+
+# Install remaining requirements
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application code

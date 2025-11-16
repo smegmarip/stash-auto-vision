@@ -606,11 +606,18 @@ async def get_frame(job_id: str, frame_index: int, wait: bool = True):
                     detail=f"Frame file not found: {frame_path}"
                 )
 
-            return FileResponse(
-                frame_path,
-                media_type="image/jpeg",
-                headers={"X-Frame-Index": str(frame_index)}
-            )
+            try:
+                return FileResponse(
+                    frame_path,
+                    media_type="image/jpeg",
+                    headers={"X-Frame-Index": str(frame_index)}
+                )
+            except RuntimeError as e:
+                # Handle race condition: file was deleted between existence check and FileResponse
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Frame file no longer available: {frame_path}"
+                )
 
         # Extraction in progress - wait if requested
         if wait and metadata.get("status") in [JobStatus.QUEUED.value, JobStatus.PROCESSING.value]:
