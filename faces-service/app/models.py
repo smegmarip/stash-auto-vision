@@ -31,7 +31,7 @@ class FaceAnalysisParameters(BaseModel):
     face_min_confidence: float = Field(default=float(os.getenv("FACES_MIN_CONFIDENCE", "0.9")), ge=0.0, le=1.0)
     face_min_quality: float = Field(default=float(os.getenv("FACES_MIN_QUALITY", "0.0")), ge=0.0, le=1.0, description="Minimum quality threshold (filter below this)")
     max_faces: int = Field(default=50, ge=1, le=1000)
-    sampling_interval: float = Field(default=2.0, ge=0.1, le=10.0)
+    sampling_interval: float = Field(default=2.0, ge=0.1, le=10.0, description="Sampling interval in seconds (auto-adjusted for short videos)")
     use_sprites: bool = Field(default=False)
     sprite_vtt_url: Optional[str] = None
     sprite_image_url: Optional[str] = None

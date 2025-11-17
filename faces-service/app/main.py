@@ -144,13 +144,44 @@ def detect_source_type(source: str, source_type: Optional[str] = None) -> str:
         return "image"
 
 
+async def get_video_info(video_path: str) -> tuple:
+    """
+    Get video information (duration, fps, total_frames) from OpenCV
+
+    Args:
+        video_path: Path to video file
+
+    Returns:
+        Tuple of (duration_seconds, fps, total_frames)
+    """
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f"Failed to open video: {video_path}")
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+        cap.release()
+
+        logger.info(f"Video info: {duration:.2f}s, {fps:.2f} FPS, {total_frames} frames")
+        return duration, fps, total_frames
+    except Exception as e:
+        logger.error(f"Failed to get video info: {e}")
+        # Return safe defaults if can't read video
+        return 60.0, 30.0, 1800
+
+
 async def request_frames(
     video_path: str,
     job_id: str,
     parameters: dict
 ) -> dict:
     """
-    Request frame extraction from frame-server
+    Request frame extraction from frame-server with adaptive sampling
+
+    Automatically adjusts sampling_interval for short videos to ensure
+    adequate frame coverage for face analysis.
 
     Args:
         video_path: Path to video file
@@ -161,6 +192,19 @@ async def request_frames(
         Frame extraction results
     """
     try:
+        # Get video info to adjust sampling interval for short videos
+        duration, fps, total_frames = await get_video_info(video_path)
+        sampling_interval = parameters.get("sampling_interval", 2.0)
+
+        # Adaptive sampling: ensure at least 10 frames for videos shorter than 20s
+        # For videos <20s: interval = max(duration/10, 0.1)
+        # For videos >=20s: use client-provided interval
+        if duration < 20.0:
+            adjusted_interval = max(duration / 10.0, 0.1)
+            if adjusted_interval < sampling_interval:
+                logger.info(f"Short video ({duration:.1f}s): adjusting interval from {sampling_interval}s to {adjusted_interval:.2f}s")
+                sampling_interval = adjusted_interval
+
         async with httpx.AsyncClient(timeout=300.0) as client:
             # Submit extraction job
             response = await client.post(
@@ -171,7 +215,7 @@ async def request_frames(
                     "extraction_method": "opencv_cuda" if INSIGHTFACE_DEVICE == "cuda" else "opencv_cpu",
                     "sampling_strategy": {
                         "mode": "interval",
-                        "interval_seconds": parameters.get("sampling_interval", 2.0)
+                        "interval_seconds": sampling_interval
                     },
                     "scene_boundaries": parameters.get("scene_boundaries"),
                     "use_sprites": parameters.get("use_sprites", False),
