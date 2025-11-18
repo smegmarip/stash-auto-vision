@@ -23,8 +23,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ /app/app/
 
-# Create model directory
+# Create model directory and copy occlusion detection model
 RUN mkdir -p /app/models
+COPY models/occlusion_classifier.onnx /app/models/
 
 # Download InsightFace model on first run
 # This will be done at runtime to avoid bloating the image
