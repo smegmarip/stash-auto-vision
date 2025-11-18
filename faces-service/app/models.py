@@ -86,6 +86,8 @@ class Detection(BaseModel):
     pose: str  # "front", "left", "right", "front-rotate-left", "front-rotate-right"
     landmarks: Landmarks
     enhanced: bool = False  # Indicates if face was enhanced via CodeFormer/GFPGAN
+    occluded: bool = False  # Indicates if face is occluded (glasses, mask, hand, etc.)
+    occlusion_probability: float = Field(default=0.0, ge=0.0, le=1.0, description="Probability that face is occluded (0.0-1.0)")
 
 
 class Face(BaseModel):

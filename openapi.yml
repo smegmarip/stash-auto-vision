@@ -1246,6 +1246,16 @@ components:
           type: boolean
           default: false
           description: Indicates if this face was enhanced via CodeFormer/GFPGAN
+        occluded:
+          type: boolean
+          default: false
+          description: Indicates if face is occluded (glasses, mask, hand, etc.)
+        occlusion_probability:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.0
+          description: Probability that face is occluded (0.0-1.0)
 
     BoundingBox:
       type: object
