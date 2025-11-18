@@ -408,7 +408,9 @@ async def process_analysis_job(
                     quality_score=all_detections[i]["quality_score"],
                     pose=all_detections[i]["pose"],
                     landmarks=Landmarks(**all_detections[i]["landmarks"]),
-                    enhanced=all_detections[i].get("enhanced", False)
+                    enhanced=all_detections[i].get("enhanced", False),
+                    occluded=all_detections[i].get("occluded", False),
+                    occlusion_probability=all_detections[i].get("occlusion_probability", 0.0)
                 )
                 for i in detection_indices
             ]
@@ -427,7 +429,9 @@ async def process_analysis_job(
                     quality_score=rep_detection["quality_score"],
                     pose=rep_detection["pose"],
                     landmarks=Landmarks(**rep_detection["landmarks"]),
-                    enhanced=rep_detection.get("enhanced", False)
+                    enhanced=rep_detection.get("enhanced", False),
+                    occluded=rep_detection.get("occluded", False),
+                    occlusion_probability=rep_detection.get("occlusion_probability", 0.0)
                 )
             )
 

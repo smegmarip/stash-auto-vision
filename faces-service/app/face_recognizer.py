@@ -13,6 +13,8 @@ import logging
 if TYPE_CHECKING:
     from .frame_client import FrameServerClient
 
+from .occlusion_detector import OcclusionDetector
+
 try:
     from insightface.app import FaceAnalysis
     INSIGHTFACE_AVAILABLE = True
@@ -52,6 +54,9 @@ class FaceRecognizer:
 
         self.app = FaceAnalysis(name=model_name, providers=providers)
         self.app.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size)
+
+        # Initialize occlusion detector
+        self.occlusion_detector = OcclusionDetector()
 
         logger.info(f"InsightFace initialized: {model_name} on {device}")
 
@@ -101,6 +106,10 @@ class FaceRecognizer:
                 # Calculate quality score
                 quality_score = self._calculate_quality(face, image.shape)
 
+                # Detect occlusion
+                face_crop = image[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+                occluded, occlusion_probability = self.occlusion_detector.detect(face_crop)
+
                 detection = {
                     'bbox': {
                         'x_min': int(bbox[0]),
@@ -120,7 +129,9 @@ class FaceRecognizer:
                     'quality_score': quality_score,
                     'pose': pose,
                     'demographics': None,
-                    'enhanced': False  # Default to False, will be set to True if enhanced
+                    'enhanced': False,  # Default to False, will be set to True if enhanced
+                    'occluded': occluded,
+                    'occlusion_probability': occlusion_probability
                 }
 
                 # Add demographics if available
