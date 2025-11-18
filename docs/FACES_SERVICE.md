@@ -553,5 +553,167 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-09
+## Occlusion Detection
+
+**Model:** ResNet18 (Custom-trained)
+**Training Data:** 30k+ images from MAFA dataset (masks, hands, sunglasses)
+**Input:** 224x224 RGB
+**Output:** Binary classification (occluded/not occluded) + probability (0.0-1.0)
+**Threshold:** 0.5 for binary decision
+**Status:** Integrated - November 2025
+
+### Model History
+
+**v2 (Current) - ResNet18:**
+- ~100% TPR on hand-occluded faces
+- 42.6 MB model size
+- ~3.7ms inference time
+- Trained on 30k+ MAFA dataset
+
+**v1 (Deprecated) - ConvNeXt-Small:**
+- ~50% TPR on hand-occluded faces (FAILED)
+- 192 MB model size
+- ~11.5ms inference time
+- Trained on 9,749 images from LamKser dataset
+
+### Overview
+
+The Faces Service includes automatic occlusion detection for all face detections. Occlusion detection identifies faces partially obscured by:
+- Sunglasses or eyeglasses
+- Face masks (medical, decorative)
+- Hands or other objects
+- Hair covering parts of the face
+- Other types of facial obstruction
+
+### Detection Output
+
+Each face detection includes two fields:
+
+```json
+{
+  "occluded": false,
+  "occlusion_probability": 0.42
+}
+```
+
+- **occluded** (boolean): True if occlusion probability > 0.5
+- **occlusion_probability** (float): Confidence score 0.0-1.0
+
+### Model Details
+
+**Architecture:** ResNet18
+- Parameters: 11.1M
+- Inference time: ~3.7ms (CPU), <1ms (GPU)
+- Model size: 42.6 MB (ONNX)
+- Training dataset: 30k+ images from MAFA (Masked Faces) dataset
+- Custom trained with hand-occlusion emphasis
+
+**Preprocessing:**
+- Resize face crop to 224x224
+- Convert BGR to RGB
+- Normalize with ImageNet statistics (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+**Inference:**
+- ONNX Runtime with CPUExecutionProvider (GPU support available via INSIGHTFACE_DEVICE=cuda)
+- Binary classification via softmax output
+- Argmax for class prediction (no manual threshold)
+
+### Building the Occlusion Model
+
+The ResNet18 occlusion model was custom-trained on the MAFA dataset.
+
+#### Training Details
+
+**Dataset:** MAFA (Masked Faces) + augmented hand-occlusion samples
+- Total images: 30,000+
+- Categories: masks, sunglasses, hands, clean faces
+- Augmentation: rotation, flipping, brightness adjustment
+
+**Training Parameters:**
+- Architecture: ResNet18 (torchvision)
+- Optimizer: Adam
+- Learning rate: 0.001
+- Epochs: 50
+- Batch size: 32
+
+**Export to ONNX:**
+```python
+import torch
+import torch.onnx
+
+model = load_trained_model()
+model.eval()
+
+dummy_input = torch.randn(1, 3, 224, 224)
+torch.onnx.export(
+    model,
+    dummy_input,
+    "occlusion_classifier.onnx",
+    input_names=['input'],
+    output_names=['output'],
+    dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+)
+```
+
+#### Verify Output
+```bash
+file faces-service/models/occlusion_classifier.onnx
+# Expected: data (binary ONNX format)
+
+ls -lh faces-service/models/occlusion_classifier.onnx
+# Expected: ~42.6 MB
+```
+
+#### Integration
+The model is automatically loaded at service startup and used for all face detections:
+```python
+# faces-service/app/occlusion_detector.py
+detector = OcclusionDetector()  # Loads ONNX model
+occluded, probability = detector.detect(face_crop)
+```
+
+### Client Filtering
+
+Occlusion data is returned for all faces - filtering is the responsibility of the client:
+
+```python
+# Example: Filter out highly occluded faces
+faces = [f for f in detections if f['occlusion_probability'] < 0.7]
+
+# Example: Flag occluded faces for manual review
+flagged = [f for f in detections if f['occluded']]
+```
+
+### Performance Impact
+
+- **Additional latency per face:** ~3-4ms (CPU), <1ms (GPU)
+- **Memory overhead:** ~43 MB (model) + ~1 MB (runtime)
+- **Throughput impact:** Minimal (~2-3% slower overall pipeline)
+- **Graceful degradation:** If model fails to load, returns `occluded=False, probability=0.0`
+
+### Model Selection History
+
+**Initial Evaluation (LamKser pre-trained models):**
+
+| Model | Accuracy | Hand TPR | Params | Inference | Notes |
+|-------|----------|----------|--------|-----------|-------|
+| ConvNeXt-Small | 98.87% | **50%** | 49.4M | 11.54ms | Failed on hands |
+| ResNet18 | 97.03% | **50%** | 11.1M | 3.69ms | Failed on hands |
+
+**Issue:** All LamKser pre-trained models failed to detect hand-on-face occlusions (~50% TPR).
+
+**Solution:** Custom-trained ResNet18 on MAFA dataset with hand-occlusion augmentation.
+
+**Final Model (Current):**
+- Architecture: ResNet18 (torchvision)
+- Hand TPR: ~100%
+- Size: 42.6 MB
+- Speed: ~3.7ms (CPU)
+- Training data: 30k+ MAFA images
+
+The custom-trained model significantly outperforms pre-trained alternatives on hand-occlusion detection while maintaining excellent performance on masks and sunglasses.
+
+---
+
+**Last Updated:** 2025-11-18
 **Status:** Implemented and Tested
