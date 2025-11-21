@@ -490,6 +490,48 @@ async def extract_single_frame(
                 detail=f"Video not found: {video_path}"
             )
 
+        # Generate cache key for this exact request
+        cache_params = {
+            "timestamp": timestamp,
+            "output_format": output_format,
+            "quality": quality,
+            "enhance": enhance,
+            "model": model if enhance else None,
+            "fidelity_weight": fidelity_weight if enhance else None
+        }
+        cache_key = cache_manager.generate_cache_key(video_path, cache_params)
+
+        # Check if we have a cached frame file (separate paths for enhanced vs unenhanced)
+        cache_prefix = "enhanced" if enhance == 1 else "frame"
+        cached_frame_path = f"/tmp/frames/{cache_prefix}_{cache_key}.{output_format}"
+        if os.path.exists(cached_frame_path):
+            logger.info(f"Cache hit for single frame: {os.path.basename(video_path)}@{timestamp}s (enhance={enhance})")
+
+            # Get video info for headers
+            try:
+                duration, fps, total_frames = frame_extractor.get_video_info(video_path)
+                frame_number = int(timestamp * fps)
+                # Get frame dimensions
+                import cv2
+                img = cv2.imread(cached_frame_path)
+                height, width = img.shape[:2] if img is not None else (0, 0)
+            except Exception:
+                frame_number = 0
+                width, height = 0, 0
+
+            headers = {
+                "X-Timestamp": str(timestamp),
+                "X-Frame-Number": str(frame_number),
+                "X-Resolution": f"{width}x{height}",
+                "X-Cache-Hit": "true"
+            }
+
+            return FileResponse(
+                cached_frame_path,
+                media_type=f"image/{output_format}",
+                headers=headers
+            )
+
         # Build enhancement options
         enhancement_opts = None
         if enhance == 1:
@@ -527,6 +569,15 @@ async def extract_single_frame(
             idx, ts, frame_path, width, height = result
             faces_enhanced = 0
 
+        # Cache the frame for future requests
+        try:
+            import shutil
+            os.makedirs("/tmp/frames", exist_ok=True)
+            shutil.copy2(frame_path, cached_frame_path)
+            logger.info(f"Cached frame: {os.path.basename(video_path)}@{timestamp}s (enhance={enhance})")
+        except Exception as e:
+            logger.warning(f"Failed to cache frame: {e}")
+
         # Get FPS for frame number calculation
         try:
             duration, fps, total_frames = frame_extractor.get_video_info(video_path)
@@ -538,7 +589,8 @@ async def extract_single_frame(
         headers = {
             "X-Timestamp": str(timestamp),
             "X-Frame-Number": str(frame_number),
-            "X-Resolution": f"{width}x{height}"
+            "X-Resolution": f"{width}x{height}",
+            "X-Cache-Hit": "false"
         }
         if enhance == 1:
             headers["X-Faces-Enhanced"] = str(faces_enhanced)
