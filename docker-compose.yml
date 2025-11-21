@@ -77,6 +77,9 @@ services:
       - ${SERVER_MEDIA_PATH}:/data:ro
       - ./frame-server/app:/app/app
       - frames_cache:/tmp/frames
+      - torch_cache:/root/.cache/torch
+      - enhancement_models:/tmp/face_enhancement_models
+      - codeformer_weights:/usr/local/lib/python3.10/site-packages/codeformer/weights
     networks:
       - vision_network
     depends_on:
@@ -327,3 +330,6 @@ networks:
 volumes:
   redis_data:
   frames_cache:
+  torch_cache:
+  enhancement_models:
+  codeformer_weights:
