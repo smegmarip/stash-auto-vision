@@ -14,6 +14,7 @@ class ExtractionMethod(str, Enum):
     OPENCV_CUDA = "opencv_cuda"
     OPENCV_CPU = "opencv_cpu"
     FFMPEG = "ffmpeg"
+    SPRITES = "sprites"
 
 
 class SamplingMode(str, Enum):

@@ -330,6 +330,9 @@ async def process_video_analysis(
                         "embedding_similarity_threshold": request.modules.faces.parameters.get("similarity_threshold", 0.6),
                         "detect_demographics": request.modules.faces.parameters.get("detect_demographics", True),
                         "scene_boundaries": scene_boundaries,
+                        "use_sprites": request.modules.faces.parameters.get("use_sprites", False),
+                        "sprite_vtt_url": request.modules.faces.parameters.get("sprite_vtt_url"),
+                        "sprite_image_url": request.modules.faces.parameters.get("sprite_image_url"),
                         "enhancement": request.modules.faces.parameters.get("enhancement", {
                             "enabled": False,
                             "quality_trigger": float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")),
