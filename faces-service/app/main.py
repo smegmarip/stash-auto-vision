@@ -9,6 +9,7 @@ import time
 import asyncio
 import httpx
 import cv2
+import numpy as np
 import magic
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -196,11 +197,11 @@ async def request_frames(
         duration, fps, total_frames = await get_video_info(video_path)
         sampling_interval = parameters.get("sampling_interval", 2.0)
 
-        # Adaptive sampling: ensure at least 10 frames for videos shorter than 20s
-        # For videos <20s: interval = max(duration/10, 0.1)
+        # Adaptive sampling: ensure at least 20 frames for videos shorter than 20s
+        # For videos <20s: interval = max(duration/20, 0.1)
         # For videos >=20s: use client-provided interval
         if duration < 20.0:
-            adjusted_interval = max(duration / 10.0, 0.1)
+            adjusted_interval = max(duration / 20.0, 0.1)
             if adjusted_interval < sampling_interval:
                 logger.info(f"Short video ({duration:.1f}s): adjusting interval from {sampling_interval}s to {adjusted_interval:.2f}s")
                 sampling_interval = adjusted_interval
@@ -320,28 +321,13 @@ async def process_analysis_job(
                 logger.warning(f"Failed to load frame: {frame_path}")
                 continue
 
-            # Detect faces (with optional enhancement)
-            logger.debug(f"Enhancement enabled: {request.parameters.enhancement.enabled}, quality_trigger: {request.parameters.enhancement.quality_trigger}")
-            if request.parameters.enhancement.enabled:
-                faces = await face_recognizer.detect_and_enhance_faces(
-                    image=frame,
-                    video_path=request.source,
-                    timestamp=frame_info["timestamp"],
-                    frame_client=frame_client,
-                    face_min_confidence=request.parameters.face_min_confidence,
-                    face_min_quality=request.parameters.face_min_quality,
-                    enhancement_enabled=True,
-                    enhancement_quality_trigger=request.parameters.enhancement.quality_trigger,
-                    enhancement_model=request.parameters.enhancement.model,
-                    enhancement_fidelity_weight=request.parameters.enhancement.fidelity_weight
-                )
-            else:
-                faces = face_recognizer.detect_faces(
-                    frame,
-                    face_min_confidence=request.parameters.face_min_confidence
-                )
-                # Apply quality filtering
-                faces = [f for f in faces if f['quality_score'] >= request.parameters.face_min_quality]
+            # Detect faces (no enhancement yet - will enhance representative faces later)
+            faces = face_recognizer.detect_faces(
+                frame,
+                face_min_confidence=request.parameters.face_min_confidence
+            )
+            # Apply quality filtering
+            faces = [f for f in faces if f['quality_score'] >= request.parameters.face_min_quality]
 
             logger.debug(f"Frame {idx}: {len(faces)} faces after detection and filtering")
 
@@ -397,6 +383,83 @@ async def process_analysis_job(
             )
 
             rep_detection = all_detections[rep_idx]
+
+            # Enhance representative face if needed
+            if request.parameters.enhancement.enabled:
+                quality = rep_detection['quality_score']
+                confidence = rep_detection['confidence']
+
+                # Only enhance if:
+                # 1. Quality is between face_min_quality and quality_trigger (worth enhancing)
+                # 2. Confidence is high enough (we're sure it's a face)
+                should_enhance = (
+                    quality >= request.parameters.face_min_quality and
+                    quality < request.parameters.enhancement.quality_trigger and
+                    confidence >= request.parameters.face_min_confidence
+                )
+
+                if should_enhance:
+                    logger.info(f"Enhancing representative face {face_id}: quality={quality:.3f}, confidence={confidence:.3f}")
+
+                    # Load the frame for this detection
+                    frame_idx = rep_detection['frame_index']
+                    frame_info = frames[frame_idx]
+                    frame_path = frame_info["url"].replace("file://", "")
+                    frame = cv2.imread(frame_path)
+
+                    if frame is not None:
+                        # Enhance frame
+                        enhanced_frame_data = await frame_client.enhance_frame(
+                            video_path=request.source,
+                            timestamp=rep_detection['timestamp'],
+                            model=request.parameters.enhancement.model,
+                            fidelity_weight=request.parameters.enhancement.fidelity_weight,
+                            output_format="jpeg",
+                            quality=95
+                        )
+
+                        if enhanced_frame_data:
+                            # Decode enhanced frame
+                            enhanced_image = cv2.imdecode(
+                                np.frombuffer(enhanced_frame_data, np.uint8),
+                                cv2.IMREAD_COLOR
+                            )
+
+                            if enhanced_image is not None:
+                                # Re-detect face in enhanced frame
+                                enhanced_detections = face_recognizer.detect_faces(
+                                    enhanced_image,
+                                    face_min_confidence=request.parameters.face_min_confidence
+                                )
+
+                                # Find best detection by quality
+                                if enhanced_detections:
+                                    best_enhanced = max(enhanced_detections, key=lambda d: d['quality_score'])
+
+                                    # Only use enhanced if quality improved
+                                    if best_enhanced['quality_score'] > quality:
+                                        logger.info(
+                                            f"Enhancement successful for {face_id}: "
+                                            f"quality {quality:.3f} → {best_enhanced['quality_score']:.3f}"
+                                        )
+                                        # Update representative detection with enhanced version
+                                        best_enhanced['enhanced'] = True
+                                        best_enhanced['frame_index'] = rep_detection['frame_index']
+                                        best_enhanced['timestamp'] = rep_detection['timestamp']
+                                        rep_detection = best_enhanced
+                                    else:
+                                        logger.info(
+                                            f"Enhancement did not improve quality for {face_id}: "
+                                            f"{quality:.3f} → {best_enhanced['quality_score']:.3f}"
+                                        )
+                                else:
+                                    logger.warning(f"No face detected in enhanced frame for {face_id}")
+                            else:
+                                logger.error(f"Failed to decode enhanced frame for {face_id}")
+                        else:
+                            logger.error(f"Failed to enhance frame for {face_id}")
+                    else:
+                        logger.warning(f"Failed to load frame for enhancement: {frame_path}")
 
             # Build detections list
             detections = [
