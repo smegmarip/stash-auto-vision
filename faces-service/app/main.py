@@ -207,19 +207,26 @@ async def request_frames(
                 sampling_interval = adjusted_interval
 
         async with httpx.AsyncClient(timeout=300.0) as client:
+            # Determine extraction method
+            use_sprites = parameters.get("use_sprites", False)
+            if use_sprites:
+                extraction_method = "sprites"
+            else:
+                extraction_method = "opencv_cuda" if INSIGHTFACE_DEVICE == "cuda" else "opencv_cpu"
+
             # Submit extraction job
             response = await client.post(
                 f"{FRAME_SERVER_URL}/extract",
                 json={
                     "video_path": video_path,
                     "job_id": f"frames-{job_id}",
-                    "extraction_method": "opencv_cuda" if INSIGHTFACE_DEVICE == "cuda" else "opencv_cpu",
+                    "extraction_method": extraction_method,
                     "sampling_strategy": {
                         "mode": "interval",
                         "interval_seconds": sampling_interval
                     },
                     "scene_boundaries": parameters.get("scene_boundaries"),
-                    "use_sprites": parameters.get("use_sprites", False),
+                    "use_sprites": use_sprites,
                     "sprite_vtt_url": parameters.get("sprite_vtt_url"),
                     "sprite_image_url": parameters.get("sprite_image_url"),
                     "output_format": "jpeg",
