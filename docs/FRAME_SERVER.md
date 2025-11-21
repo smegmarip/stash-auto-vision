@@ -224,6 +224,28 @@ paths:
       responses:
         '200':
           description: Frame image (enhanced if requested)
+          headers:
+            X-Cache-Hit:
+              schema:
+                type: string
+                enum: [true, false]
+              description: Indicates if frame was served from cache
+            X-Timestamp:
+              schema:
+                type: string
+              description: Frame timestamp in seconds
+            X-Frame-Number:
+              schema:
+                type: string
+              description: Frame number in video
+            X-Resolution:
+              schema:
+                type: string
+              description: Frame resolution (e.g., "1920x1080")
+            X-Faces-Enhanced:
+              schema:
+                type: string
+              description: Number of faces enhanced (only if enhance=1)
           content:
             image/jpeg:
               schema:
@@ -609,10 +631,15 @@ curl "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=
 - Shared: `torch==2.0.1`, `torchvision==0.15.2`, `basicsr==1.4.2`, `facexlib==0.3.0`
 
 **Model Storage:**
-- Models auto-download to `/tmp/face_enhancement_models/`
-- GFPGAN: `GFPGANv1.4.pth` (~332MB)
-- CodeFormer: `codeformer.pth` (~376MB)
-- Background upsampler: `RealESRGAN_x2plus.pth` (~67MB)
+- Models auto-download to persistent Docker volumes (one-time download)
+- `enhancement_models` volume: GFPGAN and RealESRGAN models (423 MB)
+  - `codeformer.pth` (~359 MB)
+  - `RealESRGAN_x2plus.pth` (~64 MB)
+- `codeformer_weights` volume: Detection and parsing models (186 MB)
+  - `detection_Resnet50_Final.pth` (~104 MB)
+  - `parsing_parsenet.pth` (~81 MB)
+- `torch_cache` volume: PyTorch model cache
+- Total: ~609 MB cached across restarts
 
 ### Sprite Sheet Processing
 
@@ -658,7 +685,9 @@ docker exec -e FRAME_TTL_HOURS=1 vision-frame-server /usr/local/bin/cleanup_fram
 
 ### Cache Strategy
 
-Frame Server uses content-based cache keys with Redis:
+Frame Server implements two-tier caching: Redis for job metadata and file-based for extracted frames.
+
+#### Redis Cache (Job Metadata)
 
 **Cache Key Generation:**
 ```python
@@ -683,6 +712,49 @@ frame:cache:{cache_key}           # Cache key → job_id mapping
 - File modification changes `mtime`
 - New `mtime` generates new cache key
 - Old cache entries expire after TTL
+
+#### File-Based Cache (Enhanced Frames)
+
+The `/extract-frame` endpoint implements file-based caching to avoid redundant enhancement operations:
+
+**Cache Key Generation:**
+```python
+cache_params = {
+    "timestamp": timestamp,
+    "output_format": output_format,
+    "quality": quality,
+    "enhance": enhance,
+    "model": model if enhance else None,
+    "fidelity_weight": fidelity_weight if enhance else None
+}
+cache_key = cache_manager.generate_cache_key(video_path, cache_params)
+```
+
+**Cache Storage:**
+- **Location:** `/tmp/frames/` (mounted to `frames_cache` Docker volume)
+- **Separate paths:** `enhanced_{cache_key}.jpeg` vs `frame_{cache_key}.jpeg`
+- **Parameter-specific:** Different cache keys for different enhancement settings
+
+**Cache Behavior:**
+- Check cache before extraction (instant return on hit)
+- Store extracted frame after processing
+- `X-Cache-Hit` header indicates cache status (`true` or `false`)
+- Eliminates redundant 60+ second enhancement operations
+
+**Example:**
+```bash
+# First request: extract + enhance (60 seconds)
+curl -i "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.5"
+# Response header: X-Cache-Hit: false
+
+# Second request: cached (instant)
+curl -i "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.5"
+# Response header: X-Cache-Hit: true
+
+# Different parameters: new cache entry (60 seconds)
+curl -i "http://localhost:5001/extract-frame?video_path=/media/video.mp4&timestamp=5.0&enhance=1&model=codeformer&fidelity_weight=0.7"
+# Response header: X-Cache-Hit: false
+```
 
 ### Configuration
 
@@ -728,5 +800,5 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-15
-**Status:** Implemented and Tested (with PyAV fallback and Face Enhancement)
+**Last Updated:** 2025-11-21
+**Status:** Implemented and Tested (with PyAV fallback, Face Enhancement, and Enhanced Frame Caching)
