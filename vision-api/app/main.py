@@ -323,12 +323,19 @@ async def process_video_analysis(
                     "job_id": f"faces-{job_id}",
                     "parameters": {
                         "face_min_confidence": request.modules.faces.parameters.get("face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))),
+                        "face_min_quality": request.modules.faces.parameters.get("face_min_quality", float(os.getenv("FACES_MIN_QUALITY", "0.0"))),
                         "max_faces": request.modules.faces.parameters.get("max_faces", 50),
                         "sampling_interval": request.modules.faces.parameters.get("face_sampling_interval", 2.0),
                         "enable_deduplication": request.modules.faces.parameters.get("enable_deduplication", True),
                         "embedding_similarity_threshold": request.modules.faces.parameters.get("similarity_threshold", 0.6),
                         "detect_demographics": request.modules.faces.parameters.get("detect_demographics", True),
-                        "scene_boundaries": scene_boundaries
+                        "scene_boundaries": scene_boundaries,
+                        "enhancement": request.modules.faces.parameters.get("enhancement", {
+                            "enabled": False,
+                            "quality_trigger": float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")),
+                            "model": "codeformer",
+                            "fidelity_weight": 0.5
+                        })
                     }
                 }
 
