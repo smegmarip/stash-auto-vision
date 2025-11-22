@@ -333,8 +333,17 @@ async def process_analysis_job(
                 frame,
                 face_min_confidence=request.parameters.face_min_confidence
             )
-            # Apply quality filtering
-            faces = [f for f in faces if f['quality_score'] >= request.parameters.face_min_quality]
+            # Apply quality filtering with logging
+            filtered_faces = []
+            for f in faces:
+                if f['quality_score'] >= request.parameters.face_min_quality:
+                    filtered_faces.append(f)
+                else:
+                    logger.debug(
+                        f"Frame {idx}: Filtered face with quality={f['quality_score']:.3f} < "
+                        f"min_quality={request.parameters.face_min_quality}"
+                    )
+            faces = filtered_faces
 
             logger.debug(f"Frame {idx}: {len(faces)} faces after detection and filtering")
 
@@ -399,10 +408,12 @@ async def process_analysis_job(
                 # Only enhance if:
                 # 1. Quality is between face_min_quality and quality_trigger (worth enhancing)
                 # 2. Confidence is high enough (we're sure it's a face)
+                # 3. Non-sprite extraction (sprites are low-res)
                 should_enhance = (
                     quality >= request.parameters.face_min_quality and
                     quality < request.parameters.enhancement.quality_trigger and
-                    confidence >= request.parameters.face_min_confidence
+                    confidence >= request.parameters.face_min_confidence and
+                    not request.parameters.use_sprites
                 )
 
                 if should_enhance:

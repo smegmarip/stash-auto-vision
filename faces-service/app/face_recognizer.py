@@ -272,7 +272,41 @@ class FaceRecognizer:
 
     def _estimate_pose(self, face) -> str:
         """
-        Estimate face pose from landmarks
+        Estimate face pose using native InsightFace angles
+
+        Args:
+            face: InsightFace face object
+
+        Returns:
+            Pose string: front, left, right, front-rotate-left, front-rotate-right
+        """
+        try:
+            # Use native InsightFace pose angles if available
+            if hasattr(face, 'pose'):
+                pitch, yaw, roll = face.pose  # [pitch, yaw, roll] in degrees
+
+                # Categorize based on yaw (left/right turn) and roll (head tilt)
+                if abs(yaw) < 15 and abs(roll) < 15:
+                    return "front"
+                elif abs(yaw) < 15 and roll < -15:
+                    return "front-rotate-left"
+                elif abs(yaw) < 15 and roll > 15:
+                    return "front-rotate-right"
+                elif yaw < -15:
+                    return "left"
+                else:  # yaw > 15
+                    return "right"
+
+            # Fallback to geometric estimation if pose not available
+            return self._estimate_pose_geometric(face)
+
+        except Exception as e:
+            logger.debug(f"Error estimating pose: {e}")
+            return "front"
+
+    def _estimate_pose_geometric(self, face) -> str:
+        """
+        Fallback: Estimate face pose from keypoint geometry
 
         Args:
             face: InsightFace face object
@@ -315,7 +349,7 @@ class FaceRecognizer:
                 return "front-rotate-left"
 
         except Exception as e:
-            logger.debug(f"Error estimating pose: {e}")
+            logger.debug(f"Error in geometric pose estimation: {e}")
             return "front"
 
     def _calculate_quality(self, face, image_shape: Tuple[int, int, int]) -> float:
@@ -329,23 +363,34 @@ class FaceRecognizer:
         Returns:
             Quality score (0.0-1.0)
         """
+        # Checkpoints: (area, score)
+        points = [
+            (0, 0),
+            (10000, 0.25),  # 100x100
+            (140625, 0.75),  # 375x375
+            (302500, 0.90),  # 550x550
+            (1000000, 1.0),  # 1000x1000
+        ]
+
         try:
-            # Start with detection confidence
-            quality = face.det_score
+            # Start with one
+            quality = 1
 
             # Factor in face size (larger is better)
             bbox = face.bbox
             face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-            image_area = image_shape[0] * image_shape[1]
-            size_ratio = face_area / image_area
 
-            # Ideal size is 10-30% of image
-            if 0.1 <= size_ratio <= 0.3:
-                quality *= 1.0
-            elif size_ratio < 0.1:
-                quality *= (size_ratio / 0.1)  # Penalty for small faces
+            # Linear interpolation
+            for i in range(len(points) - 1):
+                if points[i][0] <= face_area <= points[i + 1][0]:
+                    t = (face_area - points[i][0]) / (points[i + 1][0] - points[i][0])
+                    quality = points[i][1] + t * (points[i + 1][1] - points[i][1])
+                    break
             else:
-                quality *= 0.9  # Slight penalty for very large faces
+                if face_area >= points[-1][0]:
+                    quality = points[-1][1]
+                else:
+                    quality = points[0][1]
 
             # Factor in pose (front-facing is best)
             pose = self._estimate_pose(face)
@@ -356,11 +401,12 @@ class FaceRecognizer:
             else:
                 quality *= 0.8
 
+            logger.debug(f"Face quality calculation: area={face_area}, pose={pose}, quality={quality:.3f}")
             return min(1.0, quality)
 
         except Exception as e:
             logger.debug(f"Error calculating quality: {e}")
-            return face.det_score
+            return 0
 
     def cluster_faces(
         self,
