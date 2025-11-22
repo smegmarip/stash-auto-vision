@@ -355,6 +355,14 @@ components:
 - Supports interval, timestamp, scene-based sampling
 - Optional sprite sheet parsing
 
+**Sprite Sheet Integration:**
+- Supports ultra-fast face detection from pre-generated WebVTT sprite tiles
+- Parameters: `use_sprites`, `sprite_vtt_url`, `sprite_image_url`
+- Automatic extraction method selection: "sprites" when `use_sprites=true`
+- Shared volume: `/tmp/sprites` mounted between frame-server and faces-service
+- Enhancement skipped: Sprite tiles are pre-processed at low resolution
+- Performance: 100+ FPS vs ~30 FPS for video extraction
+
 **Face Detection:**
 - RetinaFace multi-scale detection (640x640)
 - Filter by min_confidence (default 0.9)
@@ -366,15 +374,25 @@ components:
 - Optional demographics (age, gender)
 
 **Quality Scoring:**
-- Base: detection confidence
-- Size factor: face area 10-30% of image is ideal
-- Pose factor: front=1.0, rotated=0.9, profile=0.8
-- Range: 0.0 - 1.0
+- **Absolute Pixel-Based Calculation:**
+  - 100×100px (10,000px²) = 0.25
+  - 375×375px (140,625px²) = 0.75
+  - 550×550px (302,500px²) = 0.90
+  - 1000×1000px (1,000,000px²) = 1.0
+  - Linear interpolation between checkpoints
+- **Pose Factor:** front=1.0, rotated=0.9, profile=0.8
+- **Range:** 0.0 - 1.0
+- **Replaces:** Previous frame-ratio approach (10-30% of image size)
 
 **Pose Estimation:**
-- Analyze landmark geometry (eye alignment, nose position)
-- Classes: front, left, right, front-rotate-left, front-rotate-right
-- Based on eye angle and nose-to-eye offset
+- **Primary Method:** Native InsightFace pose angles (pitch, yaw, roll in degrees)
+  - front: |yaw| < 15° and |roll| < 15°
+  - left: yaw < -15°
+  - right: yaw > 15°
+  - front-rotate-left: |yaw| < 15° and roll < -15°
+  - front-rotate-right: |yaw| < 15° and roll > 15°
+- **Fallback Method:** Geometric estimation from landmark positions (eye alignment, nose position)
+- **Classes:** front, left, right, front-rotate-left, front-rotate-right
 
 **Face Clustering:**
 - Calculate cosine similarity between embeddings
@@ -498,6 +516,9 @@ FRAME_SERVER_URL=http://frame-server:5001
 # Cache
 REDIS_URL=redis://redis:6379/0
 CACHE_TTL=3600
+
+# Model Caching
+INSIGHTFACE_MODELS_CACHE=/root/.insightface  # Persistent model storage (reduces startup time)
 
 # Logging
 LOG_LEVEL=INFO

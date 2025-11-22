@@ -97,7 +97,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Optional face enhancement (CodeFormer/GFPGAN) for low-quality detections
 - Three-tier quality gate: detection confidence, quality trigger, minimum quality
 - Face clustering via cosine similarity (threshold 0.6)
-- Quality scoring and pose estimation (front, left, right, rotated)
+- Quality scoring (pixel-based) and pose estimation (native InsightFace angles with geometric fallback)
+- Sprite sheet integration for ultra-fast processing
 - Optional demographics detection (age, gender)
 
 **semantics-service** (Stubbed - Phase 2)
@@ -163,6 +164,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] Sequential processing (scenes → faces)
 - [x] Face enhancement with CodeFormer/GFPGAN (optional)
 - [x] Three-tier quality system with enhanced flag tracking
+- [x] Sprite sheet integration with cross-service volume sharing
+- [x] InsightFace model persistence (startup time: 15s → 3s)
 - [x] Health check aggregation
 - [x] GPU/CPU mode parity
 - [x] Docker Compose deployment
@@ -277,8 +280,13 @@ See [Future Work](#future-work) section below.
 
 **Frame Storage:**
 - Temporary storage: `/tmp/frames/` inside containers
+- Sprite storage: `/tmp/sprites/` (shared volume for sprite tiles)
 - TTL: 2 hours (configurable via FRAME_TTL_HOURS)
 - Cleanup: Cron job runs hourly inside frame-server
+
+**Model Caching:**
+- InsightFace models: `/root/.insightface` (~275MB, persistent volume)
+- Startup time: ~15s initial download, ~3s with cache
 
 **Confidence Thresholds:**
 - Environment variables set default confidence thresholds for each service

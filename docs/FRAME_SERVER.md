@@ -513,7 +513,10 @@ Parses WebVTT + JPEG grid for ultra-fast access.
 
 **Performance:** 100+ FPS
 **Memory:** Minimal
+**Storage:** Shared volume `/tmp/sprites` with faces-service
+**Integration:** Automatic enum support via `ExtractionMethod.SPRITES`
 **Limitation:** Fixed frame count, poor coverage for long videos
+**Use Case:** Pre-processed sprite sheets from Stash for instant face detection
 
 ### Sampling Strategies
 
@@ -661,6 +664,12 @@ sprite.jpg#xywh=160,0,160,90
 2. Parse VTT coordinates using regex: `#xywh=(\d+),(\d+),(\d+),(\d+)`
 3. Extract tiles: `tile = grid[y:y+h, x:x+w]`
 4. Save tiles as individual frames
+
+**Cross-Service Integration:**
+- Sprite tiles stored in shared volume: `/tmp/sprites/{job_id}/sprite_tile_*.jpg`
+- Volume mounted for both frame-server and faces-service
+- Enables faces-service to directly access extracted sprite tiles
+- Cleanup: Subject to TTL-based garbage collection (2 hours)
 
 ### Frame Storage and Cleanup
 
