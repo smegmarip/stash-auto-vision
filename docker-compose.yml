@@ -164,6 +164,7 @@ services:
       - ./faces-service/models:/app/models
       - frames_cache:/tmp/frames
       - sprites_cache:/tmp/sprites
+      - insightface_models:/root/.insightface
     networks:
       - vision_network
     depends_on:
@@ -336,3 +337,4 @@ volumes:
   torch_cache:
   enhancement_models:
   codeformer_weights:
+  insightface_models:
