@@ -10,6 +10,7 @@ import httpx
 import asyncio
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -30,6 +31,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+async def download_url(url: str) -> str:
+    """Download URL to temp file in shared volume, return local path"""
+    temp_dir = "/tmp/downloads"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    file_id = str(uuid.uuid4())
+
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        logger.info(f"Downloading: {url}")
+        response = await client.get(url)
+        response.raise_for_status()
+
+        # Detect extension from content-type or URL
+        content_type = response.headers.get("content-type", "")
+        if "video/" in content_type:
+            ext = ".mp4"
+        elif "image/" in content_type:
+            ext = ".jpg"
+        else:
+            # Fallback to URL extension
+            ext = os.path.splitext(urlparse(url).path)[1] or ".mp4"
+
+        local_path = os.path.join(temp_dir, f"{file_id}{ext}")
+        with open(local_path, "wb") as f:
+            f.write(response.content)
+
+        size_mb = len(response.content) / (1024 * 1024)
+        logger.info(f"Downloaded to {local_path} ({size_mb:.2f} MB)")
+        return local_path
+
 
 # Environment configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -216,8 +249,16 @@ async def process_video_analysis(
         job_id: Job identifier
         request: Analysis request
     """
+    downloaded_file = None
     try:
         logger.info(f"Starting orchestrated analysis job {job_id}")
+
+        # Download URL if needed
+        parsed = urlparse(request.source)
+        is_url = bool(parsed.scheme and parsed.netloc)
+        if is_url:
+            downloaded_file = await download_url(request.source)
+            request.source = downloaded_file  # Replace with local path
 
         start_time = time.time()
 
@@ -538,6 +579,14 @@ async def process_video_analysis(
             3600,
             str(metadata)
         )
+    finally:
+        # Clean up downloaded file
+        if downloaded_file and os.path.exists(downloaded_file):
+            try:
+                os.remove(downloaded_file)
+                logger.info(f"Cleaned up downloaded file: {downloaded_file}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up {downloaded_file}: {e}")
 
 
 @app.post("/vision/analyze", response_model=AnalyzeJobResponse, status_code=202)
@@ -547,7 +596,11 @@ async def analyze_video(
 ):
     """Submit comprehensive video analysis job"""
     try:
-        if not os.path.exists(request.source):
+        # Validate local files only (URLs validated during download)
+        parsed = urlparse(request.source)
+        is_url = bool(parsed.scheme and parsed.netloc)
+
+        if not is_url and not os.path.exists(request.source):
             raise HTTPException(
                 status_code=404,
                 detail=f"Video not found: {request.source}"

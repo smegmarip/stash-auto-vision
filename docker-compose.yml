@@ -78,6 +78,7 @@ services:
       - ./frame-server/app:/app/app
       - frames_cache:/tmp/frames
       - sprites_cache:/tmp/sprites
+      - downloads_cache:/tmp/downloads
       - torch_cache:/root/.cache/torch
       - enhancement_models:/tmp/face_enhancement_models
       - codeformer_weights:/usr/local/lib/python3.10/site-packages/codeformer/weights
@@ -118,6 +119,7 @@ services:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
       - ./scenes-service/app:/app/app
+      - downloads_cache:/tmp/downloads
     networks:
       - vision_network
     depends_on:
@@ -164,6 +166,7 @@ services:
       - ./faces-service/models:/app/models
       - frames_cache:/tmp/frames
       - sprites_cache:/tmp/sprites
+      - downloads_cache:/tmp/downloads
       - insightface_models:/root/.insightface
     networks:
       - vision_network
@@ -300,6 +303,7 @@ services:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
       - ./vision-api/app:/app/app
+      - downloads_cache:/tmp/downloads
     networks:
       - vision_network
     depends_on:
@@ -334,6 +338,7 @@ volumes:
   redis_data:
   frames_cache:
   sprites_cache:
+  downloads_cache:
   torch_cache:
   enhancement_models:
   codeformer_weights:
