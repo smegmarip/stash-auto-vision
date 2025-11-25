@@ -92,12 +92,12 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Pass boundaries to downstream services (e.g., faces-service)
 
 **faces-service**
-- InsightFace (buffalo_l model on GPU, buffalo_l on CPU for accuracy parity)
+- InsightFace buffalo_l with multi-size detection (320/640/1024 det_size auto-selection)
 - RetinaFace detection + ArcFace 512-D embeddings
 - Optional face enhancement (CodeFormer/GFPGAN) for low-quality detections
 - Three-tier quality gate: detection confidence, quality trigger, minimum quality
 - Face clustering via cosine similarity (threshold 0.6)
-- Quality scoring (pixel-based) and pose estimation (native InsightFace angles with geometric fallback)
+- Quality scoring: TOPIQ/CLIP-IQA sharpness + size/pose/occlusion components
 - Sprite sheet integration for ultra-fast processing
 - Optional demographics detection (age, gender)
 
@@ -130,7 +130,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 ### Infrastructure
 - **FastAPI** - Async web framework with automatic OpenAPI docs
 - **Redis** - Job queue and result cache
-- **Docker Compose** - 8-service orchestration
+- **Docker Compose** - 6-service orchestration
 - **NVIDIA CUDA** - GPU acceleration (12.3.2)
 - **OpenCV** - CUDA-accelerated video processing
 - **PyAV** - FFmpeg Python bindings for robust frame extraction

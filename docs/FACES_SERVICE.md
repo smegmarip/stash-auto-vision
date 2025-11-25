@@ -13,11 +13,12 @@ The Faces Service provides high-accuracy face detection and recognition using In
 
 The service integrates with the Frame Server for frame extraction and uses RetinaFace for detection and ArcFace for embedding generation. It supports content-based caching, async job processing, and automatic face deduplication via cosine similarity clustering.
 
-### Key Features
+###Key Features
 
 - **High-Accuracy Detection:** InsightFace buffalo_l model with 99.86% LFW accuracy
+- **Multi-Size Detection:** Automatic det_size selection (320/640/1024) based on image dimensions
 - **512-D ArcFace Embeddings:** State-of-the-art face recognition vectors
-- **Quality Scoring:** Multi-factor assessment (pose, size, confidence)
+- **Quality Scoring:** TOPIQ/CLIP-IQA sharpness + size/pose/occlusion components
 - **Face Enhancement:** Optional CodeFormer/GFPGAN enhancement for low-quality detections
 - **Three-Tier Quality System:** Detection confidence, quality trigger, minimum quality filtering
 - **Face Deduplication:** Cosine similarity clustering (default threshold: 0.6)
@@ -317,7 +318,17 @@ components:
             x_max: {type: integer}
             y_max: {type: integer}
         confidence: {type: number, minimum: 0, maximum: 1}
-        quality_score: {type: number, minimum: 0, maximum: 1}
+        quality:
+          type: object
+          properties:
+            composite: {type: number, minimum: 0, maximum: 1}
+            components:
+              type: object
+              properties:
+                size: {type: number, minimum: 0, maximum: 1}
+                pose: {type: number, minimum: 0, maximum: 1}
+                occlusion: {type: number, minimum: 0, maximum: 1}
+                sharpness: {type: number, minimum: 0, maximum: 1, description: "TOPIQ/CLIP-IQA score"}
         pose:
           type: string
           enum: [front, left, right, front-rotate-left, front-rotate-right]
@@ -329,6 +340,12 @@ components:
             nose: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
             mouth_left: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
             mouth_right: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
+        enhanced: {type: boolean, default: false}
+        occlusion:
+          type: object
+          properties:
+            occluded: {type: boolean}
+            probability: {type: number, minimum: 0, maximum: 1}
 ```
 
 ---
@@ -340,9 +357,15 @@ components:
 **Model:** buffalo_l
 **Accuracy:** 99.86% on LFW (Labeled Faces in the Wild)
 **Embedding:** 512-D ArcFace normalized vectors
-**Detector:** RetinaFace (multi-scale, det_size: 640x640)
+**Detector:** RetinaFace (multi-scale adaptive det_size)
 **Recognition:** ArcFace (additive angular margin loss)
 **Optional:** Age and gender estimation
+
+**Multi-Size Detection:**
+- CPU: 2 instances (det_size 320, 640)
+- GPU: 3 instances (det_size 320, 640, 1024)
+- Auto-selection: <500px→320, 500-1500px→640, >1500px→1024
+- Prevents upscaling failures on small images
 
 **Providers:**
 - GPU Mode: CUDAExecutionProvider (ctx_id=0)
@@ -374,15 +397,13 @@ components:
 - Optional demographics (age, gender)
 
 **Quality Scoring:**
-- **Absolute Pixel-Based Calculation:**
-  - 100×100px (10,000px²) = 0.25
-  - 375×375px (140,625px²) = 0.75
-  - 550×550px (302,500px²) = 0.90
-  - 1000×1000px (1,000,000px²) = 1.0
-  - Linear interpolation between checkpoints
-- **Pose Factor:** front=1.0, rotated=0.9, profile=0.8
+- **Composite Score:** 35% size + 20% pose + 20% occlusion + 25% sharpness
+- **Size Component:** Min dimension (80px=0.25, 250px=1.0)
+- **Pose Component:** Yaw/pitch angles (0°=1.0, 45°=0.25)
+- **Occlusion Component:** ResNet18 classifier (non-occluded=1.0, occluded=0.25)
+- **Sharpness Component:** TOPIQ-NR (primary), CLIP-IQA (fallback), Sobel (last resort)
+- **IQA Method:** ONNX Runtime (IR v10), ~133ms/image
 - **Range:** 0.0 - 1.0
-- **Replaces:** Previous frame-ratio approach (10-30% of image size)
 
 **Pose Estimation:**
 - **Primary Method:** Native InsightFace pose angles (pitch, yaw, roll in degrees)
@@ -509,6 +530,7 @@ INSIGHTFACE_DEVICE=cuda          # cuda or cpu
 FACES_MIN_CONFIDENCE=0.9         # Detection confidence threshold (0.7 CPU, 0.9 GPU)
 FACES_MIN_QUALITY=0.0            # Minimum quality to keep (0.0 = no filtering)
 FACES_ENHANCEMENT_QUALITY_TRIGGER=0.5  # Trigger enhancement below this quality
+IQA_MODEL=topiq                  # IQA model: topiq (primary), clip-iqa (fallback), sobel (last resort)
 
 # Integration
 FRAME_SERVER_URL=http://frame-server:5001
@@ -608,17 +630,30 @@ The Faces Service includes automatic occlusion detection for all face detections
 
 ### Detection Output
 
-Each face detection includes two fields:
+Each face detection includes nested quality and occlusion objects:
 
 ```json
 {
-  "occluded": false,
-  "occlusion_probability": 0.42
+  "quality": {
+    "composite": 0.78,
+    "components": {
+      "size": 0.85,
+      "pose": 0.92,
+      "occlusion": 0.58,
+      "sharpness": 0.72
+    }
+  },
+  "occlusion": {
+    "occluded": false,
+    "probability": 0.42
+  }
 }
 ```
 
-- **occluded** (boolean): True if occlusion probability > 0.5
-- **occlusion_probability** (float): Confidence score 0.0-1.0
+- **occlusion.occluded** (boolean): True if probability > 0.5
+- **occlusion.probability** (float): Confidence score 0.0-1.0
+- **quality.composite** (float): Overall quality (weighted average of components)
+- **quality.components** (object): Individual quality factors
 
 ### Model Details
 
@@ -736,5 +771,5 @@ The custom-trained model significantly outperforms pre-trained alternatives on h
 
 ---
 
-**Last Updated:** 2025-11-18
+**Last Updated:** 2025-11-24
 **Status:** Implemented and Tested
