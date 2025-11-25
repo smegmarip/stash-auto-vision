@@ -91,22 +91,22 @@ class OcclusionDetector:
 
         return img
 
-    def detect(self, face_crop: np.ndarray) -> tuple[bool, float]:
+    def detect(self, face_crop: np.ndarray) -> tuple[int, float]:
         """
-        Detect if face is occluded
+        Detect if face is occluded (following reference implementation)
 
         Args:
             face_crop: Face image crop (H, W, 3) BGR format
 
         Returns:
-            Tuple of (is_occluded, occlusion_probability)
-            - is_occluded: True if model predicts occluded class
-            - occlusion_probability: 0.0-1.0 probability that face is occluded
+            Tuple of (pred, prob)
+            - pred: Predicted class (0=non-occluded, 1=occluded)
+            - prob: Confidence in predicted class (0.0-1.0)
         """
-        # If model failed to load, return default values
+        # If model failed to load, return default values (non-occluded, low confidence)
         if self.session is None:
             logger.debug("Occlusion detection skipped (model not loaded)")
-            return False, 0.0
+            return 0, 0.5
 
         try:
             # Preprocess image
@@ -126,19 +126,14 @@ class OcclusionDetector:
             exp_logits = np.exp(logits - np.max(logits))  # Subtract max for numerical stability
             probabilities = exp_logits / np.sum(exp_logits)
 
-            # Get prediction using argmax (0=not occluded, 1=occluded)
-            pred = np.argmax(probabilities)
+            # Get prediction and confidence (torch.max equivalent)
+            pred = int(np.argmax(probabilities))
+            prob = float(probabilities[pred])
 
-            # Extract occlusion probability (class 1)
-            occlusion_probability = float(probabilities[1])
+            logger.debug(f"Occlusion detection: pred={pred} (prob={prob:.3f})")
 
-            # Binary classification based on model's prediction
-            is_occluded = (pred == 1)
-
-            logger.debug(f"Occlusion detection: {is_occluded} (probability: {occlusion_probability:.3f})")
-
-            return is_occluded, occlusion_probability
+            return pred, prob
 
         except Exception as e:
             logger.error(f"Error during occlusion detection: {e}", exc_info=True)
-            return False, 0.0
+            return 0, 0.5

@@ -93,7 +93,7 @@ services:
       interval: 30s
       timeout: 30s
       retries: 3
-      start_period: 120s  # Allow time for enhancement models to load
+      start_period: 120s # Allow time for enhancement models to load
     deploy:
       resources:
         limits:
@@ -159,6 +159,7 @@ services:
       - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
       - FACES_MIN_QUALITY=${FACES_MIN_QUALITY:-0.0}
       - FACES_ENHANCEMENT_QUALITY_TRIGGER=${FACES_ENHANCEMENT_QUALITY_TRIGGER:-0.5}
+      - IQA_MODEL=${IQA_MODEL:-topiq}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
