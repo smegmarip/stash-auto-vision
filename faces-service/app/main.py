@@ -28,6 +28,9 @@ from .models import (
     BoundingBox,
     Landmarks,
     Demographics,
+    Quality,
+    QualityComponents,
+    Occlusion,
     VideoMetadata,
     HealthResponse,
     JobStatus,
@@ -35,6 +38,7 @@ from .models import (
 )
 from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
+from .recognition_manager import RecognitionManager
 from .frame_client import FrameServerClient
 
 # Environment configuration
@@ -73,10 +77,18 @@ async def lifespan(app: FastAPI):
     await cache_manager.connect()
     logger.info("Cache manager initialized")
 
-    # Initialize face recognizer
-    face_recognizer = FaceRecognizer(
+    # Initialize recognition manager with multi-size support
+    recognition_manager = RecognitionManager(
         model_name=INSIGHTFACE_MODEL,
         device=INSIGHTFACE_DEVICE
+    )
+    logger.info(f"Recognition manager initialized: {recognition_manager.get_model_info()}")
+
+    # Initialize face recognizer with recognition manager
+    face_recognizer = FaceRecognizer(
+        model_name=INSIGHTFACE_MODEL,
+        device=INSIGHTFACE_DEVICE,
+        recognition_manager=recognition_manager
     )
     model_info = face_recognizer.get_model_info()
     logger.info(f"Face recognizer initialized: {model_info}")
@@ -329,18 +341,18 @@ async def process_analysis_job(
                 continue
 
             # Detect faces (no enhancement yet - will enhance representative faces later)
-            faces = face_recognizer.detect_faces(
+            faces = await face_recognizer.detect_faces(
                 frame,
                 face_min_confidence=request.parameters.face_min_confidence
             )
             # Apply quality filtering with logging
             filtered_faces = []
             for f in faces:
-                if f['quality_score'] >= request.parameters.face_min_quality:
+                if f['quality']['composite'] >= request.parameters.face_min_quality:
                     filtered_faces.append(f)
                 else:
                     logger.debug(
-                        f"Frame {idx}: Filtered face with quality={f['quality_score']:.3f} < "
+                        f"Frame {idx}: Filtered face with quality={f['quality']['composite']:.3f} < "
                         f"min_quality={request.parameters.face_min_quality}"
                     )
             faces = filtered_faces
@@ -402,7 +414,7 @@ async def process_analysis_job(
 
             # Enhance representative face if needed
             if request.parameters.enhancement.enabled:
-                quality = rep_detection['quality_score']
+                quality = rep_detection['quality']['composite']
                 confidence = rep_detection['confidence']
 
                 # Only enhance if:
@@ -452,13 +464,13 @@ async def process_analysis_job(
 
                                 # Find best detection by quality
                                 if enhanced_detections:
-                                    best_enhanced = max(enhanced_detections, key=lambda d: d['quality_score'])
+                                    best_enhanced = max(enhanced_detections, key=lambda d: d['quality']['composite'])
 
                                     # Only use enhanced if quality improved
-                                    if best_enhanced['quality_score'] > quality:
+                                    if best_enhanced['quality']['composite'] > quality:
                                         logger.info(
                                             f"Enhancement successful for {face_id}: "
-                                            f"quality {quality:.3f} → {best_enhanced['quality_score']:.3f}"
+                                            f"quality {quality:.3f} → {best_enhanced['quality']['composite']:.3f}"
                                         )
                                         # Update representative detection with enhanced version
                                         best_enhanced['enhanced'] = True
@@ -468,7 +480,7 @@ async def process_analysis_job(
                                     else:
                                         logger.info(
                                             f"Enhancement did not improve quality for {face_id}: "
-                                            f"{quality:.3f} → {best_enhanced['quality_score']:.3f}"
+                                            f"{quality:.3f} → {best_enhanced['quality']['composite']:.3f}"
                                         )
                                 else:
                                     logger.warning(f"No face detected in enhanced frame for {face_id}")
@@ -486,12 +498,14 @@ async def process_analysis_job(
                     timestamp=all_detections[i]["timestamp"],
                     bbox=BoundingBox(**all_detections[i]["bbox"]),
                     confidence=all_detections[i]["confidence"],
-                    quality_score=all_detections[i]["quality_score"],
+                    quality=Quality(
+                        composite=all_detections[i]["quality"]["composite"],
+                        components=QualityComponents(**all_detections[i]["quality"]["components"])
+                    ),
                     pose=all_detections[i]["pose"],
                     landmarks=Landmarks(**all_detections[i]["landmarks"]),
                     enhanced=all_detections[i].get("enhanced", False),
-                    occluded=all_detections[i].get("occluded", False),
-                    occlusion_probability=all_detections[i].get("occlusion_probability", 0.0)
+                    occlusion=Occlusion(**all_detections[i]["occlusion"])
                 )
                 for i in detection_indices
             ]
@@ -507,12 +521,14 @@ async def process_analysis_job(
                     timestamp=rep_detection["timestamp"],
                     bbox=BoundingBox(**rep_detection["bbox"]),
                     confidence=rep_detection["confidence"],
-                    quality_score=rep_detection["quality_score"],
+                    quality=Quality(
+                        composite=rep_detection["quality"]["composite"],
+                        components=QualityComponents(**rep_detection["quality"]["components"])
+                    ),
                     pose=rep_detection["pose"],
                     landmarks=Landmarks(**rep_detection["landmarks"]),
                     enhanced=rep_detection.get("enhanced", False),
-                    occluded=rep_detection.get("occluded", False),
-                    occlusion_probability=rep_detection.get("occlusion_probability", 0.0)
+                    occlusion=Occlusion(**rep_detection["occlusion"])
                 )
             )
 

@@ -5,7 +5,6 @@ InsightFace integration for face detection and recognition
 
 import cv2
 import numpy as np
-import httpx
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, TYPE_CHECKING
 import logging
@@ -14,6 +13,8 @@ if TYPE_CHECKING:
     from .frame_client import FrameServerClient
 
 from .occlusion_detector import OcclusionDetector
+from .face_quality import FaceQuality
+from .recognition_manager import RecognitionManager
 
 try:
     from insightface.app import FaceAnalysis
@@ -32,7 +33,8 @@ class FaceRecognizer:
         self,
         model_name: str = "buffalo_l",
         device: str = "cuda",
-        det_size: Tuple[int, int] = (640, 640)
+        det_size: Tuple[int, int] = (640, 640),
+        recognition_manager: Optional[RecognitionManager] = None
     ):
         """
         Initialize face recognizer
@@ -40,7 +42,8 @@ class FaceRecognizer:
         Args:
             model_name: InsightFace model (buffalo_l, buffalo_s, buffalo_sc)
             device: cuda or cpu
-            det_size: Detection size (width, height)
+            det_size: Detection size (width, height) - used if recognition_manager not provided
+            recognition_manager: Optional RecognitionManager for multi-size support
         """
         if not INSIGHTFACE_AVAILABLE:
             raise RuntimeError("InsightFace is not installed")
@@ -48,19 +51,26 @@ class FaceRecognizer:
         self.model_name = model_name
         self.device = device
         self.det_size = det_size
+        self.recognition_manager = recognition_manager
 
-        # Initialize InsightFace
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
-
-        self.app = FaceAnalysis(name=model_name, providers=providers)
-        self.app.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size)
+        # If recognition_manager provided, use it; otherwise create single instance
+        if self.recognition_manager:
+            self.app = None  # Will be selected per-image
+            logger.info(f"FaceRecognizer using RecognitionManager with {len(recognition_manager.apps)} instances")
+        else:
+            # Initialize single InsightFace instance (backward compatibility)
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
+            self.app = FaceAnalysis(name=model_name, providers=providers)
+            self.app.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size)
+            logger.info(f"InsightFace initialized: {model_name} on {device} with det_size={det_size}")
 
         # Initialize occlusion detector
         self.occlusion_detector = OcclusionDetector()
 
-        logger.info(f"InsightFace initialized: {model_name} on {device}")
+        # Initialize face quality assessor
+        self.face_quality = FaceQuality()
 
-    def detect_faces(
+    async def detect_faces(
         self,
         image: np.ndarray,
         face_min_confidence: float = 0.9
@@ -76,10 +86,17 @@ class FaceRecognizer:
             List of face detection dicts
         """
         try:
-            # Detect faces
-            faces = self.app.get(image)
+            # Select appropriate FaceAnalysis instance
+            if self.recognition_manager:
+                app, det_size = self.recognition_manager.select_app(image)
+            else:
+                app = self.app
+                det_size = self.det_size
 
-            logger.debug(f"InsightFace raw detection: found {len(faces)} faces (face_min_confidence={face_min_confidence})")
+            # Detect faces
+            faces = app.get(image)
+
+            logger.debug(f"InsightFace raw detection: found {len(faces)} faces (det_size={det_size}, face_min_confidence={face_min_confidence})")
             for i, face in enumerate(faces):
                 logger.debug(f"  Face {i}: confidence={face.det_score:.3f}")
 
@@ -103,12 +120,16 @@ class FaceRecognizer:
                 # Estimate pose
                 pose = self._estimate_pose(face)
 
-                # Calculate quality score
-                quality_score = self._calculate_quality(face, image.shape)
-
                 # Detect occlusion
                 face_crop = image[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
-                occluded, occlusion_probability = self.occlusion_detector.detect(face_crop)
+                occlusion_pred, occlusion_prob = self.occlusion_detector.detect(face_crop)
+
+                # Calculate quality score with components using local FaceQuality
+                quality_data = self.face_quality.calculate_quality(
+                    face=face,
+                    frame=image,
+                    occlusion_data=(occlusion_pred, occlusion_prob)
+                )
 
                 detection = {
                     'bbox': {
@@ -126,12 +147,14 @@ class FaceRecognizer:
                     },
                     'embedding': embedding,
                     'confidence': float(face.det_score),
-                    'quality_score': quality_score,
+                    'quality': quality_data,
                     'pose': pose,
                     'demographics': None,
                     'enhanced': False,  # Default to False, will be set to True if enhanced
-                    'occluded': occluded,
-                    'occlusion_probability': occlusion_probability
+                    'occlusion': {
+                        'occluded': bool(occlusion_pred),
+                        'probability': float(occlusion_prob)
+                    }
                 }
 
                 # Add demographics if available
@@ -184,11 +207,11 @@ class FaceRecognizer:
         """
         try:
             # First pass: detect faces in original image
-            detections = self.detect_faces(image, face_min_confidence)
+            detections = await self.detect_faces(image, face_min_confidence)
 
             if not enhancement_enabled:
                 # No enhancement - just filter by quality
-                filtered = [d for d in detections if d['quality_score'] >= face_min_quality]
+                filtered = [d for d in detections if d['quality']['composite'] >= face_min_quality]
                 logger.info(f"No enhancement: {len(filtered)}/{len(detections)} faces pass quality threshold {face_min_quality}")
                 return filtered
 
@@ -201,9 +224,9 @@ class FaceRecognizer:
                 # This is a corner case: we're confident it's a face, but quality is poor
                 # Use face_min_confidence as both the detection AND enhancement threshold
                 if (detection['confidence'] >= face_min_confidence and
-                    detection['quality_score'] < enhancement_quality_trigger):
+                    detection['quality']['composite'] < enhancement_quality_trigger):
                     needs_enhancement.append(detection)
-                elif detection['quality_score'] >= face_min_quality:
+                elif detection['quality']['composite'] >= face_min_quality:
                     # Quality is already good enough (already marked as enhanced=False)
                     final_detections.append(detection)
                 # Else: low confidence and/or low quality - skip entirely
@@ -230,31 +253,31 @@ class FaceRecognizer:
 
                     if enhanced_image is not None:
                         # Re-run detection on enhanced frame
-                        enhanced_detections = self.detect_faces(enhanced_image, face_min_confidence)
+                        enhanced_detections = await self.detect_faces(enhanced_image, face_min_confidence)
 
                         # Log enhancement results
                         for i, orig in enumerate(needs_enhancement):
                             logger.info(
                                 f"Enhancement attempt {i+1}: "
-                                f"original_quality={orig['quality_score']:.3f}, "
+                                f"original_quality={orig['quality']['composite']:.3f}, "
                                 f"original_confidence={orig['confidence']:.3f}"
                             )
 
                         # Match enhanced detections to original (by bbox overlap)
                         for enhanced in enhanced_detections:
-                            if enhanced['quality_score'] >= face_min_quality:
+                            if enhanced['quality']['composite'] >= face_min_quality:
                                 # Mark as enhanced
                                 enhanced['enhanced'] = True
                                 final_detections.append(enhanced)
                                 logger.info(
                                     f"Enhanced face accepted: "
-                                    f"quality={enhanced['quality_score']:.3f}, "
+                                    f"quality={enhanced['quality']['composite']:.3f}, "
                                     f"confidence={enhanced['confidence']:.3f}"
                                 )
                             else:
                                 logger.info(
                                     f"Enhanced face filtered: "
-                                    f"quality={enhanced['quality_score']:.3f} < {face_min_quality}"
+                                    f"quality={enhanced['quality']['composite']:.3f} < {face_min_quality}"
                                 )
                     else:
                         logger.error("Failed to decode enhanced frame")
@@ -267,7 +290,7 @@ class FaceRecognizer:
         except Exception as e:
             logger.error(f"Error in detect_and_enhance_faces: {e}", exc_info=True)
             # Fallback to original detections with quality filtering
-            filtered = [d for d in detections if d['quality_score'] >= face_min_quality]
+            filtered = [d for d in detections if d['quality']['composite'] >= face_min_quality]
             return filtered
 
     def _estimate_pose(self, face) -> str:
@@ -352,61 +375,6 @@ class FaceRecognizer:
             logger.debug(f"Error in geometric pose estimation: {e}")
             return "front"
 
-    def _calculate_quality(self, face, image_shape: Tuple[int, int, int]) -> float:
-        """
-        Calculate face quality score
-
-        Args:
-            face: InsightFace face object
-            image_shape: Image shape (height, width, channels)
-
-        Returns:
-            Quality score (0.0-1.0)
-        """
-        # Checkpoints: (area, score)
-        points = [
-            (0, 0),
-            (10000, 0.25),  # 100x100
-            (140625, 0.75),  # 375x375
-            (302500, 0.90),  # 550x550
-            (1000000, 1.0),  # 1000x1000
-        ]
-
-        try:
-            # Start with one
-            quality = 1
-
-            # Factor in face size (larger is better)
-            bbox = face.bbox
-            face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-
-            # Linear interpolation
-            for i in range(len(points) - 1):
-                if points[i][0] <= face_area <= points[i + 1][0]:
-                    t = (face_area - points[i][0]) / (points[i + 1][0] - points[i][0])
-                    quality = points[i][1] + t * (points[i + 1][1] - points[i][1])
-                    break
-            else:
-                if face_area >= points[-1][0]:
-                    quality = points[-1][1]
-                else:
-                    quality = points[0][1]
-
-            # Factor in pose (front-facing is best)
-            pose = self._estimate_pose(face)
-            if pose == "front":
-                quality *= 1.0
-            elif "rotate" in pose:
-                quality *= 0.9
-            else:
-                quality *= 0.8
-
-            logger.debug(f"Face quality calculation: area={face_area}, pose={pose}, quality={quality:.3f}")
-            return min(1.0, quality)
-
-        except Exception as e:
-            logger.debug(f"Error calculating quality: {e}")
-            return 0
 
     def cluster_faces(
         self,
@@ -501,10 +469,10 @@ class FaceRecognizer:
 
         # Find detection with highest quality score
         best_idx = indices[0]
-        best_quality = detections[best_idx]['quality_score']
+        best_quality = detections[best_idx]['quality']['composite']
 
         for idx in indices[1:]:
-            quality = detections[idx]['quality_score']
+            quality = detections[idx]['quality']['composite']
             if quality > best_quality:
                 best_quality = quality
                 best_idx = idx
@@ -543,10 +511,24 @@ class FaceRecognizer:
         Returns:
             Dict with model info
         """
-        return {
-            "model_name": self.model_name,
-            "device": self.device,
-            "det_size": self.det_size,
-            "embedding_size": 512,
-            "insightface_available": INSIGHTFACE_AVAILABLE
-        }
+        if self.recognition_manager:
+            # Using RecognitionManager - return multi-instance info
+            return {
+                "model_name": self.model_name,
+                "device": self.device,
+                "det_sizes": list(self.recognition_manager.apps.keys()),
+                "num_instances": len(self.recognition_manager.apps),
+                "embedding_size": 512,
+                "insightface_available": INSIGHTFACE_AVAILABLE,
+                "multi_size_enabled": True
+            }
+        else:
+            # Single instance mode
+            return {
+                "model_name": self.model_name,
+                "device": self.device,
+                "det_size": self.det_size,
+                "embedding_size": 512,
+                "insightface_available": INSIGHTFACE_AVAILABLE,
+                "multi_size_enabled": False
+            }
