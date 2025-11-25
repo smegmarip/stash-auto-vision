@@ -10,7 +10,7 @@ info:
     Services:
     - Frame Server (port 5001) - Frame extraction and caching
     - Scenes Service (port 5002) - Scene boundary detection
-    - Faces Service (port 5003) - Face detection and recognition
+    - Faces Service (port 5003) - Face detection, recognition, and quality assessment
     - Semantics Service (port 5004) - CLIP-based scene understanding (stub - Phase 2)
     - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
     - Vision API (port 5010) - Orchestration and rollup endpoint
@@ -52,7 +52,7 @@ tags:
   - name: scenes
     description: Scene boundary detection
   - name: faces
-    description: Face detection and recognition
+    description: Face detection, recognition, and quality assessment
   - name: semantics
     description: Semantic scene understanding (stub)
   - name: objects
@@ -462,6 +462,135 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: Job not completed yet
+
+  # ==================== QUALITY SERVICE ====================
+
+  /quality/assess:
+    post:
+      tags: [quality]
+      summary: Assess face quality
+      description: Calculate composite quality score for a detected face
+      operationId: assessQuality
+      servers:
+        - url: http://localhost:5006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - source
+                - source_type
+                - input
+              properties:
+                source:
+                  type: string
+                  description: Image source (URL, file path, or base64)
+                source_type:
+                  type: string
+                  enum: [url, path, bytes]
+                  description: Type of image source
+                input:
+                  type: object
+                  required:
+                    - face
+                    - occlusion
+                  properties:
+                    face:
+                      type: object
+                      required:
+                        - bbox
+                        - landmarks
+                      properties:
+                        bbox:
+                          type: object
+                          properties:
+                            x_min:
+                              type: integer
+                            y_min:
+                              type: integer
+                            x_max:
+                              type: integer
+                            y_max:
+                              type: integer
+                        landmarks:
+                          type: object
+                          properties:
+                            left_eye:
+                              type: array
+                              items:
+                                type: number
+                            right_eye:
+                              type: array
+                              items:
+                                type: number
+                            nose:
+                              type: array
+                              items:
+                                type: number
+                            mouth_left:
+                              type: array
+                              items:
+                                type: number
+                            mouth_right:
+                              type: array
+                              items:
+                                type: number
+                        pose:
+                          type: object
+                          properties:
+                            yaw:
+                              type: number
+                            pitch:
+                              type: number
+                            roll:
+                              type: number
+                    occlusion:
+                      type: object
+                      required:
+                        - pred
+                        - prob
+                      properties:
+                        pred:
+                          type: integer
+                          description: Predicted class (0=non-occluded, 1=occluded)
+                        prob:
+                          type: number
+                          description: Confidence in predicted class (0.0-1.0)
+      responses:
+        '200':
+          description: Quality assessment result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score:
+                    type: object
+                    properties:
+                      composite:
+                        type: number
+                        description: Composite quality score (0.0-1.0)
+                      components:
+                        type: object
+                        properties:
+                          size:
+                            type: number
+                            description: Face size quality (0.0-1.0)
+                          pose:
+                            type: number
+                            description: Pose quality (0.0-1.0)
+                          occlusion:
+                            type: number
+                            description: Occlusion quality (0.0-1.0)
+                          sharpness:
+                            type: number
+                            description: MUSIQ-based sharpness (0.0-1.0)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          description: Internal server error
 
 components:
   parameters:
@@ -1235,8 +1364,8 @@ components:
           $ref: '#/components/schemas/BoundingBox'
         confidence:
           type: number
-        quality_score:
-          type: number
+        quality:
+          $ref: '#/components/schemas/Quality'
         pose:
           type: string
           description: "front, left, right, front-rotate-left, front-rotate-right"
@@ -1246,16 +1375,55 @@ components:
           type: boolean
           default: false
           description: Indicates if this face was enhanced via CodeFormer/GFPGAN
-        occluded:
-          type: boolean
-          default: false
-          description: Indicates if face is occluded (glasses, mask, hand, etc.)
-        occlusion_probability:
+        occlusion:
+          $ref: '#/components/schemas/Occlusion'
+
+    Quality:
+      type: object
+      properties:
+        composite:
           type: number
           minimum: 0.0
           maximum: 1.0
-          default: 0.0
-          description: Probability that face is occluded (0.0-1.0)
+          description: Overall quality score (0.0-1.0)
+        components:
+          $ref: '#/components/schemas/QualityComponents'
+
+    QualityComponents:
+      type: object
+      properties:
+        size:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Face size score (0.0-1.0)
+        pose:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Face pose score (0.0-1.0)
+        occlusion:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Occlusion score (0.0-1.0)
+        sharpness:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Sharpness/IQA score (0.0-1.0) via TOPIQ/CLIP-IQA
+
+    Occlusion:
+      type: object
+      properties:
+        occluded:
+          type: boolean
+          description: Whether face is occluded (glasses, mask, hand, etc.)
+        probability:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Occlusion probability (0.0-1.0)
 
     BoundingBox:
       type: object

@@ -76,18 +76,37 @@ class Demographics(BaseModel):
     emotion: str  # "neutral", "happy", "sad", "angry", "surprise", "disgust", "fear"
 
 
+class QualityComponents(BaseModel):
+    """Quality score components"""
+    size: float = Field(ge=0.0, le=1.0, description="Face size score (0.0-1.0)")
+    pose: float = Field(ge=0.0, le=1.0, description="Face pose score (0.0-1.0)")
+    occlusion: float = Field(ge=0.0, le=1.0, description="Occlusion score (0.0-1.0)")
+    sharpness: float = Field(ge=0.0, le=1.0, description="Sharpness/IQA score (0.0-1.0)")
+
+
+class Quality(BaseModel):
+    """Face quality assessment"""
+    composite: float = Field(ge=0.0, le=1.0, description="Overall quality score (0.0-1.0)")
+    components: QualityComponents
+
+
+class Occlusion(BaseModel):
+    """Face occlusion detection"""
+    occluded: bool = Field(description="Whether face is occluded (glasses, mask, hand, etc.)")
+    probability: float = Field(ge=0.0, le=1.0, description="Occlusion probability (0.0-1.0)")
+
+
 class Detection(BaseModel):
     """Single face detection"""
     frame_index: int
     timestamp: float
     bbox: BoundingBox
     confidence: float
-    quality_score: float
+    quality: Quality
     pose: str  # "front", "left", "right", "front-rotate-left", "front-rotate-right"
     landmarks: Landmarks
     enhanced: bool = False  # Indicates if face was enhanced via CodeFormer/GFPGAN
-    occluded: bool = False  # Indicates if face is occluded (glasses, mask, hand, etc.)
-    occlusion_probability: float = Field(default=0.0, ge=0.0, le=1.0, description="Probability that face is occluded (0.0-1.0)")
+    occlusion: Occlusion
 
 
 class Face(BaseModel):
