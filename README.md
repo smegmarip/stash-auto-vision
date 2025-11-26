@@ -9,6 +9,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 ## Features
 
 ### Phase 1 (Current)
+
 - ✅ **Face Recognition** - InsightFace (99.86% accuracy, 512-D embeddings)
 - ✅ **Face Enhancement** - Optional CodeFormer/GFPGAN for low-quality faces
 - ✅ **Quality-Based Filtering** - Three-tier quality system with enhancement triggering
@@ -17,6 +18,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 - ✅ **Smart Caching** - Content-based Redis caching with automatic invalidation
 
 ### Phase 2+ (Planned)
+
 - 🔄 **Semantic Analysis** - CLIP-based scene classification
 - 🔄 **Object Detection** - YOLO-World open-vocabulary detection
 - 🔄 **Multi-modal Search** - Find scenes by description
@@ -29,11 +31,13 @@ A modular, high-performance video analysis platform providing face recognition, 
 ### Prerequisites
 
 **Production (Unraid):**
+
 - NVIDIA GPU (RTX 3060+ with 12GB+ VRAM)
 - CUDA 12.x drivers
 - Docker with NVIDIA runtime
 
 **Development (Mac):**
+
 - Docker Desktop 4.0+
 - 16GB+ RAM
 
@@ -72,7 +76,7 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "quick_test_001",
+    "source_id": "quick_test_001",
     "parameters": {
       "min_confidence": 0.9,
       "enable_deduplication": true
@@ -102,6 +106,7 @@ curl "http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/results" | jq .
 ```
 
 **8 Microservices:**
+
 - **redis** - Cache and job queue
 - **dependency-checker** - Health orchestration
 - **frame-server** - GPU-accelerated frame extraction
@@ -123,7 +128,7 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene_12345.mp4",
-    "scene_id": "12345",
+    "source_id": "12345",
     "parameters": {
       "min_confidence": 0.9,
       "max_faces": 50
@@ -157,7 +162,7 @@ curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene_12345.mp4",
-    "scene_id": "12345",
+    "source_id": "12345",
     "modules": {
       "scenes": {"enabled": true},
       "faces": {"enabled": true}
@@ -182,21 +187,21 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 ### GPU Mode (RTX A4000)
 
-| Operation | Performance |
-|-----------|-------------|
-| Frame extraction | ~200-400 FPS |
-| Scene detection | 300-800 FPS |
-| Face detection | ~30 FPS |
-| Face embedding | <10ms per face |
-| Full video (5 min) | ~5 minutes |
+| Operation          | Performance    |
+| ------------------ | -------------- |
+| Frame extraction   | ~200-400 FPS   |
+| Scene detection    | 300-800 FPS    |
+| Face detection     | ~30 FPS        |
+| Face embedding     | <10ms per face |
+| Full video (5 min) | ~5 minutes     |
 
 ### CPU Mode (Mac Development)
 
-| Operation | Performance |
-|-----------|-------------|
-| Frame extraction | ~30-60 FPS |
-| Scene detection | 100-500 FPS |
-| Face detection | ~5 FPS |
+| Operation          | Performance |
+| ------------------ | ----------- |
+| Frame extraction   | ~30-60 FPS  |
+| Scene detection    | 100-500 FPS |
+| Face detection     | ~5 FPS      |
 | Full video (5 min) | ~40 minutes |
 
 ---
@@ -204,12 +209,14 @@ curl -X POST http://localhost:5010/vision/analyze \
 ## Technology Stack
 
 **ML Models:**
+
 - InsightFace (buffalo_l) - Face recognition
 - PySceneDetect - Scene boundaries
 - CLIP (ViT-B/32) - Semantic analysis [Phase 2]
 - YOLO-World - Object detection [Phase 2]
 
 **Infrastructure:**
+
 - FastAPI - Web framework
 - Redis - Caching & job queue
 - Docker - Containerization
@@ -333,6 +340,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 ## Roadmap
 
 ### Phase 1: Core Services ✅ (Complete)
+
 - [x] Planning documentation
 - [x] Frame server implementation
 - [x] Scenes service implementation
@@ -342,24 +350,28 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 - [x] Production-ready deployment
 
 ### Phase 2: Semantic Analysis 🔄
+
 - [ ] CLIP integration
 - [ ] Scene classification
 - [ ] Zero-shot tagging
 - [ ] Scene similarity search
 
 ### Phase 3: Object Detection 🔄
+
 - [ ] YOLO-World integration
 - [ ] Open-vocabulary detection
 - [ ] Custom object categories
 - [ ] Object tracking
 
 ### Phase 4: Production Hardening 🔄
+
 - [ ] Error handling & retry logic
 - [ ] Monitoring & metrics
 - [ ] Performance optimization
 - [ ] Comprehensive testing
 
 ### Phase 5: Plugin Integration 🔄
+
 - [ ] stash-compreface-plugin update
 - [ ] Real-world validation
 - [ ] Performance benchmarking
@@ -381,6 +393,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 ## Credits
 
 **Technology:**
+
 - [InsightFace](https://github.com/deepinsight/insightface) - Face recognition
 - [PySceneDetect](https://github.com/Breakthrough/PySceneDetect) - Scene detection
 - [OpenAI CLIP](https://github.com/openai/CLIP) - Vision-language model
@@ -388,6 +401,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 
 **Ecosystem:**
+
 - [Stash](https://github.com/stashapp/stash) - Media organizer
 - [Compreface](https://github.com/exadel-inc/CompreFace) - Face recognition service
 

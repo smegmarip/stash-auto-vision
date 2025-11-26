@@ -14,7 +14,7 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene_12345.mp4",
-    "scene_id": "12345"
+    "source_id": "12345"
   }'
 
 # Check status
@@ -27,20 +27,22 @@ curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
 ## Face Detection
 
 **Simple:**
+
 ```bash
 curl -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene.mp4",
-    "scene_id": "123"
+    "source_id": "123"
   }'
 ```
 
 **With options:**
+
 ```json
 {
   "source": "/media/videos/scene.mp4",
-  "scene_id": "123",
+  "source_id": "123",
   "parameters": {
     "min_confidence": 0.9,
     "max_faces": 50,
@@ -52,6 +54,7 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
 ## Face Enhancement
 
 **Enable in environment:**
+
 ```bash
 # Edit .env
 ENABLE_ENHANCEMENT=true
@@ -62,6 +65,7 @@ docker compose restart frame-server
 ```
 
 **Use in requests:**
+
 ```json
 {
   "source": "/media/videos/scene.mp4",
@@ -73,6 +77,7 @@ docker compose restart frame-server
 ```
 
 **Single frame:**
+
 ```bash
 curl "http://localhost:5001/extract-frame?video_path=/media/videos/scene.mp4&timestamp=1.0&enhance=1&fidelity_weight=0.7"
 ```
@@ -87,7 +92,7 @@ curl -X POST http://localhost:5010/vision/analyze/scenes \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene.mp4",
-    "scene_id": "123",
+    "source_id": "123",
     "parameters": {
       "threshold": 27.0
     }
@@ -101,7 +106,7 @@ curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene.mp4",
-    "scene_id": "123",
+    "source_id": "123",
     "modules": {
       "scenes": {"enabled": true},
       "faces": {"enabled": true}
@@ -112,6 +117,7 @@ curl -X POST http://localhost:5010/vision/analyze \
 ## Configuration
 
 **Confidence Thresholds:**
+
 ```bash
 # Environment defaults (in .env)
 FACES_MIN_CONFIDENCE=0.9
@@ -126,6 +132,7 @@ SCENES_THRESHOLD=27.0
 ```
 
 **GPU vs CPU:**
+
 ```bash
 # GPU mode (.env)
 OPENCV_DEVICE=cuda
@@ -139,23 +146,27 @@ INSIGHTFACE_DEVICE=cpu
 ## Troubleshooting
 
 **Service not starting:**
+
 ```bash
 docker compose logs {service-name}
 ```
 
 **Cache issues:**
+
 ```bash
 docker exec -it vision-redis redis-cli KEYS "*"
 docker exec -it vision-redis redis-cli FLUSHALL  # Clear cache
 ```
 
 **Port conflicts (macOS):**
+
 ```bash
 # Use port 5010 (5000 conflicts with AirPlay)
 VISION_API_PORT=5010
 ```
 
 **Enhancement not working:**
+
 ```bash
 # Check if enabled
 docker compose logs frame-server | grep -i enhancement

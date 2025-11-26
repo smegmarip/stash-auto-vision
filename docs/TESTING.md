@@ -41,23 +41,27 @@
 ### Test Levels
 
 **1. Unit Tests** (Future)
+
 - Core algorithms (cache key generation, VTT parsing, similarity calculation)
 - Model-independent logic
 - Fast execution (<1s per test)
 
 **2. Service Tests** (Implemented)
+
 - Per-service health checks
 - API endpoint validation
 - Service-specific functionality
 - Moderate execution (1-30s per test)
 
 **3. Integration Tests** (Implemented)
+
 - Multi-service workflows
 - Sequential processing chains
 - Cache behavior validation
 - Slower execution (30s-5min per test)
 
 **4. Performance Tests** (Implemented)
+
 - Throughput benchmarking
 - Resource usage profiling
 - Scaling validation
@@ -70,6 +74,7 @@
 ### Local Development (CPU Mode)
 
 **Setup:**
+
 ```bash
 # Configure for CPU testing
 cp .env.cpu.example .env
@@ -82,6 +87,7 @@ curl http://localhost:5010/health
 ```
 
 **Environment:**
+
 - macOS development workstation
 - Docker Desktop 4.0+
 - CPU-only processing (no GPU required)
@@ -90,6 +96,7 @@ curl http://localhost:5010/health
 ### Production (GPU Mode)
 
 **Setup:**
+
 ```bash
 # Configure for GPU testing
 cp .env.example .env
@@ -106,6 +113,7 @@ curl http://localhost:5000/health
 ```
 
 **Environment:**
+
 - Unraid server with NVIDIA RTX A4000
 - NVIDIA Docker runtime
 - CUDA 12.x drivers
@@ -117,13 +125,13 @@ curl http://localhost:5000/health
 
 ### Dataset Overview
 
-| Dataset | Location | Purpose | Size | Status |
-|---------|----------|---------|------|--------|
-| Charades | `tests/data/charades/` | Frame/scene testing | ~9,500 videos | ✅ Available |
-| Compound Videos | `tests/data/compound/` | Generated test videos | 8 videos (~70MB) | ✅ Generated |
-| Selfies | `tests/data/selfies/` | Face recognition | 10 subjects, 80 media files | 🔄 Optional |
-| YouTube Faces | `tests/data/youtube_faces/` | Ground truth validation | ~3,400 videos | 🔄 Optional |
-| CMU Multi-PIE | `tests/data/cmu/` | Face recognition accuracy | Test subset | 🔄 Copy from plugin |
+| Dataset         | Location                    | Purpose                   | Size                        | Status              |
+| --------------- | --------------------------- | ------------------------- | --------------------------- | ------------------- |
+| Charades        | `tests/data/charades/`      | Frame/scene testing       | ~9,500 videos               | ✅ Available        |
+| Compound Videos | `tests/data/compound/`      | Generated test videos     | 8 videos (~70MB)            | ✅ Generated        |
+| Selfies         | `tests/data/selfies/`       | Face recognition          | 10 subjects, 80 media files | 🔄 Optional         |
+| YouTube Faces   | `tests/data/youtube_faces/` | Ground truth validation   | ~3,400 videos               | 🔄 Optional         |
+| CMU Multi-PIE   | `tests/data/cmu/`           | Face recognition accuracy | Test subset                 | 🔄 Copy from plugin |
 
 ### Compound Test Videos
 
@@ -134,14 +142,17 @@ curl http://localhost:5000/health
 **Videos Generated:**
 
 1. **Frame Server Tests:**
+
    - `multi_scene_transitions.mp4` (60s, 8MB) - Multiple scene changes
    - `long_video.mp4` (300s, 15MB) - Extended duration test
 
 2. **Scenes Service Tests:**
+
    - `sharp_transitions.mp4` (90s, 12MB) - Abrupt scene changes
    - `gradual_transitions.mp4` (120s, 13MB) - Slow transitions
 
 3. **Faces Service Tests:**
+
    - `single_person_varied_conditions.mp4` (60s, 7.9MB) - One person, varying lighting/angles
    - `multiple_persons.mp4` (90s, 7.7MB) - Multiple subjects
    - `challenging_conditions.mp4` (60s, 7.9MB) - Difficult detection scenarios
@@ -150,6 +161,7 @@ curl http://localhost:5000/health
    - `complete_analysis.mp4` (120s, 16MB) - Full pipeline test
 
 **Regeneration:**
+
 ```bash
 cd tests/data
 python generate_compound_videos.py
@@ -162,12 +174,14 @@ python generate_compound_videos.py
 **Location:** `tests/data/charades/dataset/`
 
 **Details:**
+
 - ~9,500 videos with ground truth annotations
 - 157 action classes
 - Scene boundaries and object labels
 - Ideal for testing frame extraction performance, scene detection accuracy
 
 **Usage:**
+
 ```bash
 # Test frame extraction with Charades video
 curl -X POST http://localhost:5001/extract \
@@ -185,6 +199,7 @@ curl -X POST http://localhost:5001/extract \
 **Location:** `tests/data/cmu/` (copy from stash-compreface-plugin)
 
 **Setup:**
+
 ```bash
 # Copy from stash-compreface-plugin
 cp -r /path/to/stash-compreface-plugin/samples/CMU_test_subsets/* \
@@ -197,6 +212,7 @@ ffmpeg -framerate 1 -pattern_type glob -i 'pose_*/*.jpg' \
 ```
 
 **Validation Criteria:**
+
 - Detection rate >95%
 - Clustering accuracy >90% (same person grouped together)
 - Pose estimation accuracy >85%
@@ -208,11 +224,13 @@ ffmpeg -framerate 1 -pattern_type glob -i 'pose_*/*.jpg' \
 ### 1. Frame Server Tests
 
 #### Health Check
+
 ```bash
 curl http://localhost:5001/health | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "status": "healthy",
@@ -226,6 +244,7 @@ curl http://localhost:5001/health | jq .
 ```
 
 #### Batch Frame Extraction
+
 ```bash
 # Test OpenCV extraction
 curl -X POST http://localhost:5001/extract \
@@ -252,12 +271,14 @@ curl "http://localhost:5001/jobs/$JOB_ID/results" | jq .
 ```
 
 **Validation:**
+
 - ✅ Frames extracted = video_duration / interval
 - ✅ All frame indices sequential
 - ✅ Timestamps accurate
 - ✅ Cache hit on duplicate request
 
 #### On-Demand Frame Serving
+
 ```bash
 # Retrieve specific frame with polling
 curl "http://localhost:5001/frames/$JOB_ID/5?wait=true" -o frame_5.jpg
@@ -268,12 +289,14 @@ file frame_5.jpg
 ```
 
 **Validation:**
+
 - ✅ Frame downloaded successfully
 - ✅ JPEG format valid
 - ✅ Polling returns when frame ready
 - ✅ 404 for invalid frame index
 
 #### FFmpeg Fallback
+
 ```bash
 # Test FFmpeg method
 curl -X POST http://localhost:5001/extract \
@@ -289,6 +312,7 @@ curl -X POST http://localhost:5001/extract \
 ```
 
 **Validation:**
+
 - ✅ FFmpeg extraction works
 - ✅ Results identical to OpenCV method
 - ✅ Fallback functions correctly
@@ -298,11 +322,13 @@ curl -X POST http://localhost:5001/extract \
 ### 2. Scenes Service Tests
 
 #### Health Check
+
 ```bash
 curl http://localhost:5002/health | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "status": "healthy",
@@ -315,6 +341,7 @@ curl http://localhost:5002/health | jq .
 ```
 
 #### Scene Boundary Detection
+
 ```bash
 # Test ContentDetector
 curl -X POST http://localhost:5002/detect \
@@ -341,12 +368,14 @@ curl "http://localhost:5002/jobs/$JOB_ID/results" | jq '{
 ```
 
 **Validation:**
+
 - ✅ Scene count reasonable (not over-fragmented)
 - ✅ Scene durations respect min_scene_length
 - ✅ Processing speed 100-500 FPS (CPU), 300-800 FPS (GPU)
 - ✅ Cache hit on duplicate request
 
 #### ThresholdDetector Test
+
 ```bash
 # Test fade detection
 curl -X POST http://localhost:5002/detect \
@@ -359,6 +388,7 @@ curl -X POST http://localhost:5002/detect \
 ```
 
 **Validation:**
+
 - ✅ Detects fade in/out transitions
 - ✅ Different results than ContentDetector
 - ✅ Appropriate for professional video editing
@@ -368,11 +398,13 @@ curl -X POST http://localhost:5002/detect \
 ### 3. Faces Service Tests
 
 #### Health Check
+
 ```bash
 curl http://localhost:5003/health | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "status": "healthy",
@@ -386,13 +418,14 @@ curl http://localhost:5003/health | jq .
 ```
 
 #### Face Detection and Clustering
+
 ```bash
 # Submit job
 RESPONSE=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "test_face_001",
+    "source_id": "test_face_001",
     "parameters": {
       "min_confidence": 0.9,
       "max_faces": 50,
@@ -425,6 +458,7 @@ curl "http://localhost:5003/jobs/$JOB_ID/results" | jq .
 **Validation Checklist:**
 
 1. **Detection Accuracy:**
+
 ```bash
 # Count total detections vs expected
 curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
@@ -438,6 +472,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 ```
 
 2. **Clustering Quality:**
+
 ```bash
 # Check that same person's faces are clustered together
 curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
@@ -449,6 +484,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 ```
 
 3. **Embedding Quality:**
+
 ```bash
 # Check embedding dimensionality
 curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
@@ -462,6 +498,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 ```
 
 4. **Pose Estimation:**
+
 ```bash
 # Check pose distribution
 curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
@@ -472,6 +509,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 ```
 
 5. **Quality Scores:**
+
 ```bash
 # Check quality score range
 curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
@@ -482,13 +520,14 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 ```
 
 #### Multi-Person Detection
+
 ```bash
 # Test with multiple subjects
 curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/multiple_persons.mp4",
-    "scene_id": "test_face_multi",
+    "source_id": "test_face_multi",
     "parameters": {
       "enable_deduplication": true,
       "embedding_similarity_threshold": 0.6
@@ -497,6 +536,7 @@ curl -X POST http://localhost:5003/analyze \
 ```
 
 **Validation:**
+
 - ✅ Multiple unique faces detected (>1)
 - ✅ Different subjects have different face_ids
 - ✅ Same subject clustered correctly across frames
@@ -506,11 +546,13 @@ curl -X POST http://localhost:5003/analyze \
 ### 4. Vision API Tests
 
 #### Health Check
+
 ```bash
 curl http://localhost:5010/health | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "status": "healthy",
@@ -529,13 +571,14 @@ curl http://localhost:5010/health | jq .
 ```
 
 #### Comprehensive Analysis
+
 ```bash
 # Test full pipeline (scenes + faces)
 curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
-    "scene_id": "test_vision_001",
+    "source_id": "test_vision_001",
     "modules": {
       "scenes": {"enabled": true},
       "faces": {"enabled": true},
@@ -566,6 +609,7 @@ curl "http://localhost:5010/vision/jobs/$JOB_ID/results" | jq '{
 ```
 
 **Validation:**
+
 - ✅ Both scenes and faces results populated
 - ✅ processing_mode = "sequential"
 - ✅ Scene boundaries passed to faces service (check logs)
@@ -573,6 +617,7 @@ curl "http://localhost:5010/vision/jobs/$JOB_ID/results" | jq '{
 - ✅ Metadata includes both service statistics
 
 #### Sequential Processing Verification
+
 ```bash
 # Check logs to verify sequential execution
 docker-compose logs vision-api | grep "Starting module"
@@ -590,6 +635,7 @@ docker-compose logs vision-api | grep "Completed module"
 ### 5. Stub Service Tests
 
 #### Semantics Service (Phase 2)
+
 ```bash
 curl http://localhost:5004/health | jq .
 
@@ -598,11 +644,12 @@ curl -X POST http://localhost:5004/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/test.mp4",
-    "scene_id": "test"
+    "source_id": "test"
   }' | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "job_id": "semantics-stub-001",
@@ -612,6 +659,7 @@ curl -X POST http://localhost:5004/analyze \
 ```
 
 #### Objects Service (Phase 3)
+
 ```bash
 curl http://localhost:5005/health | jq .
 
@@ -620,11 +668,12 @@ curl -X POST http://localhost:5005/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/test.mp4",
-    "scene_id": "test"
+    "source_id": "test"
   }' | jq .
 ```
 
 **Expected Response:**
+
 ```json
 {
   "job_id": "objects-stub-001",
@@ -640,6 +689,7 @@ curl -X POST http://localhost:5005/analyze \
 ### Service Dependency Chain
 
 #### Test 1: Frame Server → Faces Service Integration
+
 ```bash
 # Monitor frame-server logs
 docker-compose logs -f frame-server &
@@ -650,7 +700,7 @@ curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "integration_test_001"
+    "source_id": "integration_test_001"
   }' | jq .
 
 # Expected in frame-server logs:
@@ -661,13 +711,14 @@ kill $LOGS_PID
 ```
 
 #### Test 2: Scenes → Faces Boundary Passing
+
 ```bash
 # Submit orchestrated job
 JOB_ID=$(curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
-    "scene_id": "boundary_test_001",
+    "source_id": "boundary_test_001",
     "modules": {
       "scenes": {"enabled": true},
       "faces": {"enabled": true}
@@ -698,6 +749,7 @@ docker-compose logs faces-service | grep "scene_boundaries"
 ```
 
 **Validation:**
+
 - ✅ Scenes service completes first
 - ✅ Faces service receives scene boundary data
 - ✅ Face detection optimized by scene info
@@ -706,13 +758,14 @@ docker-compose logs faces-service | grep "scene_boundaries"
 ### Cache Testing
 
 #### Test 1: Cache Hit on Duplicate Request
+
 ```bash
 # Submit job
 JOB1=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "cache_test_001",
+    "source_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
 
@@ -724,7 +777,7 @@ JOB2=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "cache_test_001",
+    "source_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
 
@@ -736,13 +789,14 @@ fi
 ```
 
 #### Test 2: Cache Miss on Parameter Change
+
 ```bash
 # Submit with different parameters
 JOB3=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "cache_test_001",
+    "source_id": "cache_test_001",
     "parameters": {"min_confidence": 0.8}
   }' | jq -r '.job_id')
 
@@ -754,6 +808,7 @@ fi
 ```
 
 #### Test 3: Cache Invalidation on File Change
+
 ```bash
 # Touch video file to change mtime
 touch /Users/x/dev/resources/repo/stash-auto-vision/tests/data/compound/faces-service/single_person_varied_conditions.mp4
@@ -763,7 +818,7 @@ JOB4=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "cache_test_001",
+    "source_id": "cache_test_001",
     "parameters": {"min_confidence": 0.9}
   }' | jq -r '.job_id')
 
@@ -815,10 +870,12 @@ done
 ```
 
 **Expected Results (CPU Mode):**
+
 - opencv_cpu: 30-60 FPS
 - ffmpeg: 20-40 FPS
 
 **Expected Results (GPU Mode):**
+
 - opencv_cuda: 200-400 FPS
 - ffmpeg: 20-40 FPS (same as CPU)
 
@@ -832,7 +889,7 @@ JOB_ID=$(curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "perf_test_001",
+    "source_id": "perf_test_001",
     "parameters": {
       "min_confidence": 0.9,
       "sampling_interval": 0.5
@@ -869,10 +926,12 @@ echo "  FPS: $(echo "scale=2; $FRAMES / $DURATION" | bc)"
 ```
 
 **Expected Results (CPU Mode):**
+
 - FPS: ~5-7 frames/second
 - Processing time: ~8-12 seconds for 60s video
 
 **Expected Results (GPU Mode):**
+
 - FPS: ~30 frames/second
 - Processing time: ~2-3 seconds for 60s video
 
@@ -913,9 +972,11 @@ echo "  FPS: $FPS"
 ```
 
 **Expected Results (CPU Mode):**
+
 - FPS: 100-500 frames/second
 
 **Expected Results (GPU Mode):**
+
 - FPS: 300-800 frames/second
 
 ---
@@ -939,7 +1000,7 @@ curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
-    "scene_id": "quick_test_001"
+    "source_id": "quick_test_001"
   }' | jq .
 
 # Expected: unique_faces = 1, processing completes successfully
@@ -986,29 +1047,30 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 
 ### Service Health Summary
 
-| Service | Health Check | Core Function | Integration | Status |
-|---------|--------------|---------------|-------------|--------|
-| frame-server | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Operational |
-| scenes-service | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Operational |
-| faces-service | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Operational |
-| semantics-service | ✅ Pass | ⏸️ Stub | ⏸️ N/A | ⏸️ Awaiting Phase 2 |
-| objects-service | ✅ Pass | ⏸️ Stub | ⏸️ N/A | ⏸️ Awaiting Phase 3 |
-| vision-api | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Operational |
-| **Overall** | **100%** | **75%** | **75%** | **✅ Ready** |
+| Service           | Health Check | Core Function | Integration | Status              |
+| ----------------- | ------------ | ------------- | ----------- | ------------------- |
+| frame-server      | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
+| scenes-service    | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
+| faces-service     | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
+| semantics-service | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 2 |
+| objects-service   | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 3 |
+| vision-api        | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
+| **Overall**       | **100%**     | **75%**       | **75%**     | **✅ Ready**        |
 
 ### Performance Results (CPU Mode)
 
-| Operation | Target | Actual | Status |
-|-----------|--------|--------|--------|
-| Frame extraction | 30-60 FPS | ~14 FPS | ⚠️ Below target |
-| Scene detection | 100-500 FPS | ~150 FPS | ✅ Pass |
-| Face detection | ~5 FPS | ~7 FPS | ✅ Pass |
+| Operation        | Target      | Actual   | Status          |
+| ---------------- | ----------- | -------- | --------------- |
+| Frame extraction | 30-60 FPS   | ~14 FPS  | ⚠️ Below target |
+| Scene detection  | 100-500 FPS | ~150 FPS | ✅ Pass         |
+| Face detection   | ~5 FPS      | ~7 FPS   | ✅ Pass         |
 
 **Note:** Frame extraction performance lower due to test video complexity. Results acceptable for development environment.
 
 ### Test Coverage
 
 **Implemented Tests:**
+
 - [x] Service health checks (6/6 services)
 - [x] Frame extraction (OpenCV, FFmpeg)
 - [x] Scene detection (ContentDetector, ThresholdDetector)
@@ -1018,6 +1080,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 - [x] Performance benchmarking
 
 **Future Tests:**
+
 - [ ] Unit tests for core algorithms
 - [ ] Stress testing (10+ concurrent jobs)
 - [ ] GPU mode validation
@@ -1027,6 +1090,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 ### Success Criteria
 
 **Phase 1 Complete When:**
+
 - [x] All services start successfully
 - [x] Health checks pass for all services
 - [x] Frame extraction works with all methods

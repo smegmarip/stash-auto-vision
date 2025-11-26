@@ -49,13 +49,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AnalyzeRequest'
+              $ref: "#/components/schemas/AnalyzeRequest"
             examples:
               faces_and_scenes:
                 summary: Faces and scenes analysis
                 value:
                   video_path: /media/videos/scene.mp4
-                  scene_id: "12345"
+                  source_id: "12345"
                   enable_scenes: true
                   enable_faces: true
                   processing_mode: sequential
@@ -67,37 +67,37 @@ paths:
                 summary: Faces only
                 value:
                   video_path: /media/videos/scene.mp4
-                  scene_id: "12345"
+                  source_id: "12345"
                   enable_faces: true
                   parameters:
                     face_min_confidence: 0.8
                     max_faces: 100
                     similarity_threshold: 0.6
       responses:
-        '202':
+        "202":
           description: Analysis job accepted and queued
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnalyzeJobResponse'
-        '400':
+                $ref: "#/components/schemas/AnalyzeJobResponse"
+        "400":
           description: Invalid request parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
           description: Video file not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
           description: Internal server error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /vision/jobs/{job_id}/status:
     get:
@@ -113,24 +113,24 @@ paths:
             format: uuid
           description: Job identifier returned from /vision/analyze
       responses:
-        '200':
+        "200":
           description: Job status retrieved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnalyzeJobStatus'
-        '404':
+                $ref: "#/components/schemas/AnalyzeJobStatus"
+        "404":
           description: Job not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
           description: Internal server error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /vision/jobs/{job_id}/results:
     get:
@@ -148,30 +148,30 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Analysis results
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnalyzeResults'
-        '404':
+                $ref: "#/components/schemas/AnalyzeResults"
+        "404":
           description: Job not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
           description: Job not completed yet
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
           description: Internal server error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /vision/jobs:
     get:
@@ -192,7 +192,7 @@ paths:
           schema:
             type: string
             enum: [vision, faces, scenes]
-        - name: scene_id
+        - name: source_id
           in: query
           schema:
             type: string
@@ -226,12 +226,12 @@ paths:
             type: integer
             default: 0
       responses:
-        '200':
+        "200":
           description: List of jobs
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ListJobsResponse'
+                $ref: "#/components/schemas/ListJobsResponse"
 
   /health:
     get:
@@ -242,18 +242,18 @@ paths:
         faces-service, semantics-service, and objects-service.
       operationId: healthCheck
       responses:
-        '200':
+        "200":
           description: Service healthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-        '503':
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
           description: Service unhealthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   schemas:
@@ -261,13 +261,13 @@ components:
       type: object
       required:
         - video_path
-        - scene_id
+        - source_id
       properties:
         video_path:
           type: string
           description: Absolute path to video file on shared volume
           example: /media/videos/scene.mp4
-        scene_id:
+        source_id:
           type: string
           description: Scene identifier for reference
           example: "12345"
@@ -418,7 +418,7 @@ components:
         job_id:
           type: string
           format: uuid
-        scene_id:
+        source_id:
           type: string
         status:
           type: string
@@ -498,7 +498,7 @@ components:
         jobs:
           type: array
           items:
-            $ref: '#/components/schemas/JobSummary'
+            $ref: "#/components/schemas/JobSummary"
         total:
           type: integer
           description: Total matching jobs before pagination
@@ -523,7 +523,7 @@ components:
         source:
           type: string
           nullable: true
-        scene_id:
+        source_id:
           type: string
           nullable: true
         created_at:
@@ -547,6 +547,7 @@ components:
 The Vision API implements a hub-and-spoke architecture where it acts as the central coordinator for all backend services:
 
 **Service Coordination:**
+
 - Submits jobs to backend services via HTTP POST
 - Polls backend service status endpoints at 2-second intervals
 - Retrieves results from backend services when jobs complete
@@ -555,6 +556,7 @@ The Vision API implements a hub-and-spoke architecture where it acts as the cent
 - Handles partial failures gracefully
 
 **Service Discovery:**
+
 - scenes-service: `http://scenes-service:5002`
 - faces-service: `http://faces-service:5003`
 - semantics-service: `http://semantics-service:5004`
@@ -570,18 +572,21 @@ All downstream services are health-checked via `/health` endpoints with 5-second
 Processes modules one at a time in dependency order:
 
 **Execution Order:**
+
 1. **Scenes Service** (if enabled) - Detects scene boundaries
 2. **Faces Service** (if enabled) - Uses scene boundaries for optimized sampling
 3. **Semantics Service** (if enabled) - Uses scene boundaries for frame selection
 4. **Objects Service** (if enabled) - Independent processing
 
 **Advantages:**
+
 - Lower memory usage (one service active at a time)
 - Predictable GPU resource usage (no contention)
 - Clear error isolation
 - Scene-aware face sampling (passes boundaries to faces-service)
 
 **Performance:**
+
 - 13.97 seconds for 120s video (scenes + faces)
 - 3.39s scenes + 7.05s faces + 3.53s coordination overhead
 - ~11.4 FPS aggregate throughput (CPU mode)
@@ -591,11 +596,13 @@ Processes modules one at a time in dependency order:
 Processes all enabled modules simultaneously using `asyncio.gather()`:
 
 **Advantages:**
+
 - 3-4x faster completion time
 - Efficient use of idle GPU during I/O
 - Maximum throughput
 
 **Considerations:**
+
 - Higher GPU memory (all models loaded)
 - Higher system memory usage
 - Potential resource contention
@@ -606,6 +613,7 @@ Processes all enabled modules simultaneously using `asyncio.gather()`:
 Each module can be individually enabled with custom parameters:
 
 **Scenes Module:**
+
 ```json
 {
   "enable_scenes": true,
@@ -618,6 +626,7 @@ Each module can be individually enabled with custom parameters:
 ```
 
 **Faces Module:**
+
 ```json
 {
   "enable_faces": true,
@@ -633,6 +642,7 @@ Each module can be individually enabled with custom parameters:
 ```
 
 **Semantics Module (Phase 2):**
+
 ```json
 {
   "enable_semantics": true
@@ -640,6 +650,7 @@ Each module can be individually enabled with custom parameters:
 ```
 
 **Objects Module (Phase 3):**
+
 ```json
 {
   "enable_objects": true
@@ -657,7 +668,7 @@ import time
 # Submit job
 response = requests.post("http://localhost:5010/vision/analyze", json={
     "source": "/media/videos/scene.mp4",
-    "scene_id": "12345",
+    "source_id": "12345",
     "enable_scenes": True,
     "enable_faces": True,
     "processing_mode": "sequential",
@@ -701,7 +712,7 @@ for face in faces:
 ```python
 response = requests.post("http://localhost:5010/vision/analyze", json={
     "source": "/media/videos/scene.mp4",
-    "scene_id": "12345",
+    "source_id": "12345",
     "enable_faces": True,
     "parameters": {
         "face_min_confidence": 0.8,
@@ -718,7 +729,7 @@ The Vision API combines results from all enabled services into a single unified 
 ```json
 {
   "job_id": "16542ef6-73b5-4200-a5be-414b8bfb6bc2",
-  "scene_id": "test_rollup_001",
+  "source_id": "test_rollup_001",
   "status": "completed",
   "scenes": {
     "status": "completed",
@@ -786,8 +797,8 @@ completed = requests.get("http://localhost:5010/vision/jobs?status=completed")
 # Filter by service
 faces_jobs = requests.get("http://localhost:5010/vision/jobs?service=faces")
 
-# Filter by scene_id
-scene_jobs = requests.get("http://localhost:5010/vision/jobs?scene_id=12345")
+# Filter by source_id
+scene_jobs = requests.get("http://localhost:5010/vision/jobs?source_id=12345")
 
 # Date range filtering
 from_date = requests.get(
@@ -804,6 +815,7 @@ page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
 ```
 
 **Example Response:**
+
 ```json
 {
   "jobs": [
@@ -813,7 +825,7 @@ page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
       "status": "completed",
       "progress": 1.0,
       "source": "/media/videos/scene.mp4",
-      "scene_id": "12345",
+      "source_id": "12345",
       "created_at": "2025-11-26T04:30:00.000Z",
       "result_summary": {
         "scenes": 4,
@@ -826,7 +838,7 @@ page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
       "status": "processing",
       "progress": 0.75,
       "source": "/media/videos/another.mp4",
-      "scene_id": "67890",
+      "source_id": "67890",
       "created_at": "2025-11-26T04:35:00.000Z"
     }
   ],
@@ -881,12 +893,14 @@ response = requests.get("http://localhost:5010/health")
 ### Performance
 
 **Test Results (CPU Mode - 120s Video):**
+
 - Scenes detection: 3.39 seconds (4 scenes)
 - Faces analysis: 7.05 seconds (11 frames)
 - Total processing: 13.97 seconds
 - Aggregate throughput: 11.4 FPS
 
 **Expected GPU Performance:**
+
 - Scenes detection: ~2s (GPU-accelerated histogram)
 - Faces analysis: ~2-3s (GPU-accelerated InsightFace)
 - Total processing: ~6-8 seconds (2-3x speedup)

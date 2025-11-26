@@ -32,11 +32,13 @@ The service supports optional face enhancement for low-quality detections using 
 #### Three-Tier Quality Gate System
 
 1. **face_min_confidence** (0.0-1.0, default 0.7 CPU / 0.9 GPU)
+
    - Initial detection threshold
    - Only faces above this confidence are considered
    - Environment variable: `FACES_MIN_CONFIDENCE`
 
 2. **enhancement.quality_trigger** (0.0-1.0, default 0.5)
+
    - Triggers enhancement when quality score falls below this threshold
    - Applied to high-confidence, low-quality faces
    - Environment variable: `FACES_ENHANCEMENT_QUALITY_TRIGGER`
@@ -62,11 +64,13 @@ The service supports optional face enhancement for low-quality detections using 
 #### Enhancement Models
 
 **CodeFormer (Recommended):**
+
 - Production-grade quality comparable to commercial solutions (Nero)
 - GPU: 10-15x faster than CPU (~10-15ms per face)
 - Fidelity weight: 0.0-1.0 (0.25 for heavy enhancement, 0.5 balanced, 0.7 for preservation)
 
 **GFPGAN:**
+
 - Legacy option, may over-smooth details
 - Faster but lower quality than CodeFormer
 
@@ -131,23 +135,23 @@ paths:
                 video_path:
                   type: string
                   description: Absolute path to video file
-                scene_id:
+                source_id:
                   type: string
                 job_id:
                   type: string
                 parameters:
-                  $ref: '#/components/schemas/FacesParameters'
+                  $ref: "#/components/schemas/FacesParameters"
       responses:
-        '202':
+        "202":
           description: Job submitted
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  job_id: {type: string}
-                  status: {type: string, enum: [queued]}
-                  created_at: {type: string, format: date-time}
+                  job_id: { type: string }
+                  status: { type: string, enum: [queued] }
+                  created_at: { type: string, format: date-time }
 
   /jobs/{job_id}/status:
     get:
@@ -156,27 +160,31 @@ paths:
         - name: job_id
           in: path
           required: true
-          schema: {type: string}
+          schema: { type: string }
       responses:
-        '200':
+        "200":
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  job_id: {type: string}
-                  status: {type: string, enum: [queued, processing, completed, failed]}
-                  progress: {type: number, minimum: 0, maximum: 1}
-                  stage: {type: string}
-                  message: {type: string}
-                  error: {type: string}
+                  job_id: { type: string }
+                  status:
+                    {
+                      type: string,
+                      enum: [queued, processing, completed, failed],
+                    }
+                  progress: { type: number, minimum: 0, maximum: 1 }
+                  stage: { type: string }
+                  message: { type: string }
+                  error: { type: string }
                   result_summary:
                     type: object
                     properties:
-                      unique_faces: {type: integer}
-                      total_detections: {type: integer}
-                      frames_processed: {type: integer}
-                      processing_time_seconds: {type: number}
+                      unique_faces: { type: integer }
+                      total_detections: { type: integer }
+                      frames_processed: { type: integer }
+                      processing_time_seconds: { type: number }
 
   /jobs/{job_id}/results:
     get:
@@ -185,50 +193,50 @@ paths:
         - name: job_id
           in: path
           required: true
-          schema: {type: string}
+          schema: { type: string }
       responses:
-        '200':
+        "200":
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  job_id: {type: string}
-                  scene_id: {type: string}
-                  status: {type: string}
+                  job_id: { type: string }
+                  source_id: { type: string }
+                  status: { type: string }
                   faces:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Face'
+                      $ref: "#/components/schemas/Face"
                   metadata:
                     type: object
                     properties:
-                      video_path: {type: string}
-                      total_frames: {type: integer}
-                      frames_processed: {type: integer}
-                      unique_faces: {type: integer}
-                      total_detections: {type: integer}
-                      processing_time_seconds: {type: number}
-                      method: {type: string}
-                      model: {type: string}
+                      video_path: { type: string }
+                      total_frames: { type: integer }
+                      frames_processed: { type: integer }
+                      unique_faces: { type: integer }
+                      total_detections: { type: integer }
+                      processing_time_seconds: { type: number }
+                      method: { type: string }
+                      model: { type: string }
 
   /health:
     get:
       summary: Service health check
       responses:
-        '200':
+        "200":
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status: {type: string}
-                  service: {type: string}
-                  version: {type: string}
-                  model: {type: string}
-                  gpu_available: {type: boolean}
-                  active_jobs: {type: integer}
-                  cache_size_mb: {type: number}
+                  status: { type: string }
+                  service: { type: string }
+                  version: { type: string }
+                  model: { type: string }
+                  gpu_available: { type: boolean }
+                  active_jobs: { type: integer }
+                  cache_size_mb: { type: number }
 
 components:
   schemas:
@@ -272,9 +280,9 @@ components:
           items:
             type: object
             properties:
-              start_timestamp: {type: number}
-              end_timestamp: {type: number}
-              duration: {type: number}
+              start_timestamp: { type: number }
+              end_timestamp: { type: number }
+              duration: { type: number }
         cache_duration:
           type: integer
           default: 3600
@@ -288,64 +296,100 @@ components:
           description: Unique identifier for this face cluster
         embedding:
           type: array
-          items: {type: number}
+          items: { type: number }
           minItems: 512
           maxItems: 512
           description: 512-D ArcFace embedding
         demographics:
           type: object
           properties:
-            age: {type: integer}
-            gender: {type: string, enum: [M, F]}
-            emotion: {type: string}
+            age: { type: integer }
+            gender: { type: string, enum: [M, F] }
+            emotion: { type: string }
         detections:
           type: array
           items:
-            $ref: '#/components/schemas/Detection'
+            $ref: "#/components/schemas/Detection"
         representative_detection:
-          $ref: '#/components/schemas/Detection'
+          $ref: "#/components/schemas/Detection"
 
     Detection:
       type: object
       properties:
-        frame_index: {type: integer}
-        timestamp: {type: number}
+        frame_index: { type: integer }
+        timestamp: { type: number }
         bbox:
           type: object
           properties:
-            x_min: {type: integer}
-            y_min: {type: integer}
-            x_max: {type: integer}
-            y_max: {type: integer}
-        confidence: {type: number, minimum: 0, maximum: 1}
+            x_min: { type: integer }
+            y_min: { type: integer }
+            x_max: { type: integer }
+            y_max: { type: integer }
+        confidence: { type: number, minimum: 0, maximum: 1 }
         quality:
           type: object
           properties:
-            composite: {type: number, minimum: 0, maximum: 1}
+            composite: { type: number, minimum: 0, maximum: 1 }
             components:
               type: object
               properties:
-                size: {type: number, minimum: 0, maximum: 1}
-                pose: {type: number, minimum: 0, maximum: 1}
-                occlusion: {type: number, minimum: 0, maximum: 1}
-                sharpness: {type: number, minimum: 0, maximum: 1, description: "TOPIQ/CLIP-IQA score"}
+                size: { type: number, minimum: 0, maximum: 1 }
+                pose: { type: number, minimum: 0, maximum: 1 }
+                occlusion: { type: number, minimum: 0, maximum: 1 }
+                sharpness:
+                  {
+                    type: number,
+                    minimum: 0,
+                    maximum: 1,
+                    description: "TOPIQ/CLIP-IQA score",
+                  }
         pose:
           type: string
           enum: [front, left, right, front-rotate-left, front-rotate-right]
         landmarks:
           type: object
           properties:
-            left_eye: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
-            right_eye: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
-            nose: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
-            mouth_left: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
-            mouth_right: {type: array, items: {type: integer}, minItems: 2, maxItems: 2}
-        enhanced: {type: boolean, default: false}
+            left_eye:
+              {
+                type: array,
+                items: { type: integer },
+                minItems: 2,
+                maxItems: 2,
+              }
+            right_eye:
+              {
+                type: array,
+                items: { type: integer },
+                minItems: 2,
+                maxItems: 2,
+              }
+            nose:
+              {
+                type: array,
+                items: { type: integer },
+                minItems: 2,
+                maxItems: 2,
+              }
+            mouth_left:
+              {
+                type: array,
+                items: { type: integer },
+                minItems: 2,
+                maxItems: 2,
+              }
+            mouth_right:
+              {
+                type: array,
+                items: { type: integer },
+                minItems: 2,
+                maxItems: 2,
+              }
+        enhanced: { type: boolean, default: false }
         occlusion:
           type: object
           properties:
-            occluded: {type: boolean}
-            probability: {type: number, minimum: 0, maximum: 1}
+            occluded: { type: boolean }
+            probability: { type: number, minimum: 0, maximum: 1 }
 ```
 
 ---
@@ -362,23 +406,27 @@ components:
 **Optional:** Age and gender estimation
 
 **Multi-Size Detection:**
+
 - CPU: 2 instances (det_size 320, 640)
 - GPU: 3 instances (det_size 320, 640, 1024)
 - Auto-selection: <500px→320, 500-1500px→640, >1500px→1024
 - Prevents upscaling failures on small images
 
 **Providers:**
+
 - GPU Mode: CUDAExecutionProvider (ctx_id=0)
 - CPU Mode: CPUExecutionProvider (ctx_id=-1)
 
 ### Detection Pipeline
 
 **Frame Acquisition:**
+
 - Requests frames from Frame Server at sampling_interval (default 2.0s)
 - Supports interval, timestamp, scene-based sampling
 - Optional sprite sheet parsing
 
 **Sprite Sheet Integration:**
+
 - Supports ultra-fast face detection from pre-generated WebVTT sprite tiles
 - Parameters: `use_sprites`, `sprite_vtt_url`, `sprite_image_url`
 - Automatic extraction method selection: "sprites" when `use_sprites=true`
@@ -387,16 +435,19 @@ components:
 - Performance: 100+ FPS vs ~30 FPS for video extraction
 
 **Face Detection:**
+
 - RetinaFace multi-scale detection (640x640)
 - Filter by min_confidence (default 0.9)
 - Extract bounding boxes and 5-point landmarks
 
 **Embedding Generation:**
+
 - 512-D ArcFace embeddings (L2-normalized)
 - Extract facial landmarks (eyes, nose, mouth)
 - Optional demographics (age, gender)
 
 **Quality Scoring:**
+
 - **Composite Score:** 35% size + 20% pose + 20% occlusion + 25% sharpness
 - **Size Component:** Min dimension (80px=0.25, 250px=1.0)
 - **Pose Component:** Yaw/pitch angles (0°=1.0, 45°=0.25)
@@ -406,6 +457,7 @@ components:
 - **Range:** 0.0 - 1.0
 
 **Pose Estimation:**
+
 - **Primary Method:** Native InsightFace pose angles (pitch, yaw, roll in degrees)
   - front: |yaw| < 15° and |roll| < 15°
   - left: yaw < -15°
@@ -416,42 +468,46 @@ components:
 - **Classes:** front, left, right, front-rotate-left, front-rotate-right
 
 **Face Clustering:**
+
 - Calculate cosine similarity between embeddings
 - Cluster if similarity >= threshold (default 0.6)
 - Select representative (highest quality_score)
 
 ### Parameters
 
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| min_confidence | 0.9 | 0.0-1.0 | Detection threshold (0.7 for challenging, 0.9 for clean) |
-| min_quality | 0.0 | 0.0-1.0 | Minimum quality score to keep (0.0 = no filtering) |
-| max_faces | 50 | 1+ | Max unique faces (10-20 typical, 50+ crowds) |
-| sampling_interval | 2.0 | 0.5+ | Frame interval seconds (1.0-3.0 recommended) |
-| enable_deduplication | true | bool | Cluster faces by similarity |
-| embedding_similarity_threshold | 0.6 | 0.0-1.0 | Cosine threshold (0.5 loose, 0.6 balanced, 0.7 strict) |
-| scene_boundaries | null | array | Scene timestamps for optimized sampling |
-| cache_duration | 3600 | int | Redis TTL in seconds |
-| enhancement.enabled | false | bool | Enable face enhancement for low-quality detections |
-| enhancement.quality_trigger | 0.5 | 0.0-1.0 | Trigger enhancement if quality below this threshold |
-| enhancement.model | codeformer | string | Enhancement model: "codeformer" or "gfpgan" |
-| enhancement.fidelity_weight | 0.5 | 0.0-1.0 | Quality vs fidelity tradeoff (CodeFormer only) |
+| Parameter                      | Default    | Range   | Description                                              |
+| ------------------------------ | ---------- | ------- | -------------------------------------------------------- |
+| min_confidence                 | 0.9        | 0.0-1.0 | Detection threshold (0.7 for challenging, 0.9 for clean) |
+| min_quality                    | 0.0        | 0.0-1.0 | Minimum quality score to keep (0.0 = no filtering)       |
+| max_faces                      | 50         | 1+      | Max unique faces (10-20 typical, 50+ crowds)             |
+| sampling_interval              | 2.0        | 0.5+    | Frame interval seconds (1.0-3.0 recommended)             |
+| enable_deduplication           | true       | bool    | Cluster faces by similarity                              |
+| embedding_similarity_threshold | 0.6        | 0.0-1.0 | Cosine threshold (0.5 loose, 0.6 balanced, 0.7 strict)   |
+| scene_boundaries               | null       | array   | Scene timestamps for optimized sampling                  |
+| cache_duration                 | 3600       | int     | Redis TTL in seconds                                     |
+| enhancement.enabled            | false      | bool    | Enable face enhancement for low-quality detections       |
+| enhancement.quality_trigger    | 0.5        | 0.0-1.0 | Trigger enhancement if quality below this threshold      |
+| enhancement.model              | codeformer | string  | Enhancement model: "codeformer" or "gfpgan"              |
+| enhancement.fidelity_weight    | 0.5        | 0.0-1.0 | Quality vs fidelity tradeoff (CodeFormer only)           |
 
 ### Face Deduplication
 
 **Cosine Similarity:**
+
 ```python
 similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 # similarity >= threshold → same person
 ```
 
 **Clustering:**
+
 1. Compare new face to all existing cluster representatives
 2. If similarity >= threshold: add to cluster
 3. Else: create new cluster
 4. Track representative (highest quality_score)
 
 **Quality Selection:**
+
 - Representative = detection with max quality_score
 - Factors: confidence × size_factor × pose_factor
 - Used for face_id embedding
@@ -463,6 +519,7 @@ similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 **Encoding:** JSON array
 
 **Example:**
+
 ```json
 {
   "face_id": "face_0",
@@ -471,6 +528,7 @@ similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 ```
 
 **Usage:**
+
 - Cosine similarity for clustering
 - Vector database for large-scale matching
 - Compreface API for subject recognition
@@ -478,11 +536,13 @@ similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 ### Performance Benchmarks
 
 **CPU Mode (macOS Development):**
+
 - Throughput: 2.5 FPS
 - Test: 60s video, 60 frames in 23.68s
 - Memory: ~600 MB
 
 **GPU Mode (Expected - NVIDIA RTX A4000):**
+
 - Throughput: 10-15 FPS (estimated)
 - Test: 60s video, 60 frames in 4-6s
 - Memory: ~1.5 GB VRAM
@@ -499,6 +559,7 @@ similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 ### Caching Strategy
 
 **Cache Key Generation:**
+
 ```python
 import hashlib, os, json
 
@@ -509,6 +570,7 @@ cache_key = hashlib.sha256(cache_str.encode()).hexdigest()
 ```
 
 **Redis Structure:**
+
 ```
 faces:job:{job_id}:metadata       # Job status, progress
 faces:job:{job_id}:result         # Job results
@@ -516,6 +578,7 @@ faces:cache:{cache_key}:job_id    # Cache lookup
 ```
 
 **Invalidation:**
+
 - File modification changes mtime → new cache_key
 - Old entries expire after TTL (default 3600s)
 
@@ -549,27 +612,30 @@ LOG_LEVEL=INFO
 ### Vision API Integration
 
 **Sequential Processing:**
+
 1. vision-api → scenes-service (detect boundaries)
 2. vision-api → faces-service (with scene_boundaries)
 3. vision-api aggregates results
 
 **Scene-Aware Sampling:**
+
 - Extract 3 frames per scene (start, middle, end)
 - Focuses on transitions, skips static scenes
 
 **Example Request:**
+
 ```json
 {
   "source": "/media/videos/scene.mp4",
-  "scene_id": "12345",
+  "source_id": "12345",
   "parameters": {
     "min_confidence": 0.9,
     "sampling_interval": 2.0,
     "enable_deduplication": true,
     "embedding_similarity_threshold": 0.6,
     "scene_boundaries": [
-      {"start_timestamp": 0.0, "end_timestamp": 15.0},
-      {"start_timestamp": 15.0, "end_timestamp": 30.0}
+      { "start_timestamp": 0.0, "end_timestamp": 15.0 },
+      { "start_timestamp": 15.0, "end_timestamp": 30.0 }
     ]
   }
 }
@@ -577,19 +643,21 @@ LOG_LEVEL=INFO
 
 ### Performance Characteristics
 
-| Configuration | FPS | 60s Video | Use Case |
-|--------------|-----|-----------|----------|
-| CPU Mode | 2.5 | 24s | Development |
-| GPU Mode | 10-15 | 4-6s | Production |
-| CPU + Sprites | 5-10 | 6-12s | Fallback |
-| GPU + Scene Opt | 15-20 | 3-4s | Optimized |
+| Configuration   | FPS   | 60s Video | Use Case    |
+| --------------- | ----- | --------- | ----------- |
+| CPU Mode        | 2.5   | 24s       | Development |
+| GPU Mode        | 10-15 | 4-6s      | Production  |
+| CPU + Sprites   | 5-10  | 6-12s     | Fallback    |
+| GPU + Scene Opt | 15-20 | 3-4s      | Optimized   |
 
 **Memory:**
+
 - CPU: ~600 MB (model + runtime)
 - GPU: ~1.5 GB VRAM
 - Per face: ~2 KB (512 floats)
 
 **Scaling:**
+
 - Single video: 1 worker
 - Multiple videos: N workers, parallel jobs
 - High-volume: Load balancer + pool
@@ -608,12 +676,14 @@ LOG_LEVEL=INFO
 ### Model History
 
 **v2 (Current) - ResNet18:**
+
 - ~100% TPR on hand-occluded faces
 - 42.6 MB model size
 - ~3.7ms inference time
 - Trained on 30k+ MAFA dataset
 
 **v1 (Deprecated) - ConvNeXt-Small:**
+
 - ~50% TPR on hand-occluded faces (FAILED)
 - 192 MB model size
 - ~11.5ms inference time
@@ -622,6 +692,7 @@ LOG_LEVEL=INFO
 ### Overview
 
 The Faces Service includes automatic occlusion detection for all face detections. Occlusion detection identifies faces partially obscured by:
+
 - Sunglasses or eyeglasses
 - Face masks (medical, decorative)
 - Hands or other objects
@@ -658,6 +729,7 @@ Each face detection includes nested quality and occlusion objects:
 ### Model Details
 
 **Architecture:** ResNet18
+
 - Parameters: 11.1M
 - Inference time: ~3.7ms (CPU), <1ms (GPU)
 - Model size: 42.6 MB (ONNX)
@@ -665,11 +737,13 @@ Each face detection includes nested quality and occlusion objects:
 - Custom trained with hand-occlusion emphasis
 
 **Preprocessing:**
+
 - Resize face crop to 224x224
 - Convert BGR to RGB
 - Normalize with ImageNet statistics (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 **Inference:**
+
 - ONNX Runtime with CPUExecutionProvider (GPU support available via INSIGHTFACE_DEVICE=cuda)
 - Binary classification via softmax output
 - Argmax for class prediction (no manual threshold)
@@ -681,11 +755,13 @@ The ResNet18 occlusion model was custom-trained on the MAFA dataset.
 #### Training Details
 
 **Dataset:** MAFA (Masked Faces) + augmented hand-occlusion samples
+
 - Total images: 30,000+
 - Categories: masks, sunglasses, hands, clean faces
 - Augmentation: rotation, flipping, brightness adjustment
 
 **Training Parameters:**
+
 - Architecture: ResNet18 (torchvision)
 - Optimizer: Adam
 - Learning rate: 0.001
@@ -693,6 +769,7 @@ The ResNet18 occlusion model was custom-trained on the MAFA dataset.
 - Batch size: 32
 
 **Export to ONNX:**
+
 ```python
 import torch
 import torch.onnx
@@ -712,6 +789,7 @@ torch.onnx.export(
 ```
 
 #### Verify Output
+
 ```bash
 file faces-service/models/occlusion_classifier.onnx
 # Expected: data (binary ONNX format)
@@ -721,7 +799,9 @@ ls -lh faces-service/models/occlusion_classifier.onnx
 ```
 
 #### Integration
+
 The model is automatically loaded at service startup and used for all face detections:
+
 ```python
 # faces-service/app/occlusion_detector.py
 detector = OcclusionDetector()  # Loads ONNX model
@@ -751,16 +831,17 @@ flagged = [f for f in detections if f['occluded']]
 
 **Initial Evaluation (LamKser pre-trained models):**
 
-| Model | Accuracy | Hand TPR | Params | Inference | Notes |
-|-------|----------|----------|--------|-----------|-------|
-| ConvNeXt-Small | 98.87% | **50%** | 49.4M | 11.54ms | Failed on hands |
-| ResNet18 | 97.03% | **50%** | 11.1M | 3.69ms | Failed on hands |
+| Model          | Accuracy | Hand TPR | Params | Inference | Notes           |
+| -------------- | -------- | -------- | ------ | --------- | --------------- |
+| ConvNeXt-Small | 98.87%   | **50%**  | 49.4M  | 11.54ms   | Failed on hands |
+| ResNet18       | 97.03%   | **50%**  | 11.1M  | 3.69ms    | Failed on hands |
 
 **Issue:** All LamKser pre-trained models failed to detect hand-on-face occlusions (~50% TPR).
 
 **Solution:** Custom-trained ResNet18 on MAFA dataset with hand-occlusion augmentation.
 
 **Final Model (Current):**
+
 - Architecture: ResNet18 (torchvision)
 - Hand TPR: ~100%
 - Size: 42.6 MB

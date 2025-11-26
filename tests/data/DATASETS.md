@@ -13,6 +13,7 @@ This document describes all datasets available for testing the Stash Auto Vision
 **Location:** `data/selfies/`
 
 **Structure:**
+
 ```
 selfies/
 ├── 1/                    # Subject 1
@@ -27,6 +28,7 @@ selfies/
 ```
 
 **Details:**
+
 - **Subjects:** 10 individuals
 - **Files per subject:** 4 photos + 4 videos
 - **Total:** 40 photos + 40 videos
@@ -40,7 +42,7 @@ curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/selfies/1/3.mp4",
-    "scene_id": "selfie_subject_1",
+    "source_id": "selfie_subject_1",
     "parameters": {
       "min_confidence": 0.9,
       "enable_deduplication": true,
@@ -52,6 +54,7 @@ curl -X POST http://localhost:5003/analyze \
 ```
 
 **Validation:**
+
 - Each subject's photos/videos should cluster to 1 unique face
 - Cross-subject videos should produce separate face_ids
 - Embedding similarity within subject >0.6
@@ -65,6 +68,7 @@ curl -X POST http://localhost:5003/analyze \
 **Location:** `data/youtube_faces/`
 
 **Structure:**
+
 ```
 youtube_faces/
 ├── data/
@@ -84,6 +88,7 @@ youtube_faces/
 ```
 
 **Details:**
+
 - **Source:** Tel Aviv University (2011)
 - **Subjects:** 1,595 individuals
 - **Videos:** 3,425 total
@@ -99,7 +104,7 @@ curl -X POST http://localhost:5003/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/youtube_faces/data/frame_images_DB/Aaron_Eckhart/0/*.jpg",
-    "scene_id": "ytfaces_aaron_eckhart",
+    "source_id": "ytfaces_aaron_eckhart",
     "parameters": {
       "min_confidence": 0.9,
       "enable_deduplication": true
@@ -130,6 +135,7 @@ with open('data/youtube_faces/data/Aaron_Eckhart.labeled_faces.txt') as f:
 ```
 
 **Use Cases:**
+
 - Detection accuracy benchmarking
 - Embedding quality validation
 - Cross-video clustering (same person, different videos)
@@ -144,6 +150,7 @@ with open('data/youtube_faces/data/Aaron_Eckhart.labeled_faces.txt') as f:
 **Location:** `data/charades/`
 
 **Structure:**
+
 ```
 charades/
 ├── dataset/
@@ -157,6 +164,7 @@ charades/
 ```
 
 **Details:**
+
 - **Source:** AI2 (Allen Institute for AI)
 - **Videos:** ~9,500 clips
 - **Actions:** 157 action classes
@@ -189,11 +197,13 @@ curl -X POST http://localhost:5002/detect \
 ```
 
 **Current Use (Phase 1):**
+
 - Frame extraction speed benchmarks
 - Scene boundary detection accuracy
 - Cache performance testing
 
 **Future Use (Phase 2-3):**
+
 - Semantic scene classification (indoor/outdoor, locations)
 - Object detection validation
 - Action recognition
@@ -202,11 +212,11 @@ curl -X POST http://localhost:5002/detect \
 
 ## Dataset Comparison
 
-| Dataset | Subjects | Videos | Best For | Complexity |
-|---------|----------|--------|----------|------------|
-| **Selfies** | 10 | 40 | Quick tests, smoke testing | Low |
-| **YouTube Faces** | 1,595 | 3,425 | Production validation, benchmarks | High |
-| **Charades** | N/A | 9,500 | Scene detection, frame extraction | Medium |
+| Dataset           | Subjects | Videos | Best For                          | Complexity |
+| ----------------- | -------- | ------ | --------------------------------- | ---------- |
+| **Selfies**       | 10       | 40     | Quick tests, smoke testing        | Low        |
+| **YouTube Faces** | 1,595    | 3,425  | Production validation, benchmarks | High       |
+| **Charades**      | N/A      | 9,500  | Scene detection, frame extraction | Medium     |
 
 ---
 
@@ -215,6 +225,7 @@ curl -X POST http://localhost:5002/detect \
 ### 1. Development Phase (Quick Validation)
 
 **Use Selfies dataset:**
+
 ```bash
 # Test all 10 subjects
 for i in {1..10}; do
@@ -222,7 +233,7 @@ for i in {1..10}; do
     -H "Content-Type: application/json" \
     -d "{
       \"video_path\": \"/media/selfies/$i/3.mp4\",
-      \"scene_id\": \"selfie_subject_$i\"
+      \"source_id\": \"selfie_subject_$i\"
     }"
 done
 
@@ -233,6 +244,7 @@ done
 ### 2. Integration Testing
 
 **Use YouTube Faces (small subset):**
+
 ```bash
 # Test single subject with multiple videos
 # Aaron_Eckhart has multiple videos - should cluster to same person
@@ -251,6 +263,7 @@ curl -X POST http://localhost:5003/analyze \
 ### 3. Production Validation
 
 **Use YouTube Faces (full dataset):**
+
 - Run comprehensive benchmarks
 - Compare detection rates against ground truth
 - Measure embedding consistency
@@ -339,6 +352,7 @@ def calculate_detection_accuracy(ground_truth_file, results_json):
 ```
 
 **Target Metrics:**
+
 - **Detection Rate (Recall):** >95%
 - **Precision:** >90%
 - **Bounding Box IoU:** >0.7
@@ -350,28 +364,28 @@ def calculate_detection_accuracy(ground_truth_file, results_json):
 
 ### Selfies (Small, Fast)
 
-| Metric | GPU Mode | CPU Mode |
-|--------|----------|----------|
-| Processing time (1 video) | <5s | <30s |
-| Detection rate | >98% | >98% |
-| Clustering accuracy | >95% | >95% |
+| Metric                    | GPU Mode | CPU Mode |
+| ------------------------- | -------- | -------- |
+| Processing time (1 video) | <5s      | <30s     |
+| Detection rate            | >98%     | >98%     |
+| Clustering accuracy       | >95%     | >95%     |
 
 ### YouTube Faces (Large, Comprehensive)
 
-| Metric | GPU Mode | CPU Mode |
-|--------|----------|----------|
-| Processing time (avg video, 181 frames) | <30s | <5 min |
-| Detection rate vs ground truth | >95% | >95% |
-| Embedding consistency (same person) | >0.8 | >0.8 |
-| Cross-video clustering | >90% | >90% |
+| Metric                                  | GPU Mode | CPU Mode |
+| --------------------------------------- | -------- | -------- |
+| Processing time (avg video, 181 frames) | <30s     | <5 min   |
+| Detection rate vs ground truth          | >95%     | >95%     |
+| Embedding consistency (same person)     | >0.8     | >0.8     |
+| Cross-video clustering                  | >90%     | >90%     |
 
 ### Charades (Scene Detection)
 
-| Metric | GPU Mode | CPU Mode |
-|--------|----------|----------|
-| Frame extraction (30s video) | <5s | <15s |
-| Scene detection speed | 300-800 FPS | 100-500 FPS |
-| Scene boundary accuracy | 85-90% | 85-90% |
+| Metric                       | GPU Mode    | CPU Mode    |
+| ---------------------------- | ----------- | ----------- |
+| Frame extraction (30s video) | <5s         | <15s        |
+| Scene detection speed        | 300-800 FPS | 100-500 FPS |
+| Scene boundary accuracy      | 85-90%      | 85-90%      |
 
 ---
 
@@ -398,15 +412,18 @@ def calculate_detection_accuracy(ground_truth_file, results_json):
 ## Dataset Citations
 
 ### Selfies
+
 - **Type:** Custom test dataset
 - **License:** Internal testing only
 
 ### YouTube Faces
+
 - **Citation:** Lior Wolf, Tal Hassner and Itay Maoz, "Face Recognition in Unconstrained Videos with Matched Background Similarity", CVPR 2011
 - **License:** Research use only
 - **URL:** http://www.cs.tau.ac.il/~wolf/ytfaces/
 
 ### Charades
+
 - **Citation:** Gunnar A. Sigurdsson, Gül Varol, Xiaolong Wang, Ali Farhadi, Ivan Laptev and Abhinav Gupta, "Hollywood in Homes: Crowdsourcing Data Collection for Activity Understanding", ECCV 2016
 - **License:** Research use only
 - **URL:** https://prior.allenai.org/projects/charades

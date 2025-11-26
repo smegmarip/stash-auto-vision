@@ -48,6 +48,7 @@ class CacheManager:
                 # Parse ISO format to timestamp
                 try:
                     from datetime import datetime
+
                     dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                     created_at = dt.timestamp()
                 except:
@@ -63,8 +64,8 @@ class CacheManager:
                 await self.redis.sadd(f"vision:jobs:by_status:{status}", job_id)
 
             # Scene index
-            if scene_id := metadata.get("scene_id"):
-                await self.redis.sadd(f"vision:jobs:by_scene:{scene_id}", job_id)
+            if source_id := metadata.get("source_id"):
+                await self.redis.sadd(f"vision:jobs:by_scene:{source_id}", job_id)
 
             # Source index (hash the path for key safety)
             if source := metadata.get("source"):
@@ -96,13 +97,13 @@ class CacheManager:
         self,
         status: Optional[str] = None,
         service: Optional[str] = None,
-        scene_id: Optional[str] = None,
+        source_id: Optional[str] = None,
         source: Optional[str] = None,
         start_date: Optional[float] = None,
         end_date: Optional[float] = None,
         include_results: bool = False,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
         List jobs across all services with filtering, pagination, and deduplication.
@@ -113,7 +114,7 @@ class CacheManager:
         Args:
             status: Filter by job status
             service: Filter by service (vision, faces, scenes) or None for all
-            scene_id: Filter by scene_id
+            source_id: Filter by source_id
             source: Filter by source video path
             start_date: Filter by start date (Unix timestamp)
             end_date: Filter by end date (Unix timestamp)
@@ -166,7 +167,7 @@ class CacheManager:
                 # Apply filters
                 if status and metadata.get("status") != status:
                     continue
-                if scene_id and metadata.get("scene_id") != scene_id:
+                if source_id and metadata.get("source_id") != source_id:
                     continue
                 if source and metadata.get("source") != source:
                     continue
@@ -177,6 +178,7 @@ class CacheManager:
                     if isinstance(created_at, str):
                         try:
                             from datetime import datetime
+
                             dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                             created_ts = dt.timestamp()
                         except:
@@ -227,6 +229,7 @@ class CacheManager:
                 if isinstance(created_at, str):
                     try:
                         from datetime import datetime
+
                         dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                         return dt.timestamp()
                     except:
@@ -236,7 +239,7 @@ class CacheManager:
             jobs.sort(key=get_created_ts, reverse=True)
 
             total = len(jobs)
-            return jobs[offset:offset + limit], total
+            return jobs[offset : offset + limit], total
 
         except Exception as e:
             logger.error(f"Error listing jobs: {e}")

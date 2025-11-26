@@ -14,7 +14,7 @@ RESPONSE=$(curl -s -X POST http://localhost:5010/vision/analyze/faces \
   -H "Content-Type: application/json" \
   -d "{
     \"video_path\": \"$VIDEO_PATH\",
-    \"scene_id\": \"$SCENE_ID\",
+    \"source_id\": \"$SCENE_ID\",
     \"parameters\": {
       \"min_confidence\": 0.8,
       \"max_faces\": 10,

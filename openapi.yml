@@ -146,11 +146,11 @@ paths:
             type: string
             enum: [vision, faces, scenes]
           description: Filter by service (default is all services)
-        - name: scene_id
+        - name: source_id
           in: query
           schema:
             type: string
-          description: Filter by scene_id
+          description: Filter by source_id
         - name: source
           in: query
           schema:
@@ -576,7 +576,7 @@ components:
       type: object
       required:
         - source
-        - scene_id
+        - source_id
       properties:
         source:
           type: string
@@ -586,9 +586,9 @@ components:
           type: string
           enum: [video, image, url]
           description: Source type (auto-detected if omitted)
-        scene_id:
+        source_id:
           type: string
-          description: Scene identifier
+          description: Source identifier
         job_id:
           type: string
           description: Job ID for tracking
@@ -707,7 +707,7 @@ components:
       properties:
         job_id:
           type: string
-        scene_id:
+        source_id:
           type: string
         status:
           type: string
@@ -774,7 +774,7 @@ components:
         source:
           type: string
           nullable: true
-        scene_id:
+        source_id:
           type: string
           nullable: true
         created_at:
@@ -1011,7 +1011,7 @@ components:
       properties:
         video_path:
           type: string
-        scene_id:
+        source_id:
           type: string
         job_id:
           type: string
@@ -1160,7 +1160,7 @@ components:
       type: object
       required:
         - source
-        - scene_id
+        - source_id
       properties:
         source:
           type: string
@@ -1169,9 +1169,9 @@ components:
           type: string
           enum: [video, image, url]
           description: Source type (auto-detected if omitted)
-        scene_id:
+        source_id:
           type: string
-          description: Scene ID for reference
+          description: Source ID for reference
         job_id:
           type: string
           description: Parent job ID for tracking
@@ -1331,7 +1331,7 @@ components:
       properties:
         job_id:
           type: string
-        scene_id:
+        source_id:
           type: string
         status:
           type: string

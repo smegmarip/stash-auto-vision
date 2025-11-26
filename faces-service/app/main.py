@@ -34,7 +34,7 @@ from .models import (
     VideoMetadata,
     HealthResponse,
     JobStatus,
-    ErrorResponse
+    ErrorResponse,
 )
 from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
@@ -50,10 +50,7 @@ CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Global instances
@@ -78,17 +75,12 @@ async def lifespan(app: FastAPI):
     logger.info("Cache manager initialized")
 
     # Initialize recognition manager with multi-size support
-    recognition_manager = RecognitionManager(
-        model_name=INSIGHTFACE_MODEL,
-        device=INSIGHTFACE_DEVICE
-    )
+    recognition_manager = RecognitionManager(model_name=INSIGHTFACE_MODEL, device=INSIGHTFACE_DEVICE)
     logger.info(f"Recognition manager initialized: {recognition_manager.get_model_info()}")
 
     # Initialize face recognizer with recognition manager
     face_recognizer = FaceRecognizer(
-        model_name=INSIGHTFACE_MODEL,
-        device=INSIGHTFACE_DEVICE,
-        recognition_manager=recognition_manager
+        model_name=INSIGHTFACE_MODEL, device=INSIGHTFACE_DEVICE, recognition_manager=recognition_manager
     )
     model_info = face_recognizer.get_model_info()
     logger.info(f"Face recognizer initialized: {model_info}")
@@ -108,10 +100,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Faces Service",
-    description="Face recognition service using InsightFace",
-    version="1.0.0",
-    lifespan=lifespan
+    title="Faces Service", description="Face recognition service using InsightFace", version="1.0.0", lifespan=lifespan
 )
 
 
@@ -185,11 +174,7 @@ async def get_video_info(video_path: str) -> tuple:
         return 60.0, 30.0, 1800
 
 
-async def request_frames(
-    video_path: str,
-    job_id: str,
-    parameters: dict
-) -> dict:
+async def request_frames(video_path: str, job_id: str, parameters: dict) -> dict:
     """
     Request frame extraction from frame-server with adaptive sampling
 
@@ -215,7 +200,9 @@ async def request_frames(
         if duration < 20.0:
             adjusted_interval = max(duration / 20.0, 0.1)
             if adjusted_interval < sampling_interval:
-                logger.info(f"Short video ({duration:.1f}s): adjusting interval from {sampling_interval}s to {adjusted_interval:.2f}s")
+                logger.info(
+                    f"Short video ({duration:.1f}s): adjusting interval from {sampling_interval}s to {adjusted_interval:.2f}s"
+                )
                 sampling_interval = adjusted_interval
 
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -233,18 +220,15 @@ async def request_frames(
                     "video_path": video_path,
                     "job_id": f"frames-{job_id}",
                     "extraction_method": extraction_method,
-                    "sampling_strategy": {
-                        "mode": "interval",
-                        "interval_seconds": sampling_interval
-                    },
+                    "sampling_strategy": {"mode": "interval", "interval_seconds": sampling_interval},
                     "scene_boundaries": parameters.get("scene_boundaries"),
                     "use_sprites": use_sprites,
                     "sprite_vtt_url": parameters.get("sprite_vtt_url"),
                     "sprite_image_url": parameters.get("sprite_image_url"),
                     "output_format": "jpeg",
                     "quality": 95,
-                    "cache_duration": 3600
-                }
+                    "cache_duration": 3600,
+                },
             )
 
             if response.status_code != 202:
@@ -257,9 +241,7 @@ async def request_frames(
 
             # Poll for completion
             while True:
-                status_response = await client.get(
-                    f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/status"
-                )
+                status_response = await client.get(f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/status")
 
                 status = status_response.json()
 
@@ -271,9 +253,7 @@ async def request_frames(
                 await asyncio.sleep(2)
 
             # Get results
-            results_response = await client.get(
-                f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/results"
-            )
+            results_response = await client.get(f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/results")
 
             return results_response.json()
 
@@ -282,11 +262,7 @@ async def request_frames(
         raise
 
 
-async def process_analysis_job(
-    job_id: str,
-    cache_key: str,
-    request: AnalyzeFacesRequest
-):
+async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFacesRequest):
     """
     Background task to process face analysis
 
@@ -299,20 +275,13 @@ async def process_analysis_job(
         logger.info(f"Starting job {job_id}")
 
         await cache_manager.update_job_status(
-            job_id,
-            status=JobStatus.PROCESSING.value,
-            progress=0.0,
-            stage="requesting_frames"
+            job_id, status=JobStatus.PROCESSING.value, progress=0.0, stage="requesting_frames"
         )
 
         start_time = time.time()
 
         # Request frames from frame-server
-        frame_results = await request_frames(
-            request.source,
-            job_id,
-            request.parameters.dict()
-        )
+        frame_results = await request_frames(request.source, job_id, request.parameters.dict())
 
         frames = frame_results["frames"]
         total_frames = len(frames)
@@ -320,10 +289,7 @@ async def process_analysis_job(
         logger.info(f"Processing {total_frames} frames for job {job_id}")
 
         await cache_manager.update_job_status(
-            job_id,
-            status=JobStatus.PROCESSING.value,
-            progress=0.1,
-            stage="detecting_faces"
+            job_id, status=JobStatus.PROCESSING.value, progress=0.1, stage="detecting_faces"
         )
 
         # Process each frame
@@ -342,13 +308,12 @@ async def process_analysis_job(
 
             # Detect faces (no enhancement yet - will enhance representative faces later)
             faces = await face_recognizer.detect_faces(
-                frame,
-                face_min_confidence=request.parameters.face_min_confidence
+                frame, face_min_confidence=request.parameters.face_min_confidence
             )
             # Apply quality filtering with logging
             filtered_faces = []
             for f in faces:
-                if f['quality']['composite'] >= request.parameters.face_min_quality:
+                if f["quality"]["composite"] >= request.parameters.face_min_quality:
                     filtered_faces.append(f)
                 else:
                     logger.debug(
@@ -361,16 +326,14 @@ async def process_analysis_job(
 
             # Add frame metadata to detections
             for face in faces:
-                detection = {
-                    **face,
-                    "frame_index": frame_info["index"],
-                    "timestamp": frame_info["timestamp"]
-                }
+                detection = {**face, "frame_index": frame_info["index"], "timestamp": frame_info["timestamp"]}
                 all_detections.append(detection)
 
             # Update progress every 5 frames or on the last frame
             progress = 0.1 + (0.7 * (idx + 1) / total_frames)
-            logger.debug(f"Frame {idx + 1}/{total_frames}: progress={progress:.2f}, should_update={(idx + 1) % 5 == 0 or (idx + 1) == total_frames}")
+            logger.debug(
+                f"Frame {idx + 1}/{total_frames}: progress={progress:.2f}, should_update={(idx + 1) % 5 == 0 or (idx + 1) == total_frames}"
+            )
             if (idx + 1) % 5 == 0 or (idx + 1) == total_frames:
                 logger.info(f"Updating progress: {idx + 1}/{total_frames} frames")
                 await cache_manager.update_job_status(
@@ -378,23 +341,19 @@ async def process_analysis_job(
                     status=JobStatus.PROCESSING.value,
                     progress=progress,
                     stage="detecting_faces",
-                    message=f"Processed {idx + 1}/{total_frames} frames"
+                    message=f"Processed {idx + 1}/{total_frames} frames",
                 )
 
         logger.info(f"Found {len(all_detections)} total face detections")
 
         # Cluster faces
         await cache_manager.update_job_status(
-            job_id,
-            status=JobStatus.PROCESSING.value,
-            progress=0.8,
-            stage="clustering_faces"
+            job_id, status=JobStatus.PROCESSING.value, progress=0.8, stage="clustering_faces"
         )
 
         if request.parameters.enable_deduplication:
             clusters = face_recognizer.cluster_faces(
-                all_detections,
-                similarity_threshold=request.parameters.embedding_similarity_threshold
+                all_detections, similarity_threshold=request.parameters.embedding_similarity_threshold
             )
         else:
             # No clustering - each detection is a unique face
@@ -405,34 +364,33 @@ async def process_analysis_job(
 
         for face_id, detection_indices in clusters.items():
             # Get representative detection
-            rep_idx = face_recognizer.get_representative_detection(
-                all_detections,
-                detection_indices
-            )
+            rep_idx = face_recognizer.get_representative_detection(all_detections, detection_indices)
 
             rep_detection = all_detections[rep_idx]
 
             # Enhance representative face if needed
             if request.parameters.enhancement.enabled:
-                quality = rep_detection['quality']['composite']
-                confidence = rep_detection['confidence']
+                quality = rep_detection["quality"]["composite"]
+                confidence = rep_detection["confidence"]
 
                 # Only enhance if:
                 # 1. Quality is between face_min_quality and quality_trigger (worth enhancing)
                 # 2. Confidence is high enough (we're sure it's a face)
                 # 3. Non-sprite extraction (sprites are low-res)
                 should_enhance = (
-                    quality >= request.parameters.face_min_quality and
-                    quality < request.parameters.enhancement.quality_trigger and
-                    confidence >= request.parameters.face_min_confidence and
-                    not request.parameters.use_sprites
+                    quality >= request.parameters.face_min_quality
+                    and quality < request.parameters.enhancement.quality_trigger
+                    and confidence >= request.parameters.face_min_confidence
+                    and not request.parameters.use_sprites
                 )
 
                 if should_enhance:
-                    logger.info(f"Enhancing representative face {face_id}: quality={quality:.3f}, confidence={confidence:.3f}")
+                    logger.info(
+                        f"Enhancing representative face {face_id}: quality={quality:.3f}, confidence={confidence:.3f}"
+                    )
 
                     # Load the frame for this detection
-                    frame_idx = rep_detection['frame_index']
+                    frame_idx = rep_detection["frame_index"]
                     frame_info = frames[frame_idx]
                     frame_path = frame_info["url"].replace("file://", "")
                     frame = cv2.imread(frame_path)
@@ -441,41 +399,39 @@ async def process_analysis_job(
                         # Enhance frame
                         enhanced_frame_data = await frame_client.enhance_frame(
                             video_path=request.source,
-                            timestamp=rep_detection['timestamp'],
+                            timestamp=rep_detection["timestamp"],
                             model=request.parameters.enhancement.model,
                             fidelity_weight=request.parameters.enhancement.fidelity_weight,
                             output_format="jpeg",
-                            quality=95
+                            quality=95,
                         )
 
                         if enhanced_frame_data:
                             # Decode enhanced frame
                             enhanced_image = cv2.imdecode(
-                                np.frombuffer(enhanced_frame_data, np.uint8),
-                                cv2.IMREAD_COLOR
+                                np.frombuffer(enhanced_frame_data, np.uint8), cv2.IMREAD_COLOR
                             )
 
                             if enhanced_image is not None:
                                 # Re-detect face in enhanced frame
                                 enhanced_detections = await face_recognizer.detect_faces(
-                                    enhanced_image,
-                                    face_min_confidence=request.parameters.face_min_confidence
+                                    enhanced_image, face_min_confidence=request.parameters.face_min_confidence
                                 )
 
                                 # Find best detection by quality
                                 if enhanced_detections:
-                                    best_enhanced = max(enhanced_detections, key=lambda d: d['quality']['composite'])
+                                    best_enhanced = max(enhanced_detections, key=lambda d: d["quality"]["composite"])
 
                                     # Only use enhanced if quality improved
-                                    if best_enhanced['quality']['composite'] > quality:
+                                    if best_enhanced["quality"]["composite"] > quality:
                                         logger.info(
                                             f"Enhancement successful for {face_id}: "
                                             f"quality {quality:.3f} → {best_enhanced['quality']['composite']:.3f}"
                                         )
                                         # Update representative detection with enhanced version
-                                        best_enhanced['enhanced'] = True
-                                        best_enhanced['frame_index'] = rep_detection['frame_index']
-                                        best_enhanced['timestamp'] = rep_detection['timestamp']
+                                        best_enhanced["enhanced"] = True
+                                        best_enhanced["frame_index"] = rep_detection["frame_index"]
+                                        best_enhanced["timestamp"] = rep_detection["timestamp"]
                                         rep_detection = best_enhanced
                                     else:
                                         logger.info(
@@ -500,12 +456,12 @@ async def process_analysis_job(
                     confidence=all_detections[i]["confidence"],
                     quality=Quality(
                         composite=all_detections[i]["quality"]["composite"],
-                        components=QualityComponents(**all_detections[i]["quality"]["components"])
+                        components=QualityComponents(**all_detections[i]["quality"]["components"]),
                     ),
                     pose=all_detections[i]["pose"],
                     landmarks=Landmarks(**all_detections[i]["landmarks"]),
                     enhanced=all_detections[i].get("enhanced", False),
-                    occlusion=Occlusion(**all_detections[i]["occlusion"])
+                    occlusion=Occlusion(**all_detections[i]["occlusion"]),
                 )
                 for i in detection_indices
             ]
@@ -514,7 +470,9 @@ async def process_analysis_job(
             face = Face(
                 face_id=face_id,
                 embedding=rep_detection["embedding"],
-                demographics=Demographics(**rep_detection["demographics"]) if rep_detection.get("demographics") else None,
+                demographics=(
+                    Demographics(**rep_detection["demographics"]) if rep_detection.get("demographics") else None
+                ),
                 detections=detections,
                 representative_detection=Detection(
                     frame_index=rep_detection["frame_index"],
@@ -523,13 +481,13 @@ async def process_analysis_job(
                     confidence=rep_detection["confidence"],
                     quality=Quality(
                         composite=rep_detection["quality"]["composite"],
-                        components=QualityComponents(**rep_detection["quality"]["components"])
+                        components=QualityComponents(**rep_detection["quality"]["components"]),
                     ),
                     pose=rep_detection["pose"],
                     landmarks=Landmarks(**rep_detection["landmarks"]),
                     enhanced=rep_detection.get("enhanced", False),
-                    occlusion=Occlusion(**rep_detection["occlusion"])
-                )
+                    occlusion=Occlusion(**rep_detection["occlusion"]),
+                ),
             )
 
             faces.append(face)
@@ -546,24 +504,17 @@ async def process_analysis_job(
             processing_time_seconds=processing_time,
             method=frame_results["metadata"]["extraction_method"],
             model=INSIGHTFACE_MODEL,
-            frame_enhancement=request.parameters.enhancement if request.parameters.enhancement.enabled else None
+            frame_enhancement=request.parameters.enhancement if request.parameters.enhancement.enabled else None,
         )
 
         # Create results
         results = AnalyzeJobResults(
-            job_id=job_id,
-            scene_id=request.scene_id,
-            status=JobStatus.COMPLETED,
-            faces=faces,
-            metadata=metadata
+            job_id=job_id, source_id=request.source_id, status=JobStatus.COMPLETED, faces=faces, metadata=metadata
         )
 
         # Cache results
         await cache_manager.cache_job_results(
-            job_id=job_id,
-            cache_key=cache_key,
-            results=results.dict(),
-            ttl=request.parameters.cache_duration
+            job_id=job_id, cache_key=cache_key, results=results.dict(), ttl=request.parameters.cache_duration
         )
 
         # Update final status
@@ -572,7 +523,7 @@ async def process_analysis_job(
             status=JobStatus.COMPLETED.value,
             progress=1.0,
             stage="completed",
-            message=f"Found {len(faces)} unique faces in {processing_time:.2f}s"
+            message=f"Found {len(faces)} unique faces in {processing_time:.2f}s",
         )
 
         logger.info(f"Job {job_id} completed: {len(faces)} faces in {processing_time:.2f}s")
@@ -580,26 +531,15 @@ async def process_analysis_job(
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
 
-        await cache_manager.update_job_status(
-            job_id,
-            status=JobStatus.FAILED.value,
-            progress=0.0,
-            error=str(e)
-        )
+        await cache_manager.update_job_status(job_id, status=JobStatus.FAILED.value, progress=0.0, error=str(e))
 
 
 @app.post("/analyze", response_model=AnalyzeJobResponse, status_code=202)
-async def analyze_faces(
-    request: AnalyzeFacesRequest,
-    background_tasks: BackgroundTasks
-):
+async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: BackgroundTasks):
     """Submit face analysis job"""
     try:
         if not os.path.exists(request.source):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Video not found: {request.source}"
-            )
+            raise HTTPException(status_code=404, detail=f"Video not found: {request.source}")
 
         # Generate cache key
         params = request.parameters.dict()
@@ -613,7 +553,7 @@ async def analyze_faces(
             return AnalyzeJobResponse(
                 job_id=cached_job_id,
                 status=JobStatus(metadata.get("status", "completed")),
-                created_at=metadata.get("created_at", "")
+                created_at=metadata.get("created_at", ""),
             )
 
         # Create new job
@@ -625,25 +565,18 @@ async def analyze_faces(
             "status": JobStatus.QUEUED.value,
             "progress": 0.0,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-            "scene_id": request.scene_id
+            "source_id": request.source_id,
         }
 
         await cache_manager.cache_job_metadata(
-            job_id=job_id,
-            cache_key=cache_key,
-            metadata=metadata,
-            ttl=request.parameters.cache_duration
+            job_id=job_id, cache_key=cache_key, metadata=metadata, ttl=request.parameters.cache_duration
         )
 
         background_tasks.add_task(process_analysis_job, job_id, cache_key, request)
 
         logger.info(f"Job {job_id} queued")
 
-        return AnalyzeJobResponse(
-            job_id=job_id,
-            status=JobStatus.QUEUED,
-            created_at=metadata["created_at"]
-        )
+        return AnalyzeJobResponse(job_id=job_id, status=JobStatus.QUEUED, created_at=metadata["created_at"])
 
     except HTTPException:
         raise
@@ -669,7 +602,7 @@ async def get_job_status(job_id: str):
                     "unique_faces": results["metadata"]["unique_faces"],
                     "total_detections": results["metadata"]["total_detections"],
                     "frames_processed": results["metadata"]["frames_processed"],
-                    "processing_time_seconds": results["metadata"]["processing_time_seconds"]
+                    "processing_time_seconds": results["metadata"]["processing_time_seconds"],
                 }
 
         return AnalyzeJobStatus(
@@ -682,7 +615,7 @@ async def get_job_status(job_id: str):
             started_at=metadata.get("started_at"),
             completed_at=metadata.get("completed_at"),
             result_summary=result_summary,
-            error=metadata.get("error")
+            error=metadata.get("error"),
         )
 
     except HTTPException:
@@ -702,10 +635,7 @@ async def get_job_results(job_id: str):
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
         if metadata["status"] != JobStatus.COMPLETED.value:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Job not completed (status: {metadata['status']})"
-            )
+            raise HTTPException(status_code=409, detail=f"Job not completed (status: {metadata['status']})")
 
         results = await cache_manager.get_job_results(job_id)
 
@@ -737,18 +667,16 @@ async def health_check():
             model=INSIGHTFACE_MODEL,
             gpu_available=gpu_available,
             active_jobs=active_jobs,
-            cache_size_mb=cache_size_mb
+            cache_size_mb=cache_size_mb,
         )
 
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=503,
-            content={"status": "unhealthy", "error": str(e)}
-        )
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "error": str(e)})
 
 
 if __name__ == "__main__":
     import uvicorn
     import asyncio
+
     uvicorn.run(app, host="0.0.0.0", port=5003)

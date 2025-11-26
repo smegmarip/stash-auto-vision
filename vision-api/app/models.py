@@ -9,12 +9,14 @@ from pydantic import BaseModel, Field
 
 class ModuleConfig(BaseModel):
     """Configuration for a single module"""
+
     enabled: bool = Field(default=True)
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ModulesConfig(BaseModel):
     """Module configurations"""
+
     scenes: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=True))
     faces: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=True))
     semantics: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
@@ -23,8 +25,9 @@ class ModulesConfig(BaseModel):
 
 class AnalyzeVideoRequest(BaseModel):
     """Request to analyze video with all services"""
+
     source: str = Field(..., description="Path, URL, or image source to analyze")
-    scene_id: str = Field(..., description="Scene ID for reference")
+    source_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Job ID for tracking")
     processing_mode: str = Field(default="sequential", description="sequential or parallel")
     modules: ModulesConfig = Field(default_factory=ModulesConfig)
@@ -32,6 +35,7 @@ class AnalyzeVideoRequest(BaseModel):
 
 class AnalyzeJobResponse(BaseModel):
     """Response for video analysis job submission"""
+
     job_id: str
     status: str
     created_at: str
@@ -41,6 +45,7 @@ class AnalyzeJobResponse(BaseModel):
 
 class ServiceJobInfo(BaseModel):
     """Information about a service job"""
+
     service: str
     job_id: Optional[str] = None
     status: str
@@ -51,6 +56,7 @@ class ServiceJobInfo(BaseModel):
 
 class AnalyzeJobStatus(BaseModel):
     """Job status response"""
+
     job_id: str
     status: str
     progress: float
@@ -74,8 +80,9 @@ class AnalyzeJobResults(BaseModel):
     - semantics: Dict of semantic classifications
     - objects: List of detected objects or Dict
     """
+
     job_id: str
-    scene_id: str
+    source_id: str
     status: str
     scenes: Optional[Any] = None
     faces: Optional[Any] = None
@@ -86,6 +93,7 @@ class AnalyzeJobResults(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response"""
+
     status: str
     service: str = "vision-api"
     version: str = "1.0.0"
@@ -94,12 +102,13 @@ class HealthResponse(BaseModel):
 
 class JobSummary(BaseModel):
     """Summary of a job for listing"""
+
     job_id: str
     service: str = Field(..., description="Service that owns the job (vision, faces, scenes)")
     status: str
     progress: float = 0.0
     source: Optional[str] = None
-    scene_id: Optional[str] = None
+    source_id: Optional[str] = None
     created_at: Optional[str] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
@@ -109,6 +118,7 @@ class JobSummary(BaseModel):
 
 class ListJobsResponse(BaseModel):
     """Response for job listing endpoint"""
+
     jobs: List[JobSummary]
     total: int = Field(..., description="Total number of jobs matching filters (before pagination)")
     limit: int

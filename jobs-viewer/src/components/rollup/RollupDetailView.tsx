@@ -1,37 +1,38 @@
-import { Link } from 'react-router-dom'
-import { useJobResults, useJobStatus } from '@/hooks/useJobs'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Badge } from '@/components/ui/badge'
-import { ServiceSummary } from './ServiceSummary'
-import { JobProgress } from '@/components/jobs/JobProgress'
-import { JobStatusBadge } from '@/components/jobs/JobStatusBadge'
-import { formatDate, formatDuration } from '@/lib/formatters'
-import type { JobStatus } from '@/api/types'
+import { Link } from "react-router-dom";
+import { useJobResults, useJobStatus } from "@/hooks/useJobs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ServiceSummary } from "./ServiceSummary";
+import { JobProgress } from "@/components/jobs/JobProgress";
+import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
+import { formatDate, formatDuration } from "@/lib/formatters";
+import type { JobStatus } from "@/api/types";
 
 interface RollupDetailViewProps {
-  jobId: string
+  jobId: string;
 }
 
 export function RollupDetailView({ jobId }: RollupDetailViewProps) {
-  const { data: status, isLoading: statusLoading } = useJobStatus(jobId)
+  const { data: status, isLoading: statusLoading } = useJobStatus(jobId);
   const { data: results, isLoading: resultsLoading } = useJobResults(jobId, {
-    enabled: status?.status === 'completed',
-  })
+    enabled: status?.status === "completed",
+  });
 
   if (statusLoading) {
-    return <RollupDetailSkeleton />
+    return <RollupDetailSkeleton />;
   }
 
-  const isActive = status?.status === 'processing' || status?.status === 'queued'
-  const isCompleted = status?.status === 'completed'
+  const isActive =
+    status?.status === "processing" || status?.status === "queued";
+  const isCompleted = status?.status === "completed";
 
   const services = [
-    { key: 'scenes', label: 'Scene Detection' },
-    { key: 'faces', label: 'Face Recognition' },
-    { key: 'semantics', label: 'Semantic Analysis' },
-    { key: 'objects', label: 'Object Detection' },
-  ]
+    { key: "scenes", label: "Scene Detection" },
+    { key: "faces", label: "Face Recognition" },
+    { key: "semantics", label: "Semantic Analysis" },
+    { key: "objects", label: "Object Detection" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -49,7 +50,9 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
             <div className="space-y-2">
               <JobProgress progress={status.progress} />
               {status.message && (
-                <p className="text-sm text-muted-foreground">{status.message}</p>
+                <p className="text-sm text-muted-foreground">
+                  {status.message}
+                </p>
               )}
               {status.stage && (
                 <Badge variant="outline">Stage: {status.stage}</Badge>
@@ -65,7 +68,9 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
             </div>
             <div>
               <dt className="text-muted-foreground">Processing Mode</dt>
-              <dd className="mt-1">{status?.processing_mode || 'sequential'}</dd>
+              <dd className="mt-1">
+                {status?.processing_mode || "sequential"}
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Created</dt>
@@ -81,7 +86,7 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
           {isCompleted && results?.metadata && (
             <div className="pt-2 border-t">
               <span className="text-sm text-muted-foreground">
-                Total processing time:{' '}
+                Total processing time:{" "}
                 <span className="font-medium text-foreground">
                   {formatDuration(results.metadata.processing_time_seconds)}
                 </span>
@@ -107,26 +112,32 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {services.map((svc) => {
-              const rawData = results?.[svc.key as keyof typeof results]
+              const rawData = results?.[svc.key as keyof typeof results];
 
               // Normalize data structure:
               // - If array (service-specific job), wrap it: { faces: [...] } or { scenes: [...] }
               // - If dict (orchestrated job), use as-is
               // - If null/undefined, leave as undefined
-              let serviceData: Record<string, unknown> | undefined
+              let serviceData: Record<string, unknown> | undefined;
               if (Array.isArray(rawData)) {
                 // Service-specific job returns array directly
-                serviceData = { [svc.key]: rawData, metadata: results?.metadata }
-              } else if (rawData && typeof rawData === 'object') {
-                serviceData = rawData as Record<string, unknown>
+                serviceData = {
+                  [svc.key]: rawData,
+                  metadata: results?.metadata,
+                };
+              } else if (rawData && typeof rawData === "object") {
+                serviceData = rawData as Record<string, unknown>;
               }
 
-              const hasData = serviceData && (
-                Array.isArray(serviceData[svc.key])
+              const hasData =
+                serviceData &&
+                (Array.isArray(serviceData[svc.key])
                   ? (serviceData[svc.key] as unknown[]).length > 0
-                  : Object.keys(serviceData).length > 0
-              )
-              const isNotImplemented = serviceData && (serviceData as { status?: string }).status === 'not_implemented'
+                  : Object.keys(serviceData).length > 0);
+              const isNotImplemented =
+                serviceData &&
+                (serviceData as { status?: string }).status ===
+                  "not_implemented";
 
               // Only link to detail view if we have actual data
               if (hasData && !isNotImplemented) {
@@ -138,7 +149,7 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
                       data={serviceData}
                     />
                   </Link>
-                )
+                );
               }
 
               return (
@@ -148,27 +159,31 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
                   label={svc.label}
                   data={serviceData}
                 />
-              )
+              );
             })}
           </div>
         )}
       </div>
 
       {/* Source info */}
-      {results?.scene_id && (
+      {results?.source_id && (
         <Card>
           <CardContent className="p-4">
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">Scene ID</dt>
-                <dd className="font-mono mt-1">{results.scene_id}</dd>
+                <dd className="font-mono mt-1">{results.source_id}</dd>
               </div>
               {status?.services && status.services.length > 0 && (
                 <div>
                   <dt className="text-muted-foreground">Services Used</dt>
                   <dd className="mt-1 flex gap-1">
                     {status.services.map((svc) => (
-                      <Badge key={svc.service} variant="outline" className="text-xs">
+                      <Badge
+                        key={svc.service}
+                        variant="outline"
+                        className="text-xs"
+                      >
                         {svc.service}
                       </Badge>
                     ))}
@@ -194,7 +209,7 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
         </Card>
       )}
     </div>
-  )
+  );
 }
 
 function RollupDetailSkeleton() {
@@ -215,5 +230,5 @@ function RollupDetailSkeleton() {
         ))}
       </div>
     </div>
-  )
+  );
 }

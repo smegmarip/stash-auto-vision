@@ -58,26 +58,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DetectScenesRequest'
+              $ref: "#/components/schemas/DetectScenesRequest"
       responses:
-        '202':
+        "202":
           description: Job submitted successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DetectJobResponse'
-        '400':
+                $ref: "#/components/schemas/DetectJobResponse"
+        "400":
           description: Invalid request parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
           description: Video file not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /jobs/{job_id}/status:
     get:
@@ -91,18 +91,18 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Job status retrieved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DetectJobStatus'
-        '404':
+                $ref: "#/components/schemas/DetectJobStatus"
+        "404":
           description: Job not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /jobs/{job_id}/results:
     get:
@@ -116,15 +116,15 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Detection results
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DetectJobResults'
-        '404':
+                $ref: "#/components/schemas/DetectJobResults"
+        "404":
           description: Job not found
-        '409':
+        "409":
           description: Job not completed yet
 
   /health:
@@ -132,12 +132,12 @@ paths:
       summary: Service health check
       operationId: healthCheck
       responses:
-        '200':
+        "200":
           description: Service healthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                $ref: "#/components/schemas/HealthResponse"
 
 components:
   schemas:
@@ -153,7 +153,7 @@ components:
         job_id:
           type: string
           description: Optional custom job ID
-        scene_id:
+        source_id:
           type: string
           description: Scene identifier for reference
         detection_method:
@@ -244,9 +244,9 @@ components:
         scenes:
           type: array
           items:
-            $ref: '#/components/schemas/SceneBoundary'
+            $ref: "#/components/schemas/SceneBoundary"
         metadata:
-          $ref: '#/components/schemas/VideoMetadata'
+          $ref: "#/components/schemas/VideoMetadata"
 
     SceneBoundary:
       type: object
@@ -334,17 +334,20 @@ The Scenes Service supports three detection algorithms from PySceneDetect:
 Uses HSV color histogram comparison to detect scene changes based on visual content differences.
 
 **Algorithm:**
+
 - Converts frames to HSV color space
 - Computes color histograms for each frame
 - Calculates difference between consecutive histograms
 - Triggers scene boundary when difference exceeds threshold
 
 **Parameters:**
+
 - `threshold`: Default 30.0 (range 0-100)
 - Lower values = more sensitive (more scenes detected)
 - Higher values = less sensitive (fewer scenes detected)
 
 **Best For:**
+
 - General-purpose scene detection
 - Videos with varied visual content
 - Mixed lighting conditions
@@ -367,15 +370,18 @@ detector = ContentDetector(
 Detects scenes based on absolute pixel intensity changes (fade-in/fade-out detection).
 
 **Algorithm:**
+
 - Analyzes average pixel intensity
 - Detects fade-to-black or fade-to-white transitions
 - Useful for videos with fade transitions between scenes
 
 **Parameters:**
+
 - `threshold`: Default 12.0
 - `fade_bias`: Percentage of pixels required to trigger (-1.0 to 1.0)
 
 **Best For:**
+
 - Professionally edited videos with fade transitions
 - Documentary-style content
 - Videos with consistent lighting
@@ -396,15 +402,18 @@ detector = ThresholdDetector(
 Combines content-based detection with adaptive thresholding based on video characteristics.
 
 **Algorithm:**
+
 - Analyzes video statistics during initial pass
 - Adjusts detection sensitivity based on content variance
 - Better handles videos with varying scene complexity
 
 **Parameters:**
+
 - `adaptive_threshold`: Initial threshold value
 - `min_scene_len`: Minimum scene length in frames
 
 **Best For:**
+
 - Videos with highly variable content
 - Mixed content types (interviews, action, static shots)
 - Long-form content with changing pacing
@@ -466,33 +475,39 @@ The service follows this processing flow:
 ### Parameters
 
 **Detection Threshold:**
+
 ```json
 {
   "threshold": 30.0
 }
 ```
+
 - Controls detection sensitivity
 - Default: 30.0 (ContentDetector), 12.0 (ThresholdDetector)
 - Lower = more scenes detected (more sensitive)
 - Higher = fewer scenes detected (less sensitive)
 
 **Minimum Scene Length:**
+
 ```json
 {
   "min_scene_length": 1.0
 }
 ```
+
 - Minimum duration for a valid scene (seconds)
 - Default: 1.0 second
 - Prevents detection of very short flickering scenes
 - Converted to frames: `min_scene_len = min_scene_length * video_fps`
 
 **Detection Method:**
+
 ```json
 {
   "detection_method": "content"
 }
 ```
+
 - Options: "content" (default), "threshold", "adaptive"
 - Selects detection algorithm
 
@@ -501,6 +516,7 @@ The service follows this processing flow:
 The Scenes Service uses content-based caching with SHA-256 keys:
 
 **Cache Key Generation:**
+
 ```python
 import hashlib
 import os
@@ -517,6 +533,7 @@ cache_key = hashlib.sha256(cache_str.encode()).hexdigest()
 ```
 
 **Redis Structure:**
+
 ```
 scenes:job:{job_id}:metadata       # Job metadata
 scenes:job:{job_id}:results        # Scene boundaries array
@@ -524,11 +541,13 @@ scenes:cache:{cache_key}           # Cache key → job_id mapping
 ```
 
 **Automatic Invalidation:**
+
 - File modification changes `mtime`
 - New `mtime` generates new cache key
 - Old cache entries expire after TTL (default 3600s)
 
 **Cache Hit Behavior:**
+
 - Returns existing job_id
 - Client can immediately fetch results
 - No redundant processing
@@ -540,12 +559,14 @@ Based on testing results (CPU mode - macOS M1/M2 equivalent):
 **Video:** 90-second video, 2356 frames, 24.5 FPS
 
 **Results:**
+
 - Processing time: 2.53 seconds
 - Analysis rate: ~38 FPS (932 frames per second)
 - Scenes detected: 3
 - Memory usage: ~200 MB
 
 **GPU Mode (Expected):**
+
 - Analysis rate: 300-800 FPS (CUDA-accelerated histogram computation)
 - Processing time: 0.3-1.0 seconds for same video
 - Memory usage: ~500 MB (GPU) + ~200 MB (RAM)

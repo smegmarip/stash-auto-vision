@@ -26,14 +26,11 @@ from .models import (
     ServiceJobInfo,
     HealthResponse,
     JobSummary,
-    ListJobsResponse
+    ListJobsResponse,
 )
 from .cache_manager import CacheManager
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -88,11 +85,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Vision API Orchestrator...")
 
     # Connect to Redis
-    redis_client = await aioredis.from_url(
-        REDIS_URL,
-        encoding="utf-8",
-        decode_responses=True
-    )
+    redis_client = await aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
     logger.info("Connected to Redis")
 
     # Initialize cache manager
@@ -112,7 +105,7 @@ app = FastAPI(
     title="Vision API",
     description="Orchestrator for video vision analysis services",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -124,7 +117,7 @@ async def call_service(
     orchestrator_metadata: Optional[Dict[str, Any]] = None,
     base_progress: float = 0.0,
     progress_weight: float = 0.25,
-    timeout: int = 300
+    timeout: int = 300,
 ) -> Dict[str, Any]:
     """
     Call a vision service and wait for results
@@ -164,9 +157,7 @@ async def call_service(
 
             # Poll for completion
             while True:
-                status_response = await client.get(
-                    f"{service_url}/jobs/{job_id}/status"
-                )
+                status_response = await client.get(f"{service_url}/jobs/{job_id}/status")
 
                 status = status_response.json()
 
@@ -183,7 +174,7 @@ async def call_service(
                         orchestrator_job_id,
                         orchestrator_metadata,
                         progress=overall_progress,
-                        message=f"{service_name}: {sub_message}" if sub_message else f"Processing {service_name}..."
+                        message=f"{service_name}: {sub_message}" if sub_message else f"Processing {service_name}...",
                     )
                     logger.debug(f"{service_name} progress: {sub_progress:.1%} -> overall: {overall_progress:.1%}")
 
@@ -198,9 +189,7 @@ async def call_service(
                 await asyncio.sleep(2)
 
             # Get results
-            results_response = await client.get(
-                f"{service_url}/jobs/{job_id}/results"
-            )
+            results_response = await client.get(f"{service_url}/jobs/{job_id}/results")
 
             return results_response.json()
 
@@ -216,7 +205,7 @@ async def update_metadata(
     progress: Optional[float] = None,
     stage: Optional[str] = None,
     message: Optional[str] = None,
-    error: Optional[str] = None
+    error: Optional[str] = None,
 ):
     """
     Helper to update job metadata in Redis
@@ -241,17 +230,10 @@ async def update_metadata(
     if error is not None:
         metadata["error"] = error
 
-    await redis_client.setex(
-        f"vision:job:{job_id}:metadata",
-        3600,
-        str(metadata)
-    )
+    await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
 
 
-async def process_video_analysis(
-    job_id: str,
-    request: AnalyzeVideoRequest
-):
+async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
     """
     Background task to orchestrate video analysis
 
@@ -281,33 +263,26 @@ async def process_video_analysis(
             "message": "Starting video analysis",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-            "scene_id": request.scene_id,
+            "source_id": request.source_id,
             "source": request.source,
-            "processing_mode": request.processing_mode
+            "processing_mode": request.processing_mode,
         }
 
-        await redis_client.setex(
-            f"vision:job:{job_id}:metadata",
-            3600,
-            str(metadata)
-        )
+        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
 
-        results = {
-            "scenes": None,
-            "faces": None,
-            "semantics": None,
-            "objects": None
-        }
+        results = {"scenes": None, "faces": None, "semantics": None, "objects": None}
 
         # Sequential processing (default)
         if request.processing_mode == "sequential":
             # Calculate progress weights based on enabled services
-            enabled_count = sum([
-                request.modules.scenes.enabled,
-                request.modules.faces.enabled,
-                request.modules.semantics.enabled,
-                request.modules.objects.enabled
-            ])
+            enabled_count = sum(
+                [
+                    request.modules.scenes.enabled,
+                    request.modules.faces.enabled,
+                    request.modules.semantics.enabled,
+                    request.modules.objects.enabled,
+                ]
+            )
             progress_per_service = 1.0 / enabled_count if enabled_count > 0 else 0.25
             progress = 0.0
 
@@ -315,18 +290,17 @@ async def process_video_analysis(
             if request.modules.scenes.enabled:
                 logger.info("Running scene detection...")
                 await update_metadata(
-                    job_id, metadata,
-                    progress=progress,
-                    stage="scene_detection",
-                    message="Detecting scene boundaries"
+                    job_id, metadata, progress=progress, stage="scene_detection", message="Detecting scene boundaries"
                 )
 
                 scenes_request = {
                     "video_path": request.source,
                     "job_id": f"scenes-{job_id}",
                     "detection_method": request.modules.scenes.parameters.get("scene_detection_method", "content"),
-                    "scene_threshold": request.modules.scenes.parameters.get("scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))),
-                    "min_scene_length": request.modules.scenes.parameters.get("min_scene_length", 0.6)
+                    "scene_threshold": request.modules.scenes.parameters.get(
+                        "scene_threshold", float(os.getenv("SCENES_THRESHOLD", "27.0"))
+                    ),
+                    "min_scene_length": request.modules.scenes.parameters.get("min_scene_length", 0.6),
                 }
 
                 scenes_result = await call_service(
@@ -336,61 +310,64 @@ async def process_video_analysis(
                     orchestrator_job_id=job_id,
                     orchestrator_metadata=metadata,
                     base_progress=progress,
-                    progress_weight=progress_per_service
+                    progress_weight=progress_per_service,
                 )
                 results["scenes"] = scenes_result
                 # Update local progress tracker (call_service already updated Redis)
                 progress += progress_per_service
                 # Update completion message only (progress already at correct value from call_service)
                 await update_metadata(
-                    job_id, metadata,
-                    message=f"Scene detection complete ({len(scenes_result.get('scenes', []))} scenes found)"
+                    job_id,
+                    metadata,
+                    message=f"Scene detection complete ({len(scenes_result.get('scenes', []))} scenes found)",
                 )
 
             # Step 2: Face recognition
             if request.modules.faces.enabled:
                 logger.info("Running face recognition...")
                 # Don't update progress here - it's already set from previous service
-                await update_metadata(
-                    job_id, metadata,
-                    stage="face_recognition",
-                    message="Analyzing faces in video"
-                )
+                await update_metadata(job_id, metadata, stage="face_recognition", message="Analyzing faces in video")
 
                 # Pass scene boundaries if available
                 scene_boundaries = None
                 if results["scenes"] and results["scenes"].get("scenes"):
                     scene_boundaries = [
-                        {
-                            "start_timestamp": scene["start_timestamp"],
-                            "end_timestamp": scene["end_timestamp"]
-                        }
+                        {"start_timestamp": scene["start_timestamp"], "end_timestamp": scene["end_timestamp"]}
                         for scene in results["scenes"]["scenes"]
                     ]
 
                 faces_request = {
                     "source": request.source,
-                    "scene_id": request.scene_id,
+                    "source_id": request.source_id,
                     "job_id": f"faces-{job_id}",
                     "parameters": {
-                        "face_min_confidence": request.modules.faces.parameters.get("face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))),
-                        "face_min_quality": request.modules.faces.parameters.get("face_min_quality", float(os.getenv("FACES_MIN_QUALITY", "0.0"))),
+                        "face_min_confidence": request.modules.faces.parameters.get(
+                            "face_min_confidence", float(os.getenv("FACES_MIN_CONFIDENCE", "0.9"))
+                        ),
+                        "face_min_quality": request.modules.faces.parameters.get(
+                            "face_min_quality", float(os.getenv("FACES_MIN_QUALITY", "0.0"))
+                        ),
                         "max_faces": request.modules.faces.parameters.get("max_faces", 50),
                         "sampling_interval": request.modules.faces.parameters.get("face_sampling_interval", 2.0),
                         "enable_deduplication": request.modules.faces.parameters.get("enable_deduplication", True),
-                        "embedding_similarity_threshold": request.modules.faces.parameters.get("similarity_threshold", 0.6),
+                        "embedding_similarity_threshold": request.modules.faces.parameters.get(
+                            "similarity_threshold", 0.6
+                        ),
                         "detect_demographics": request.modules.faces.parameters.get("detect_demographics", True),
                         "scene_boundaries": scene_boundaries,
                         "use_sprites": request.modules.faces.parameters.get("use_sprites", False),
                         "sprite_vtt_url": request.modules.faces.parameters.get("sprite_vtt_url"),
                         "sprite_image_url": request.modules.faces.parameters.get("sprite_image_url"),
-                        "enhancement": request.modules.faces.parameters.get("enhancement", {
-                            "enabled": False,
-                            "quality_trigger": float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")),
-                            "model": "codeformer",
-                            "fidelity_weight": 0.5
-                        })
-                    }
+                        "enhancement": request.modules.faces.parameters.get(
+                            "enhancement",
+                            {
+                                "enabled": False,
+                                "quality_trigger": float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")),
+                                "model": "codeformer",
+                                "fidelity_weight": 0.5,
+                            },
+                        ),
+                    },
                 }
 
                 faces_result = await call_service(
@@ -400,7 +377,7 @@ async def process_video_analysis(
                     orchestrator_job_id=job_id,
                     orchestrator_metadata=metadata,
                     base_progress=progress,
-                    progress_weight=progress_per_service
+                    progress_weight=progress_per_service,
                 )
                 results["faces"] = faces_result
                 # Update local progress tracker
@@ -409,25 +386,22 @@ async def process_video_analysis(
                 face_count = len(faces_result.get("faces", []))
                 # Update completion message only (progress already at correct value)
                 await update_metadata(
-                    job_id, metadata,
-                    message=f"Face recognition complete ({face_count} unique faces found)"
+                    job_id, metadata, message=f"Face recognition complete ({face_count} unique faces found)"
                 )
 
             # Step 3: Semantics (stub)
             if request.modules.semantics.enabled:
                 logger.info("Running semantics analysis (stubbed)...")
-                await update_metadata(
-                    job_id, metadata,
-                    stage="semantic_analysis",
-                    message="Analyzing scene semantics"
-                )
+                await update_metadata(job_id, metadata, stage="semantic_analysis", message="Analyzing scene semantics")
 
                 semantics_request = {
                     "source": request.source,
-                    "scene_id": request.scene_id,
+                    "source_id": request.source_id,
                     "parameters": {
-                        "semantics_min_confidence": request.modules.semantics.parameters.get("semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")))
-                    }
+                        "semantics_min_confidence": request.modules.semantics.parameters.get(
+                            "semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5"))
+                        )
+                    },
                 }
 
                 semantics_result = await call_service(
@@ -437,32 +411,27 @@ async def process_video_analysis(
                     orchestrator_job_id=job_id,
                     orchestrator_metadata=metadata,
                     base_progress=progress,
-                    progress_weight=progress_per_service
+                    progress_weight=progress_per_service,
                 )
                 results["semantics"] = semantics_result
                 # Update local progress tracker
                 progress += progress_per_service
                 # Update completion message only
-                await update_metadata(
-                    job_id, metadata,
-                    message="Semantic analysis complete"
-                )
+                await update_metadata(job_id, metadata, message="Semantic analysis complete")
 
             # Step 4: Objects (stub)
             if request.modules.objects.enabled:
                 logger.info("Running object detection (stubbed)...")
-                await update_metadata(
-                    job_id, metadata,
-                    stage="object_detection",
-                    message="Detecting objects in video"
-                )
+                await update_metadata(job_id, metadata, stage="object_detection", message="Detecting objects in video")
 
                 objects_request = {
                     "source": request.source,
-                    "scene_id": request.scene_id,
+                    "source_id": request.source_id,
                     "parameters": {
-                        "objects_min_confidence": request.modules.objects.parameters.get("objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5")))
-                    }
+                        "objects_min_confidence": request.modules.objects.parameters.get(
+                            "objects_min_confidence", float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5"))
+                        )
+                    },
                 }
 
                 objects_result = await call_service(
@@ -472,34 +441,24 @@ async def process_video_analysis(
                     orchestrator_job_id=job_id,
                     orchestrator_metadata=metadata,
                     base_progress=progress,
-                    progress_weight=progress_per_service
+                    progress_weight=progress_per_service,
                 )
                 results["objects"] = objects_result
                 # Update local progress tracker
                 progress += progress_per_service
                 # Update completion message only
-                await update_metadata(
-                    job_id, metadata,
-                    message="Object detection complete"
-                )
+                await update_metadata(job_id, metadata, message="Object detection complete")
 
         # Parallel processing (future optimization)
         else:
             tasks = []
 
             if request.modules.scenes.enabled:
-                scenes_request = {
-                    "video_path": request.source,
-                    "job_id": f"scenes-{job_id}"
-                }
+                scenes_request = {"video_path": request.source, "job_id": f"scenes-{job_id}"}
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
 
             if request.modules.faces.enabled:
-                faces_request = {
-                    "source": request.source,
-                    "scene_id": request.scene_id,
-                    "job_id": f"faces-{job_id}"
-                }
+                faces_request = {"source": request.source, "source_id": request.source_id, "job_id": f"faces-{job_id}"}
                 tasks.append(call_service("faces", FACES_SERVICE_URL, faces_request))
 
             # Wait for all tasks
@@ -531,7 +490,7 @@ async def process_video_analysis(
         # Build final results
         final_results = {
             "job_id": job_id,
-            "scene_id": request.scene_id,
+            "source_id": request.source_id,
             "status": "completed",
             **results,
             "metadata": {
@@ -541,34 +500,27 @@ async def process_video_analysis(
                     "scenes": request.modules.scenes.enabled,
                     "faces": request.modules.faces.enabled,
                     "semantics": request.modules.semantics.enabled,
-                    "objects": request.modules.objects.enabled
-                }
-            }
+                    "objects": request.modules.objects.enabled,
+                },
+            },
         }
 
         # Cache results
-        await redis_client.setex(
-            f"vision:job:{job_id}:results",
-            3600,
-            str(final_results)
-        )
+        await redis_client.setex(f"vision:job:{job_id}:results", 3600, str(final_results))
 
         # Update metadata with completion status
         await update_metadata(
-            job_id, metadata,
+            job_id,
+            metadata,
             status="completed",
             progress=1.0,
             stage="completed",
-            message=f"Analysis complete in {processing_time:.1f}s"
+            message=f"Analysis complete in {processing_time:.1f}s",
         )
         metadata["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
         metadata["result_summary"] = result_summary
 
-        await redis_client.setex(
-            f"vision:job:{job_id}:metadata",
-            3600,
-            str(metadata)
-        )
+        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
 
         logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
 
@@ -576,19 +528,11 @@ async def process_video_analysis(
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
 
         await update_metadata(
-            job_id, metadata,
-            status="failed",
-            stage="failed",
-            message=f"Job failed: {str(e)[:100]}",
-            error=str(e)
+            job_id, metadata, status="failed", stage="failed", message=f"Job failed: {str(e)[:100]}", error=str(e)
         )
         metadata["failed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
-        await redis_client.setex(
-            f"vision:job:{job_id}:metadata",
-            3600,
-            str(metadata)
-        )
+        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
     finally:
         # Clean up downloaded file
         if downloaded_file and os.path.exists(downloaded_file):
@@ -600,10 +544,7 @@ async def process_video_analysis(
 
 
 @app.post("/vision/analyze", response_model=AnalyzeJobResponse, status_code=202)
-async def analyze_video(
-    request: AnalyzeVideoRequest,
-    background_tasks: BackgroundTasks
-):
+async def analyze_video(request: AnalyzeVideoRequest, background_tasks: BackgroundTasks):
     """Submit comprehensive video analysis job"""
     try:
         # Validate local files only (URLs validated during download)
@@ -611,10 +552,7 @@ async def analyze_video(
         is_url = bool(parsed.scheme and parsed.netloc)
 
         if not is_url and not os.path.exists(request.source):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Video not found: {request.source}"
-            )
+            raise HTTPException(status_code=404, detail=f"Video not found: {request.source}")
 
         job_id = request.job_id or str(uuid.uuid4())
 
@@ -631,9 +569,9 @@ async def analyze_video(
                 "scenes": request.modules.scenes.enabled,
                 "faces": request.modules.faces.enabled,
                 "semantics": request.modules.semantics.enabled,
-                "objects": request.modules.objects.enabled
+                "objects": request.modules.objects.enabled,
             },
-            processing_mode=request.processing_mode
+            processing_mode=request.processing_mode,
         )
 
     except HTTPException:
@@ -680,7 +618,7 @@ async def get_job_status(job_id: str):
             started_at=metadata.get("started_at"),
             completed_at=metadata.get("completed_at"),
             result_summary=metadata.get("result_summary"),
-            error=metadata.get("error")
+            error=metadata.get("error"),
         )
 
     except HTTPException:
@@ -716,10 +654,7 @@ async def get_job_results(job_id: str):
             metadata = eval(metadata_str)
 
         if metadata["status"] != "completed":
-            raise HTTPException(
-                status_code=409,
-                detail=f"Job not completed (status: {metadata['status']})"
-            )
+            raise HTTPException(status_code=409, detail=f"Job not completed (status: {metadata['status']})")
 
         results_str = await redis_client.get(f"{found_service}:job:{job_id}:results")
 
@@ -747,6 +682,7 @@ def parse_iso_date(date_str: Optional[str]) -> Optional[float]:
         return None
     try:
         from datetime import datetime
+
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.timestamp()
     except Exception:
@@ -757,13 +693,15 @@ def parse_iso_date(date_str: Optional[str]) -> Optional[float]:
 async def list_jobs(
     status: Optional[str] = Query(None, description="Filter by status (queued, processing, completed, failed)"),
     service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes)"),
-    scene_id: Optional[str] = Query(None, description="Filter by scene_id"),
+    source_id: Optional[str] = Query(None, description="Filter by source_id"),
     source: Optional[str] = Query(None, description="Filter by source video path"),
-    start_date: Optional[str] = Query(None, description="Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)"),
+    start_date: Optional[str] = Query(
+        None, description="Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)"
+    ),
     end_date: Optional[str] = Query(None, description="Filter by end date (ISO format)"),
     include_results: bool = Query(False, description="Include full job results in response"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of jobs to return"),
-    offset: int = Query(0, ge=0, description="Number of jobs to skip")
+    offset: int = Query(0, ge=0, description="Number of jobs to skip"),
 ):
     """
     List all jobs across all services with optional filtering.
@@ -775,38 +713,35 @@ async def list_jobs(
         jobs, total = await cache_manager.list_jobs(
             status=status,
             service=service,
-            scene_id=scene_id,
+            source_id=source_id,
             source=source,
             start_date=parse_iso_date(start_date),
             end_date=parse_iso_date(end_date),
             include_results=include_results,
             limit=limit,
-            offset=offset
+            offset=offset,
         )
 
         # Convert to JobSummary models
         job_summaries = []
         for job in jobs:
-            job_summaries.append(JobSummary(
-                job_id=job.get("job_id", ""),
-                service=job.get("service", "unknown"),
-                status=job.get("status", "unknown"),
-                progress=float(job.get("progress", 0.0)),
-                source=job.get("source"),
-                scene_id=job.get("scene_id"),
-                created_at=job.get("created_at"),
-                started_at=job.get("started_at"),
-                completed_at=job.get("completed_at"),
-                result_summary=job.get("result_summary"),
-                results=job.get("results") if include_results else None
-            ))
+            job_summaries.append(
+                JobSummary(
+                    job_id=job.get("job_id", ""),
+                    service=job.get("service", "unknown"),
+                    status=job.get("status", "unknown"),
+                    progress=float(job.get("progress", 0.0)),
+                    source=job.get("source"),
+                    source_id=job.get("source_id"),
+                    created_at=job.get("created_at"),
+                    started_at=job.get("started_at"),
+                    completed_at=job.get("completed_at"),
+                    result_summary=job.get("result_summary"),
+                    results=job.get("results") if include_results else None,
+                )
+            )
 
-        return ListJobsResponse(
-            jobs=job_summaries,
-            total=total,
-            limit=limit,
-            offset=offset
-        )
+        return ListJobsResponse(jobs=job_summaries, total=total, limit=limit, offset=offset)
 
     except Exception as e:
         logger.error(f"Error listing jobs: {e}", exc_info=True)
@@ -825,7 +760,7 @@ async def health_check():
                 ("scenes", SCENES_SERVICE_URL),
                 ("faces", FACES_SERVICE_URL),
                 ("semantics", SEMANTICS_SERVICE_URL),
-                ("objects", OBJECTS_SERVICE_URL)
+                ("objects", OBJECTS_SERVICE_URL),
             ]:
                 try:
                     response = await client.get(f"{url}/health")
@@ -833,21 +768,14 @@ async def health_check():
                 except Exception as e:
                     services[name] = {"status": "unhealthy", "error": str(e)}
 
-        return HealthResponse(
-            status="healthy",
-            service="vision-api",
-            version="1.0.0",
-            services=services
-        )
+        return HealthResponse(status="healthy", service="vision-api", version="1.0.0", services=services)
 
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=503,
-            content={"status": "unhealthy", "error": str(e)}
-        )
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "error": str(e)})
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=5010)

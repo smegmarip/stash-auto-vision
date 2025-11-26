@@ -34,6 +34,7 @@ When implemented, the Objects Service will provide:
 The Objects Service will integrate with the Vision API orchestrator to provide object detection as part of comprehensive video analysis workflows. It will operate asynchronously with job submission, status polling, and result retrieval patterns consistent with other services.
 
 **Planned Integration:**
+
 ```
 vision-api → objects-service (YOLO-World)
                  ↓
@@ -75,20 +76,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AnalyzeObjectsRequest'
+              $ref: "#/components/schemas/AnalyzeObjectsRequest"
       responses:
-        '202':
+        "202":
           description: Job accepted (stub response)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ObjectsJobResponse'
-        '400':
+                $ref: "#/components/schemas/ObjectsJobResponse"
+        "400":
           description: Invalid request parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /jobs/{job_id}/status:
     get:
@@ -102,12 +103,12 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Job status (stub)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ObjectsJobStatus'
+                $ref: "#/components/schemas/ObjectsJobStatus"
 
   /jobs/{job_id}/results:
     get:
@@ -121,12 +122,12 @@ paths:
           schema:
             type: string
       responses:
-        '501':
+        "501":
           description: Not implemented
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /health:
     get:
@@ -134,12 +135,12 @@ paths:
       description: Returns healthy status with implemented=false flag
       operationId: healthCheck
       responses:
-        '200':
+        "200":
           description: Service health
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                $ref: "#/components/schemas/HealthResponse"
 
 components:
   schemas:
@@ -152,11 +153,11 @@ components:
           type: string
           description: Absolute path to video file
           example: "/media/videos/scene.mp4"
-        scene_id:
+        source_id:
           type: string
           description: Optional scene identifier
         parameters:
-          $ref: '#/components/schemas/ObjectsParameters'
+          $ref: "#/components/schemas/ObjectsParameters"
 
     ObjectsParameters:
       type: object
@@ -282,6 +283,7 @@ The Objects Service is currently a minimal FastAPI application that:
 4. **Maintains API Contract:** Ensures downstream services can integrate without errors
 
 **Stub Behavior:**
+
 - POST `/analyze` → Returns 202 with `status: "not_implemented"`
 - GET `/jobs/{job_id}/status` → Returns 200 with `status: "not_implemented"`
 - GET `/jobs/{job_id}/results` → Returns 501 Not Implemented error
@@ -292,12 +294,14 @@ The Objects Service is currently a minimal FastAPI application that:
 #### YOLO-World Model Integration
 
 **Model:** YOLO-World (Open-Vocabulary Object Detection)
+
 - **Architecture:** Real-time object detector with text-based category prompting
 - **Capability:** Detect arbitrary object categories without retraining
 - **Performance:** 30+ FPS inference on GPU (RTX A4000)
 - **Variants:** YOLO-World-v1 (medium), YOLO-World-v2 (improved accuracy)
 
 **Key Advantages:**
+
 - No need for fixed category lists
 - User-defined object categories at runtime
 - Zero-shot detection (detects objects never seen during training)
@@ -306,6 +310,7 @@ The Objects Service is currently a minimal FastAPI application that:
 #### Object Detection Pipeline
 
 **Processing Flow (Planned):**
+
 ```
 1. Video Access
    └── Read from shared volume or receive frame paths from frame-server
@@ -341,7 +346,7 @@ The Objects Service is currently a minimal FastAPI application that:
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "scene_id": "12345",
+  "source_id": "12345",
   "status": "completed",
   "objects": [
     {
@@ -405,16 +410,19 @@ The Objects Service is currently a minimal FastAPI application that:
 ### Parameters (Planned)
 
 #### Model Selection
+
 - `yolo-world-v1`: Original model, faster inference
 - `yolo-world-v2`: Improved accuracy, slightly slower
 
 #### Confidence Threshold
+
 - Range: 0.0 - 1.0
 - Default: 0.25
 - Higher values = fewer false positives, may miss objects
 - Lower values = more detections, may include false positives
 
 #### NMS Threshold
+
 - Range: 0.0 - 1.0
 - Default: 0.45
 - Controls suppression of overlapping boxes
@@ -422,12 +430,14 @@ The Objects Service is currently a minimal FastAPI application that:
 - Lower = more aggressive suppression
 
 #### Custom Object Categories
+
 - User-defined list of objects to detect
 - Examples: ["person", "dog", "car", "tree"]
 - Open vocabulary: can specify any object
 - No retraining required
 
 #### Sampling Interval
+
 - Seconds between analyzed frames
 - Default: 2.0
 - Trade-off between accuracy and speed
@@ -437,16 +447,19 @@ The Objects Service is currently a minimal FastAPI application that:
 ### Performance Targets (Phase 3)
 
 **GPU Mode (RTX A4000):**
+
 - Inference: 30+ FPS per frame
 - Full video (5 min @ 2s interval): ~5-8 minutes processing
 - Memory: ~4GB VRAM
 
 **CPU Mode:**
+
 - Inference: 5-10 FPS per frame
 - Full video (5 min @ 2s interval): ~15-25 minutes processing
 - Memory: ~2GB RAM
 
 **Optimization Strategies:**
+
 - Batch inference (process multiple frames together)
 - GPU acceleration mandatory for production
 - Frame-level parallelism where possible
@@ -455,26 +468,34 @@ The Objects Service is currently a minimal FastAPI application that:
 ### Use Cases (Phase 3)
 
 #### Content Classification
+
 Automatically detect and tag scene content:
+
 - Furniture: chair, table, couch, bed
 - Location indicators: tree, car, building, ocean
 - Props: phone, laptop, book, glass
 
 #### Safety and Content Filtering
+
 Detect objects for content moderation:
+
 - Weapons, alcohol, drugs
 - User-defined prohibited items
 - Flag scenes for manual review
 
 #### Custom Object Detection
+
 Domain-specific object detection:
+
 - Industry tools and equipment
 - Specific clothing items
 - Brand-specific products
 - Architectural elements
 
 #### Action Recognition Support
+
 Combine with other modules for advanced understanding:
+
 - Objects + faces → "person sitting on chair"
 - Objects + scene boundaries → "cooking scene with utensils"
 - Temporal object patterns → action recognition
@@ -504,6 +525,7 @@ The Objects Service will integrate into multi-module workflows:
 ```
 
 **Sequential Processing:**
+
 1. Scenes Service detects boundaries
 2. Frame Server extracts frames
 3. Faces Service detects people
@@ -545,22 +567,26 @@ LOG_LEVEL=INFO
 ### Deliverables
 
 1. **YOLO-World Integration:**
+
    - Load YOLO-World model (medium variant)
    - Configure CUDA providers for GPU acceleration
    - Implement category-based detection
 
 2. **Detection Pipeline:**
+
    - Frame sampling strategy
    - Batch inference implementation
    - Bounding box extraction
    - Confidence filtering and NMS
 
 3. **Temporal Aggregation:**
+
    - Track objects across frames
    - Calculate persistence metrics
    - Merge duplicate detections
 
 4. **API Implementation:**
+
    - Replace stub endpoints with actual processing
    - Job queue integration with Redis
    - Progress tracking and status updates

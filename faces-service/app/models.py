@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 class JobStatus(str, Enum):
     """Job processing status"""
+
     QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -20,18 +21,32 @@ class JobStatus(str, Enum):
 
 class EnhancementParameters(BaseModel):
     """Face enhancement configuration"""
+
     enabled: bool = Field(default=False, description="Enable face enhancement")
-    quality_trigger: float = Field(default=float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")), ge=0.0, le=1.0, description="Trigger enhancement if quality below this")
+    quality_trigger: float = Field(
+        default=float(os.getenv("FACES_ENHANCEMENT_QUALITY_TRIGGER", "0.5")),
+        ge=0.0,
+        le=1.0,
+        description="Trigger enhancement if quality below this",
+    )
     model: str = Field(default="codeformer", description="Enhancement model: 'gfpgan' or 'codeformer'")
     fidelity_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="Fidelity vs quality tradeoff")
 
 
 class FaceAnalysisParameters(BaseModel):
     """Face analysis configuration"""
+
     face_min_confidence: float = Field(default=float(os.getenv("FACES_MIN_CONFIDENCE", "0.9")), ge=0.0, le=1.0)
-    face_min_quality: float = Field(default=float(os.getenv("FACES_MIN_QUALITY", "0.0")), ge=0.0, le=1.0, description="Minimum quality threshold (filter below this)")
+    face_min_quality: float = Field(
+        default=float(os.getenv("FACES_MIN_QUALITY", "0.0")),
+        ge=0.0,
+        le=1.0,
+        description="Minimum quality threshold (filter below this)",
+    )
     max_faces: int = Field(default=50, ge=1, le=1000)
-    sampling_interval: float = Field(default=2.0, ge=0.1, le=10.0, description="Sampling interval in seconds (auto-adjusted for short videos)")
+    sampling_interval: float = Field(
+        default=2.0, ge=0.1, le=10.0, description="Sampling interval in seconds (auto-adjusted for short videos)"
+    )
     use_sprites: bool = Field(default=False)
     sprite_vtt_url: Optional[str] = None
     sprite_image_url: Optional[str] = None
@@ -45,15 +60,19 @@ class FaceAnalysisParameters(BaseModel):
 
 class AnalyzeFacesRequest(BaseModel):
     """Request to analyze faces in video/image"""
+
     source: str = Field(..., description="Path, URL, or image source to analyze")
-    source_type: Optional[str] = Field(default=None, description="Source type: 'video', 'image', 'url' (auto-detected if omitted)")
-    scene_id: str = Field(..., description="Scene ID for reference")
+    source_type: Optional[str] = Field(
+        default=None, description="Source type: 'video', 'image', 'url' (auto-detected if omitted)"
+    )
+    source_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     parameters: FaceAnalysisParameters = Field(default_factory=FaceAnalysisParameters)
 
 
 class BoundingBox(BaseModel):
     """Face bounding box coordinates"""
+
     x_min: int
     y_min: int
     x_max: int
@@ -62,6 +81,7 @@ class BoundingBox(BaseModel):
 
 class Landmarks(BaseModel):
     """Facial landmarks (5-point)"""
+
     left_eye: List[int]
     right_eye: List[int]
     nose: List[int]
@@ -71,6 +91,7 @@ class Landmarks(BaseModel):
 
 class Demographics(BaseModel):
     """Demographic information"""
+
     age: int
     gender: str  # "M" or "F"
     emotion: str  # "neutral", "happy", "sad", "angry", "surprise", "disgust", "fear"
@@ -78,6 +99,7 @@ class Demographics(BaseModel):
 
 class QualityComponents(BaseModel):
     """Quality score components"""
+
     size: float = Field(ge=0.0, le=1.0, description="Face size score (0.0-1.0)")
     pose: float = Field(ge=0.0, le=1.0, description="Face pose score (0.0-1.0)")
     occlusion: float = Field(ge=0.0, le=1.0, description="Occlusion score (0.0-1.0)")
@@ -86,18 +108,21 @@ class QualityComponents(BaseModel):
 
 class Quality(BaseModel):
     """Face quality assessment"""
+
     composite: float = Field(ge=0.0, le=1.0, description="Overall quality score (0.0-1.0)")
     components: QualityComponents
 
 
 class Occlusion(BaseModel):
     """Face occlusion detection"""
+
     occluded: bool = Field(description="Whether face is occluded (glasses, mask, hand, etc.)")
     probability: float = Field(ge=0.0, le=1.0, description="Occlusion probability (0.0-1.0)")
 
 
 class Detection(BaseModel):
     """Single face detection"""
+
     frame_index: int
     timestamp: float
     bbox: BoundingBox
@@ -111,6 +136,7 @@ class Detection(BaseModel):
 
 class Face(BaseModel):
     """Unique face cluster"""
+
     face_id: str
     embedding: List[float]  # 512-D ArcFace embedding
     demographics: Optional[Demographics] = None
@@ -120,6 +146,7 @@ class Face(BaseModel):
 
 class AnalyzeJobResponse(BaseModel):
     """Response for face analysis job submission"""
+
     job_id: str
     status: JobStatus
     created_at: str
@@ -127,6 +154,7 @@ class AnalyzeJobResponse(BaseModel):
 
 class AnalyzeJobStatus(BaseModel):
     """Job status response"""
+
     job_id: str
     status: JobStatus
     progress: float = Field(ge=0.0, le=1.0)
@@ -141,6 +169,7 @@ class AnalyzeJobStatus(BaseModel):
 
 class VideoMetadata(BaseModel):
     """Video file metadata"""
+
     source: str
     total_frames: int
     frames_processed: int
@@ -150,15 +179,15 @@ class VideoMetadata(BaseModel):
     method: str
     model: str
     frame_enhancement: Optional[EnhancementParameters] = Field(
-        default=None,
-        description="Frame enhancement settings used (if enhancement was enabled)"
+        default=None, description="Frame enhancement settings used (if enhancement was enabled)"
     )
 
 
 class AnalyzeJobResults(BaseModel):
     """Complete job results"""
+
     job_id: str
-    scene_id: str
+    source_id: str
     status: JobStatus
     faces: List[Face]
     metadata: VideoMetadata
@@ -166,6 +195,7 @@ class AnalyzeJobResults(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response"""
+
     status: str
     service: str = "faces-service"
     version: str = "1.0.0"
@@ -177,4 +207,5 @@ class HealthResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standard error response"""
+
     error: Dict[str, Any]

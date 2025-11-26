@@ -65,20 +65,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AnalyzeSemanticsRequest'
+              $ref: "#/components/schemas/AnalyzeSemanticsRequest"
       responses:
-        '202':
+        "202":
           description: Request acknowledged (stub returns not_implemented)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SemanticsJobResponse'
-        '400':
+                $ref: "#/components/schemas/SemanticsJobResponse"
+        "400":
           description: Invalid request parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /jobs/{job_id}/status:
     get:
@@ -92,12 +92,12 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Job status (stub always returns not_implemented)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SemanticsJobStatus'
+                $ref: "#/components/schemas/SemanticsJobStatus"
 
   /jobs/{job_id}/results:
     get:
@@ -111,7 +111,7 @@ paths:
           schema:
             type: string
       responses:
-        '501':
+        "501":
           description: Not implemented
           content:
             application/json:
@@ -133,12 +133,12 @@ paths:
       summary: Service health check
       operationId: healthCheck
       responses:
-        '200':
+        "200":
           description: Service healthy (stub service)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                $ref: "#/components/schemas/HealthResponse"
 
 components:
   schemas:
@@ -150,14 +150,14 @@ components:
           type: string
           description: Absolute path to video file
           example: "/media/videos/scene.mp4"
-        scene_id:
+        source_id:
           type: string
           description: Scene identifier for reference
         frame_extraction_job_id:
           type: string
           description: Job ID from Frame Server (reuse extracted frames)
         parameters:
-          $ref: '#/components/schemas/SemanticsParameters'
+          $ref: "#/components/schemas/SemanticsParameters"
 
     SemanticsParameters:
       type: object
@@ -173,7 +173,15 @@ components:
           items:
             type: string
           description: Predefined tags for zero-shot classification
-          example: ["indoor", "outdoor", "kitchen", "bedroom", "conversation", "action"]
+          example:
+            [
+              "indoor",
+              "outdoor",
+              "kitchen",
+              "bedroom",
+              "conversation",
+              "action",
+            ]
         custom_prompts:
           type: array
           items:
@@ -241,18 +249,18 @@ components:
       properties:
         job_id:
           type: string
-        scene_id:
+        source_id:
           type: string
         status:
           type: string
         frames:
           type: array
           items:
-            $ref: '#/components/schemas/FrameSemantics'
+            $ref: "#/components/schemas/FrameSemantics"
         scene_summary:
-          $ref: '#/components/schemas/SceneSemanticSummary'
+          $ref: "#/components/schemas/SceneSemanticSummary"
         metadata:
-          $ref: '#/components/schemas/SemanticsMetadata'
+          $ref: "#/components/schemas/SemanticsMetadata"
 
     FrameSemantics:
       type: object
@@ -266,7 +274,7 @@ components:
         tags:
           type: array
           items:
-            $ref: '#/components/schemas/SemanticTag'
+            $ref: "#/components/schemas/SemanticTag"
         embedding:
           type: array
           items:
@@ -418,11 +426,13 @@ When Phase 2 development begins, the service will be upgraded with full CLIP int
 #### CLIP Model Integration
 
 **Model Selection:**
+
 - **Primary:** OpenAI CLIP (ViT-B/32) - 224x224 input, 512-D embeddings
 - **Optional:** OpenCLIP (ViT-L/14) - Higher accuracy, 768-D embeddings
 - **Library:** `transformers` (Hugging Face) or `open_clip` (OpenCLIP)
 
 **GPU Acceleration:**
+
 ```python
 import torch
 from transformers import CLIPProcessor, CLIPModel
@@ -468,6 +478,7 @@ processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 #### Zero-Shot Classification
 
 **Predefined Tags Example:**
+
 ```python
 classification_tags = [
     "indoor scene",
@@ -489,6 +500,7 @@ top_tags = [(tag, score) for tag, score in zip(classification_tags, similarities
 ```
 
 **Custom Prompts Example:**
+
 ```python
 custom_prompts = [
     "two people talking in a kitchen",
@@ -518,16 +530,19 @@ similarity = 1 - cosine(embedding1, embedding2)
 #### Performance Targets (Planned)
 
 **GPU Mode (NVIDIA RTX 3060):**
+
 - **Inference Speed:** 50-100 FPS (ViT-B/32)
 - **Memory Usage:** ~2GB VRAM
 - **Batch Size:** 16-32 frames per batch
 
 **CPU Mode (Development):**
+
 - **Inference Speed:** 5-10 FPS
 - **Memory Usage:** ~1GB RAM
 - **Not recommended for production**
 
 **Processing Time Example:**
+
 - 10-minute video @ 2 FPS sampling = 1200 frames
 - GPU processing: ~12-24 seconds
 - CPU processing: ~2-4 minutes
@@ -537,24 +552,30 @@ similarity = 1 - cosine(embedding1, embedding2)
 When implemented, the service will accept these configuration parameters:
 
 **model** (string): CLIP model variant
+
 - `clip-vit-b-32` (default) - 224px, 512-D embeddings
 - `clip-vit-l-14` - 224px, 768-D embeddings, higher accuracy
 
 **classification_tags** (array): Predefined tag list for classification
+
 - Example: `["indoor", "outdoor", "kitchen", "conversation"]`
 
 **custom_prompts** (array): User-defined text prompts for zero-shot
+
 - Example: `["two people talking", "intimate scene"]`
 
 **generate_embeddings** (boolean): Generate multi-modal embeddings
+
 - Default: `true`
 - Used for similarity search and clustering
 
 **min_confidence** (float): Minimum confidence for tag assignment
+
 - Range: 0.0 - 1.0
 - Default: 0.5
 
 **top_k_tags** (integer): Maximum tags per frame
+
 - Range: 1 - 20
 - Default: 5
 
@@ -586,7 +607,7 @@ Enable semantic analysis in multi-module requests:
 ```json
 {
   "video_path": "/media/videos/scene.mp4",
-  "scene_id": "12345",
+  "source_id": "12345",
   "modules": {
     "semantics": {
       "enabled": true,
@@ -603,6 +624,7 @@ Enable semantic analysis in multi-module requests:
 ```
 
 Vision API will:
+
 1. Extract frames via Frame Server
 2. Submit frames to Semantics Service
 3. Aggregate results with faces/scenes data
@@ -611,21 +633,25 @@ Vision API will:
 ### Use Cases (Phase 2 Goals)
 
 **Auto-Tagging:**
+
 - Automatically classify scene settings (indoor/outdoor, location types)
 - Detect activities and actions (conversation, sports, intimate scenes)
 - Tag content types for organization
 
 **Semantic Search:**
+
 - Natural language queries: "find scenes with two people talking in a kitchen"
 - Multi-modal search combining text and visual similarity
 - Content-based recommendations
 
 **Scene Similarity:**
+
 - Find visually/semantically similar scenes
 - Cluster scenes by content type
 - Detect scene changes based on semantic shift
 
 **Advanced Classification:**
+
 - Custom taxonomy definition via prompts
 - Zero-shot classification without training data
 - Extensible tagging system
