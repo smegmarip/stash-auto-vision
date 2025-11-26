@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,10 +21,29 @@ export function FaceCard({ face, videoPath, showOverlay = true }: FaceCardProps)
   const [showBbox, setShowBbox] = useState(true)
   const [showLandmarks, setShowLandmarks] = useState(true)
   const [frameDimensions, setFrameDimensions] = useState({ width: 1920, height: 1080 })
+  const [containerDimensions, setContainerDimensions] = useState({ width: 800, height: 450 })
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Measure actual container dimensions
+  useEffect(() => {
+    if (!dialogOpen || !containerRef.current) return
+
+    const measureContainer = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        setContainerDimensions({ width: rect.width, height: rect.height })
+      }
+    }
+
+    measureContainer()
+    window.addEventListener('resize', measureContainer)
+    return () => window.removeEventListener('resize', measureContainer)
+  }, [dialogOpen])
 
   const rep = face.representative_detection
   const demographics = face.demographics
   const quality = rep.quality
+
 
   return (
     <>
@@ -79,9 +98,13 @@ export function FaceCard({ face, videoPath, showOverlay = true }: FaceCardProps)
 
               {/* Detection count and time */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{face.detections.length} detections</span>
-                <span>•</span>
-                <span>@ {formatTimestamp(rep.timestamp)}</span>
+                <span>{face.detections.length} detection{face.detections.length !== 1 ? 's' : ''}</span>
+                {rep.timestamp != null && rep.timestamp >= 0 && (
+                  <>
+                    <span>•</span>
+                    <span>@ {formatTimestamp(rep.timestamp)}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -134,7 +157,7 @@ export function FaceCard({ face, videoPath, showOverlay = true }: FaceCardProps)
           </div>
 
           {/* Frame with overlay */}
-          <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+          <div ref={containerRef} className="relative aspect-video bg-black rounded-lg overflow-hidden">
             <FrameViewer
               videoPath={videoPath}
               timestamp={rep.timestamp}
@@ -147,8 +170,8 @@ export function FaceCard({ face, videoPath, showOverlay = true }: FaceCardProps)
                 detection={rep}
                 frameWidth={frameDimensions.width}
                 frameHeight={frameDimensions.height}
-                containerWidth={800} // Approximate container width
-                containerHeight={450}
+                containerWidth={containerDimensions.width}
+                containerHeight={containerDimensions.height}
                 showBbox={showBbox}
                 showLandmarks={showLandmarks}
               />

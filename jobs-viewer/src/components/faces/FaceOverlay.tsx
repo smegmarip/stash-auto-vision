@@ -39,9 +39,33 @@ export function FaceOverlay({
     // Clear previous drawings
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Calculate scale factors
-    const scaleX = containerWidth / frameWidth
-    const scaleY = containerHeight / frameHeight
+    // Calculate rendered image dimensions with object-contain behavior
+    // The image maintains aspect ratio and is centered within the container
+    const containerAspect = containerWidth / containerHeight
+    const imageAspect = frameWidth / frameHeight
+
+    let renderedWidth: number
+    let renderedHeight: number
+    let offsetX: number
+    let offsetY: number
+
+    if (imageAspect > containerAspect) {
+      // Image is wider than container - fits width, letterboxed top/bottom
+      renderedWidth = containerWidth
+      renderedHeight = containerWidth / imageAspect
+      offsetX = 0
+      offsetY = (containerHeight - renderedHeight) / 2
+    } else {
+      // Image is taller than container - fits height, letterboxed left/right
+      renderedHeight = containerHeight
+      renderedWidth = containerHeight * imageAspect
+      offsetX = (containerWidth - renderedWidth) / 2
+      offsetY = 0
+    }
+
+    // Calculate scale factors based on rendered image size
+    const scaleX = renderedWidth / frameWidth
+    const scaleY = renderedHeight / frameHeight
 
     const { bbox, landmarks, confidence, quality } = detection
 
@@ -52,8 +76,8 @@ export function FaceOverlay({
       ctx.strokeStyle = `hsl(${hue}, 80%, 50%)`
       ctx.lineWidth = 2
 
-      const x = bbox.x_min * scaleX
-      const y = bbox.y_min * scaleY
+      const x = offsetX + bbox.x_min * scaleX
+      const y = offsetY + bbox.y_min * scaleY
       const w = (bbox.x_max - bbox.x_min) * scaleX
       const h = (bbox.y_max - bbox.y_min) * scaleY
 
@@ -85,7 +109,7 @@ export function FaceOverlay({
       landmarkPoints.forEach((point) => {
         if (point) {
           ctx.beginPath()
-          ctx.arc(point[0] * scaleX, point[1] * scaleY, radius, 0, Math.PI * 2)
+          ctx.arc(offsetX + point[0] * scaleX, offsetY + point[1] * scaleY, radius, 0, Math.PI * 2)
           ctx.fill()
         }
       })
