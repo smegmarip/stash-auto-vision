@@ -322,6 +322,40 @@ services:
         limits:
           memory: 8G
 
+  # ============================================
+  # UI Services
+  # ============================================
+
+  jobs-viewer:
+    build:
+      context: ./jobs-viewer
+      dockerfile: Dockerfile
+    container_name: vision-jobs-viewer
+    hostname: vision-jobs-viewer
+    ports:
+      - "${JOBS_VIEWER_PORT:-5020}:5020"
+    environment:
+      - VISION_API_URL=http://vision-api:5010
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    networks:
+      - vision_network
+    depends_on:
+      vision-api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5020/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
 # ============================================
 # Networks
 # ============================================

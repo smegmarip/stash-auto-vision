@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "outDir": "./dist/server",
+    "rootDir": "./server",
+    "declaration": false,
+    "noEmit": false
+  },
+  "include": ["server/**/*"]
+}
