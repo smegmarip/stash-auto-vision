@@ -32,7 +32,7 @@ class DetectScenesRequest(BaseModel):
     detection_method: DetectionMethod = DetectionMethod.CONTENT_DETECTOR
     scene_threshold: float = Field(default=float(os.getenv("SCENES_THRESHOLD", "27.0")), ge=0.0, le=100.0, description="Detection threshold")
     min_scene_length: float = Field(default=0.6, ge=0.1, description="Minimum scene length in seconds")
-    cache_duration: int = Field(default=3600, ge=0, description="Cache TTL in seconds")
+    cache_duration: int = Field(default=int(os.getenv("CACHE_TTL", "31536000")), ge=0, description="Cache TTL in seconds")
 
 
 class SceneBoundary(BaseModel):

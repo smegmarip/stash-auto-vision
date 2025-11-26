@@ -39,7 +39,7 @@ class FaceAnalysisParameters(BaseModel):
     embedding_similarity_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     detect_demographics: bool = Field(default=True)
     scene_boundaries: Optional[List[Dict[str, float]]] = None
-    cache_duration: int = Field(default=3600, ge=0)
+    cache_duration: int = Field(default=int(os.getenv("CACHE_TTL", "31536000")), ge=0)
     enhancement: EnhancementParameters = Field(default_factory=EnhancementParameters)
 
 
