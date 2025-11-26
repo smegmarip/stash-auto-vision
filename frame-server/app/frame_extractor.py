@@ -524,13 +524,18 @@ class FrameExtractor:
         timestamps = []
 
         if scene_boundaries:
-            # Scene-based sampling: extract first, middle, last frame of each scene
+            # Scene-based sampling: divide each scene into 4 intervals,
+            # sample at 25%, 50%, 75% to avoid transition frames at boundaries
             for scene in scene_boundaries:
                 start = scene['start_timestamp']
                 end = scene['end_timestamp']
-                mid = (start + end) / 2
+                quarter = (end - start) / 4
 
-                timestamps.extend([start, mid, end])
+                timestamps.extend([
+                    start + quarter,      # 25% - avoids scene start transition
+                    start + 2 * quarter,  # 50% - middle of scene
+                    start + 3 * quarter   # 75% - avoids scene end transition
+                ])
         else:
             # Interval-based sampling
             current = 0.0
