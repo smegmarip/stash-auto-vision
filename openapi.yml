@@ -123,6 +123,82 @@ paths:
         '409':
           description: Job not completed yet
 
+  /vision/jobs:
+    get:
+      tags: [vision-api]
+      summary: List all jobs
+      description: |
+        List all jobs across all services (vision-api, faces-service, scenes-service)
+        with optional filtering and pagination.
+
+        Jobs are deduplicated by cache_key, preferring vision-level jobs over service-level jobs.
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, processing, completed, failed]
+          description: Filter by job status
+        - name: service
+          in: query
+          schema:
+            type: string
+            enum: [vision, faces, scenes]
+          description: Filter by service (default is all services)
+        - name: scene_id
+          in: query
+          schema:
+            type: string
+          description: Filter by scene_id
+        - name: source
+          in: query
+          schema:
+            type: string
+          description: Filter by source video path
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter by end date (ISO format)
+        - name: include_results
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include full job results in response
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+          description: Maximum number of jobs to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of jobs to skip (for pagination)
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListJobsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /health:
     get:
       tags: [health, vision-api]
@@ -663,6 +739,63 @@ components:
           type: object
           additionalProperties:
             type: object
+
+    ListJobsResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSummary'
+        total:
+          type: integer
+          description: Total number of jobs matching filters (before pagination)
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    JobSummary:
+      type: object
+      properties:
+        job_id:
+          type: string
+        service:
+          type: string
+          enum: [vision, faces, scenes]
+          description: Service that owns the job
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        source:
+          type: string
+          nullable: true
+        scene_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_summary:
+          type: object
+          nullable: true
+        results:
+          type: object
+          nullable: true
+          description: Full job results (only when include_results=true)
 
     # Frame Server Schemas
     ExtractRequest:

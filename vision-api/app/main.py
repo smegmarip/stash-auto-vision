@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 import logging
 import redis.asyncio as aioredis
@@ -23,8 +23,11 @@ from .models import (
     AnalyzeJobStatus,
     AnalyzeJobResults,
     ServiceJobInfo,
-    HealthResponse
+    HealthResponse,
+    JobSummary,
+    ListJobsResponse
 )
+from .cache_manager import CacheManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,14 +73,16 @@ SCENES_SERVICE_URL = os.getenv("SCENES_SERVICE_URL", "http://scenes-service:5002
 FACES_SERVICE_URL = os.getenv("FACES_SERVICE_URL", "http://faces-service:5003")
 SEMANTICS_SERVICE_URL = os.getenv("SEMANTICS_SERVICE_URL", "http://semantics-service:5004")
 OBJECTS_SERVICE_URL = os.getenv("OBJECTS_SERVICE_URL", "http://objects-service:5005")
+CACHE_TTL = int(os.getenv("CACHE_TTL", "31536000"))  # Default: 1 year
 
 redis_client: Optional[aioredis.Redis] = None
+cache_manager: Optional[CacheManager] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global redis_client
+    global redis_client, cache_manager
 
     logger.info("Starting Vision API Orchestrator...")
 
@@ -88,6 +93,10 @@ async def lifespan(app: FastAPI):
         decode_responses=True
     )
     logger.info("Connected to Redis")
+
+    # Initialize cache manager
+    cache_manager = CacheManager(redis_client, ttl=CACHE_TTL)
+    logger.info(f"Cache manager initialized (TTL: {CACHE_TTL}s)")
 
     yield
 
@@ -696,6 +705,78 @@ async def get_job_results(job_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting job results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def parse_iso_date(date_str: Optional[str]) -> Optional[float]:
+    """Parse ISO date string to Unix timestamp"""
+    if not date_str:
+        return None
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+@app.get("/vision/jobs", response_model=ListJobsResponse)
+async def list_jobs(
+    status: Optional[str] = Query(None, description="Filter by status (queued, processing, completed, failed)"),
+    service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes)"),
+    scene_id: Optional[str] = Query(None, description="Filter by scene_id"),
+    source: Optional[str] = Query(None, description="Filter by source video path"),
+    start_date: Optional[str] = Query(None, description="Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)"),
+    end_date: Optional[str] = Query(None, description="Filter by end date (ISO format)"),
+    include_results: bool = Query(False, description="Include full job results in response"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of jobs to return"),
+    offset: int = Query(0, ge=0, description="Number of jobs to skip")
+):
+    """
+    List all jobs across all services with optional filtering.
+
+    Aggregates jobs from vision-api, faces-service, and scenes-service.
+    Deduplicates by cache_key, preferring vision-level jobs over service-level jobs.
+    """
+    try:
+        jobs, total = await cache_manager.list_jobs(
+            status=status,
+            service=service,
+            scene_id=scene_id,
+            source=source,
+            start_date=parse_iso_date(start_date),
+            end_date=parse_iso_date(end_date),
+            include_results=include_results,
+            limit=limit,
+            offset=offset
+        )
+
+        # Convert to JobSummary models
+        job_summaries = []
+        for job in jobs:
+            job_summaries.append(JobSummary(
+                job_id=job.get("job_id", ""),
+                service=job.get("service", "unknown"),
+                status=job.get("status", "unknown"),
+                progress=float(job.get("progress", 0.0)),
+                source=job.get("source"),
+                scene_id=job.get("scene_id"),
+                created_at=job.get("created_at"),
+                started_at=job.get("started_at"),
+                completed_at=job.get("completed_at"),
+                result_summary=job.get("result_summary"),
+                results=job.get("results") if include_results else None
+            ))
+
+        return ListJobsResponse(
+            jobs=job_summaries,
+            total=total,
+            limit=limit,
+            offset=offset
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing jobs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -83,3 +83,26 @@ class HealthResponse(BaseModel):
     service: str = "vision-api"
     version: str = "1.0.0"
     services: Dict[str, Dict[str, Any]]
+
+
+class JobSummary(BaseModel):
+    """Summary of a job for listing"""
+    job_id: str
+    service: str = Field(..., description="Service that owns the job (vision, faces, scenes)")
+    status: str
+    progress: float = 0.0
+    source: Optional[str] = None
+    scene_id: Optional[str] = None
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    result_summary: Optional[Dict[str, Any]] = None
+    results: Optional[Dict[str, Any]] = Field(default=None, description="Full results when include_results=true")
+
+
+class ListJobsResponse(BaseModel):
+    """Response for job listing endpoint"""
+    jobs: List[JobSummary]
+    total: int = Field(..., description="Total number of jobs matching filters (before pagination)")
+    limit: int
+    offset: int

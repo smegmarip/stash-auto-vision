@@ -173,6 +173,66 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /vision/jobs:
+    get:
+      summary: List all jobs across services
+      description: |
+        List all jobs from vision-api, faces-service, and scenes-service
+        with optional filtering and pagination. Jobs are deduplicated
+        by cache_key, preferring vision-level jobs.
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, processing, completed, failed]
+        - name: service
+          in: query
+          schema:
+            type: string
+            enum: [vision, faces, scenes]
+        - name: scene_id
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: include_results
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListJobsResponse'
+
   /health:
     get:
       summary: Service health check
@@ -431,6 +491,51 @@ components:
         detail:
           type: string
           description: Error message
+
+    ListJobsResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSummary'
+        total:
+          type: integer
+          description: Total matching jobs before pagination
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    JobSummary:
+      type: object
+      properties:
+        job_id:
+          type: string
+        service:
+          type: string
+          enum: [vision, faces, scenes]
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        progress:
+          type: number
+        source:
+          type: string
+          nullable: true
+        scene_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        result_summary:
+          type: object
+          nullable: true
+        results:
+          type: object
+          nullable: true
+          description: Full results when include_results=true
 ```
 
 ---
@@ -663,6 +768,77 @@ The Vision API combines results from all enabled services into a single unified 
 }
 ```
 
+### Job Listing
+
+The Vision API provides a unified job listing endpoint that aggregates jobs from all services:
+
+```python
+import requests
+
+# List all jobs
+response = requests.get("http://localhost:5010/vision/jobs")
+jobs = response.json()
+print(f"Found {jobs['total']} jobs")
+
+# Filter by status
+completed = requests.get("http://localhost:5010/vision/jobs?status=completed")
+
+# Filter by service
+faces_jobs = requests.get("http://localhost:5010/vision/jobs?service=faces")
+
+# Filter by scene_id
+scene_jobs = requests.get("http://localhost:5010/vision/jobs?scene_id=12345")
+
+# Date range filtering
+from_date = requests.get(
+    "http://localhost:5010/vision/jobs?start_date=2025-01-01T00:00:00Z"
+)
+
+# Include full results
+with_results = requests.get(
+    "http://localhost:5010/vision/jobs?include_results=true&limit=10"
+)
+
+# Pagination
+page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
+```
+
+**Example Response:**
+```json
+{
+  "jobs": [
+    {
+      "job_id": "16542ef6-73b5-4200-a5be-414b8bfb6bc2",
+      "service": "vision",
+      "status": "completed",
+      "progress": 1.0,
+      "source": "/media/videos/scene.mp4",
+      "scene_id": "12345",
+      "created_at": "2025-11-26T04:30:00.000Z",
+      "result_summary": {
+        "scenes": 4,
+        "faces": 11
+      }
+    },
+    {
+      "job_id": "faces-abc123",
+      "service": "faces",
+      "status": "processing",
+      "progress": 0.75,
+      "source": "/media/videos/another.mp4",
+      "scene_id": "67890",
+      "created_at": "2025-11-26T04:35:00.000Z"
+    }
+  ],
+  "total": 156,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+**Deduplication:**
+Jobs are deduplicated by `cache_key`. If the same video is processed through both vision-api and directly to faces-service, only the vision-level job is returned (as it contains more complete context).
+
 ### Service Health Monitoring
 
 The Vision API monitors all downstream services and reports aggregated health:
@@ -729,10 +905,12 @@ OBJECTS_SERVICE_URL=http://objects-service:5005
 # Redis
 REDIS_URL=redis://redis:6379/0
 
+# Cache Configuration
+CACHE_TTL=31536000        # 1 year job history retention
+
 # Timeouts
 SERVICE_TIMEOUT=300        # 5 minutes per service call
 POLLING_INTERVAL=2.0       # 2 seconds between status polls
-JOB_TTL=3600              # 1 hour result cache
 
 # Logging
 LOG_LEVEL=INFO
@@ -740,5 +918,5 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-09
+**Last Updated:** 2025-11-26
 **Status:** Implemented and Tested
