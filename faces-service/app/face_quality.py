@@ -5,6 +5,7 @@ Assesses face quality using bbox size, pose, occlusion, and sharpness
 
 import os
 import logging
+import math
 import numpy as np
 import cv2
 
@@ -132,12 +133,58 @@ class FaceQuality:
 
         return (yaw_score + pitch_score) / 2
 
-    def _occlusion_score(self, occlusion_pred, occlusion_prob):
+    def _pose_correction_factor(self, yaw, pitch, roll):
+        """
+        Calculate pose-based correction factor for occlusion score.
+
+        The occlusion classifier (ConvNeXt) exhibits bias toward non-frontal poses,
+        incorrectly flagging angled faces as occluded. This correction compensates
+        by reducing the occlusion score's influence as pose deviates from frontal.
+
+        Model properties:
+        - Yaw is the primary driver (changes which features are visible)
+        - Pitch and roll act as amplifiers of yaw's effect, not independent factors
+        - Conservative inflection point at 30° yaw for real-world face variability
+        - cos² curve: gentle degradation at small angles, steep drop after inflection
+
+        Args:
+            yaw: Yaw angle in degrees (left/right head turn)
+            pitch: Pitch angle in degrees (up/down head tilt)
+            roll: Roll angle in degrees (head rotation/tilt)
+
+        Returns:
+            Correction factor between 0.0 (fully discount occlusion) and 1.0 (trust fully)
+        """
+        yaw_abs = abs(yaw)
+        pitch_abs = abs(pitch)
+        roll_abs = abs(roll)
+
+        # Normalize to 0-1 range based on "problematic" thresholds
+        yaw_norm = min(1.0, yaw_abs / 60)  # 60° = effective full profile for real faces
+        pitch_norm = min(1.0, pitch_abs / 45)  # 45° = conservative pitch threshold
+        roll_norm = min(1.0, roll_abs / 90)  # 90° = sideways
+
+        # Base yaw effect using shifted cosine curve
+        # Inflection at 30°: stays high until 30°, then drops steeply
+        # Map 0-60° to 0-90° for cos² curve (so 30° → 45° → cos²(45°) = 0.5)
+        yaw_mapped = min(90, yaw_abs * 1.5)  # 30° → 45°, 60° → 90°
+        yaw_base = math.cos(math.radians(yaw_mapped)) ** 2
+
+        # Amplification factor from pitch and roll
+        # Pitch has more effect than roll; both scale with yaw
+        amplification = 1 + (yaw_norm * (0.3 * pitch_norm + 0.1 * roll_norm))
+
+        # Final correction
+        correction = max(0.0, yaw_base / amplification)
+
+        return correction
+
+    def _raw_occlusion_score(self, occlusion_pred, occlusion_prob):
         """
         Calculate occlusion score based on occlusion prediction and probability.
 
         Args:
-            occlusion_pred: Occlusion prediction (not used in current calculation)
+            occlusion_pred: Occlusion prediction (0 = not occluded, 1 = occluded)
             occlusion_prob: Occlusion probability (0.0 to 1.0)
 
         Returns:
@@ -153,6 +200,25 @@ class FaceQuality:
         # -1 (certain occluded) → 0.25
         # +1 (certain non-occluded) → 1.0
         return self._interp(occlusion_metric, -1.0, 1.0, 0.25, 1.0)
+
+    def _occlusion_score(self, raw_score, pose_correction_factor):
+        """
+        Calculate final occlusion score with pose-based correction.
+
+        Args:
+            raw_score: Raw occlusion score between 0.25 and 1.0
+            correction_factor: Pose-based correction factor between 0.0 and 1.0
+
+        Returns:
+            Final occlusion score between 0.25 and 1.0
+        """
+        # Blend raw score toward neutral (0.625 = midpoint of 0.25-1.0) as pose deviates
+        # At pose_correction=1.0 (frontal): use raw_score
+        # At pose_correction=0.0 (profile): use neutral score
+        neutral_score = 0.625
+        corrected_score = pose_correction_factor * raw_score + (1 - pose_correction_factor) * neutral_score
+
+        return corrected_score
 
     def _sharpness_score(self, face_img):
         """
@@ -199,25 +265,29 @@ class FaceQuality:
         face_min_dim = min(h, w)
         (occlusion_pred, occlusion_prob) = occlusion_data
 
+        raw_occ_s = self._raw_occlusion_score(occlusion_pred, occlusion_prob)
         size_s = self._size_score(face_min_dim)
-        yaw, pitch, _ = self._estimate_pose_angles(face)
+        yaw, pitch, roll = self._estimate_pose_angles(face)
+        pose_f = self._pose_correction_factor(yaw, pitch, roll)
         pose_s = self._pose_score(yaw, pitch)
-        occ_s = self._occlusion_score(occlusion_pred, occlusion_prob)
+        occ_s = self._occlusion_score(raw_occ_s, pose_f)
 
         face_img = frame[y1:y2, x1:x2]
         sharp_s = self._sharpness_score(face_img) if face_img.size else 0.25
 
-        composite = 0.35 * size_s + 0.20 * pose_s + 0.20 * occ_s + 0.25 * sharp_s
+        composite = 0.35 * size_s + 0.30 * pose_s + 0.10 * occ_s + 0.25 * sharp_s
         composite = float(min(max(composite, 0.0), 1.0))
 
-        logger.debug(f"Face quality: composite={composite:.3f}, size={size_s:.3f}, pose={pose_s:.3f}, occlusion={occ_s:.3f}, sharpness={sharp_s:.3f}")
+        logger.debug(
+            f"Face quality: composite={composite:.3f}, size={size_s:.3f}, pose={pose_s:.3f}, occlusion={occ_s:.3f}, sharpness={sharp_s:.3f}"
+        )
 
         return {
-            'composite': composite,
-            'components': {
-                'size': float(size_s),
-                'pose': float(pose_s),
-                'occlusion': float(occ_s),
-                'sharpness': float(sharp_s)
-            }
+            "composite": composite,
+            "components": {
+                "size": float(size_s),
+                "pose": float(pose_s),
+                "occlusion": float(occ_s),
+                "sharpness": float(sharp_s),
+            },
         }
