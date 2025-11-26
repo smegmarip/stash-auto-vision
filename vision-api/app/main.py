@@ -6,6 +6,7 @@ Orchestrator for all vision analysis services
 import os
 import uuid
 import time
+import json
 import httpx
 import asyncio
 from typing import Optional, Dict, Any
@@ -644,14 +645,28 @@ async def analyze_video(
 
 @app.get("/vision/jobs/{job_id}/status", response_model=AnalyzeJobStatus)
 async def get_job_status(job_id: str):
-    """Get orchestrated job status"""
+    """Get orchestrated job status.
+
+    Looks up job across all service namespaces (vision, faces, scenes).
+    """
     try:
-        metadata_str = await redis_client.get(f"vision:job:{job_id}:metadata")
+        # Try all service namespaces to find the job
+        metadata_str = None
+        found_service = None
+        for service_ns in ["vision", "faces", "scenes"]:
+            metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
+            if metadata_str:
+                found_service = service_ns
+                break
 
         if not metadata_str:
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-        metadata = eval(metadata_str)
+        # Parse metadata - try JSON first, fall back to eval for legacy Python dict strings
+        try:
+            metadata = json.loads(metadata_str)
+        except json.JSONDecodeError:
+            metadata = eval(metadata_str)
 
         return AnalyzeJobStatus(
             job_id=job_id,
@@ -677,14 +692,28 @@ async def get_job_status(job_id: str):
 
 @app.get("/vision/jobs/{job_id}/results", response_model=AnalyzeJobResults)
 async def get_job_results(job_id: str):
-    """Get orchestrated job results"""
+    """Get orchestrated job results.
+
+    Looks up job across all service namespaces (vision, faces, scenes).
+    """
     try:
-        metadata_str = await redis_client.get(f"vision:job:{job_id}:metadata")
+        # Try all service namespaces to find the job
+        metadata_str = None
+        found_service = None
+        for service_ns in ["vision", "faces", "scenes"]:
+            metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
+            if metadata_str:
+                found_service = service_ns
+                break
 
         if not metadata_str:
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-        metadata = eval(metadata_str)
+        # Parse metadata - try JSON first, fall back to eval for legacy Python dict strings
+        try:
+            metadata = json.loads(metadata_str)
+        except json.JSONDecodeError:
+            metadata = eval(metadata_str)
 
         if metadata["status"] != "completed":
             raise HTTPException(
@@ -692,12 +721,16 @@ async def get_job_results(job_id: str):
                 detail=f"Job not completed (status: {metadata['status']})"
             )
 
-        results_str = await redis_client.get(f"vision:job:{job_id}:results")
+        results_str = await redis_client.get(f"{found_service}:job:{job_id}:results")
 
         if not results_str:
             raise HTTPException(status_code=404, detail=f"Results not found for job: {job_id}")
 
-        results = eval(results_str)
+        # Parse results - try JSON first, fall back to eval for legacy Python dict strings
+        try:
+            results = json.loads(results_str)
+        except json.JSONDecodeError:
+            results = eval(results_str)
 
         return AnalyzeJobResults(**results)
 

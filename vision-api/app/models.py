@@ -66,15 +66,22 @@ class AnalyzeJobStatus(BaseModel):
 
 
 class AnalyzeJobResults(BaseModel):
-    """Complete job results from all services"""
+    """Complete job results from all services.
+
+    Service-specific results may have different structures:
+    - faces: List of face detection results (from faces-service) or Dict (from vision orchestrator)
+    - scenes: List of scene boundaries or Dict
+    - semantics: Dict of semantic classifications
+    - objects: List of detected objects or Dict
+    """
     job_id: str
     scene_id: str
     status: str
-    scenes: Optional[Dict[str, Any]] = None
-    faces: Optional[Dict[str, Any]] = None
-    semantics: Optional[Dict[str, Any]] = None
-    objects: Optional[Dict[str, Any]] = None
-    metadata: Dict[str, Any]
+    scenes: Optional[Any] = None
+    faces: Optional[Any] = None
+    semantics: Optional[Any] = None
+    objects: Optional[Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class HealthResponse(BaseModel):
