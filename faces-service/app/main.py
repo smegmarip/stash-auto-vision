@@ -457,7 +457,7 @@ async def process_analysis_job(
 
                             if enhanced_image is not None:
                                 # Re-detect face in enhanced frame
-                                enhanced_detections = face_recognizer.detect_faces(
+                                enhanced_detections = await face_recognizer.detect_faces(
                                     enhanced_image,
                                     face_min_confidence=request.parameters.face_min_confidence
                                 )
