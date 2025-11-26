@@ -7,6 +7,7 @@ import os
 import uuid
 import time
 import asyncio
+import concurrent.futures
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -44,11 +45,20 @@ ENABLE_FALLBACK = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
 ENABLE_ENHANCEMENT = os.getenv("ENABLE_ENHANCEMENT", "false").lower() == "true"
 ENHANCEMENT_MODEL = os.getenv("ENHANCEMENT_MODEL", "gfpgan")
 
+# Thread pool and concurrency configuration
+FRAME_THREAD_POOL_SIZE = int(os.getenv("FRAME_THREAD_POOL_SIZE", "40"))
+# Note: HAS_CUDA and MAX_CONCURRENT_ENHANCEMENTS are set in lifespan to avoid
+# triggering CUDA initialization at module import time
+HAS_CUDA: bool = False
+MAX_CONCURRENT_ENHANCEMENTS: int = 1
+
 # Global instances
 cache_manager: Optional[CacheManager] = None
 frame_extractor: Optional[FrameExtractor] = None
 sprite_parser: Optional[SpriteParser] = None
 face_enhancer: Optional['FaceEnhancer'] = None
+thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+enhancement_semaphore: Optional[asyncio.Semaphore] = None
 
 
 @asynccontextmanager
@@ -57,9 +67,14 @@ async def lifespan(app: FastAPI):
     Application lifespan manager
     Initialize services on startup, cleanup on shutdown
     """
-    global cache_manager, frame_extractor, sprite_parser, face_enhancer
+    global cache_manager, frame_extractor, sprite_parser, face_enhancer, thread_pool, enhancement_semaphore
+    global HAS_CUDA, MAX_CONCURRENT_ENHANCEMENTS
 
     logger.info("Starting Frame Server...")
+
+    # Detect CUDA availability based on OPENCV_DEVICE env var (avoids torch import overhead)
+    HAS_CUDA = OPENCV_DEVICE == "cuda"
+    MAX_CONCURRENT_ENHANCEMENTS = 2 if HAS_CUDA else 1
 
     # Initialize cache manager
     cache_manager = CacheManager(REDIS_URL, module="frame", ttl=CACHE_TTL)
@@ -99,15 +114,28 @@ async def lifespan(app: FastAPI):
     sprite_parser = SpriteParser()
     logger.info("Sprite parser initialized")
 
+    # Initialize thread pool and enhancement semaphore
+    thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=FRAME_THREAD_POOL_SIZE)
+    enhancement_semaphore = asyncio.Semaphore(MAX_CONCURRENT_ENHANCEMENTS)
+    logger.info(f"Thread pool: {FRAME_THREAD_POOL_SIZE} workers, Enhancement concurrency: {MAX_CONCURRENT_ENHANCEMENTS} (CUDA: {HAS_CUDA})")
+
     yield
 
     # Cleanup
     logger.info("Shutting down Frame Server...")
+    if thread_pool:
+        thread_pool.shutdown(wait=True)
     if face_enhancer:
         face_enhancer.cleanup()
     if cache_manager:
         await cache_manager.disconnect()
     logger.info("Frame Server stopped")
+
+
+async def run_in_thread(func, *args, **kwargs):
+    """Run blocking function in thread pool without blocking event loop."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(thread_pool, lambda: func(*args, **kwargs))
 
 
 app = FastAPI(
@@ -180,16 +208,17 @@ async def process_extraction_job(
                 stage="extracting_frames"
             )
 
-            # Extract frames
+            # Extract frames - run in thread pool to avoid blocking event loop
             enhancement_opts = request.enhancement.dict() if request.enhancement.enabled else None
-            frames_data = frame_extractor.extract(
-                video_path=request.video_path,
-                job_id=job_id,
-                sampling_interval=request.sampling_strategy.interval_seconds or 2.0,
-                scene_boundaries=request.scene_boundaries,
-                output_format=request.output_format.value,
-                quality=request.quality,
-                enhancement_options=enhancement_opts
+            frames_data = await run_in_thread(
+                frame_extractor.extract,
+                request.video_path,
+                job_id,
+                request.sampling_strategy.interval_seconds or 2.0,
+                request.scene_boundaries,
+                request.output_format.value,
+                request.quality,
+                enhancement_opts
             )
 
             extraction_method = request.extraction_method.value
@@ -457,7 +486,7 @@ async def extract_single_frame(
     output_format: str = "jpeg",
     quality: int = 95,
     enhance: int = 0,
-    model: str = "gfpgan",
+    model: str = ENHANCEMENT_MODEL,
     fidelity_weight: float = 0.7
 ):
     """
@@ -544,17 +573,22 @@ async def extract_single_frame(
                 "paste_back": True
             }
 
-        # Use fallback extraction (robust)
+        # Use fallback extraction (robust) - run in thread pool to avoid blocking event loop
         job_id = f"single_{uuid.uuid4().hex[:8]}"
-        result = frame_extractor.extract_single_frame_with_fallback(
-            video_path=video_path,
-            timestamp=timestamp,
-            job_id=job_id,
-            idx=0,
-            output_format=output_format,
-            quality=quality,
-            enhancement_options=enhancement_opts
-        )
+
+        if enhance == 1:
+            # Enhancement: limit concurrency with semaphore to prevent resource exhaustion
+            async with enhancement_semaphore:
+                result = await run_in_thread(
+                    frame_extractor.extract_single_frame_with_fallback,
+                    video_path, timestamp, job_id, 0, output_format, quality, enhancement_opts
+                )
+        else:
+            # No enhancement: proceed immediately without semaphore
+            result = await run_in_thread(
+                frame_extractor.extract_single_frame_with_fallback,
+                video_path, timestamp, job_id, 0, output_format, quality, None
+            )
 
         if result is None:
             raise HTTPException(
