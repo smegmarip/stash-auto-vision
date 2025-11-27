@@ -11,8 +11,6 @@ import cv2
 
 from .iqa_onnx import IQAModel
 
-IQA_MODEL = os.getenv("IQA_MODEL", "topiq")
-
 logger = logging.getLogger(__name__)
 
 
@@ -24,9 +22,8 @@ class FaceQuality:
     """
 
     def __init__(self):
-        self.model_name = IQA_MODEL
-        self.iqa = IQAModel(preferred_model=self.model_name)
-        logger.info(f"Face quality assessment initialized with IQA model: {self.iqa.model_type}")
+        self.iqa = IQAModel()
+        logger.info("Face quality assessment initialized with Laplacian sharpness scoring")
 
     def _interp(self, x, x0, x1, y0, y1):
         """
@@ -120,31 +117,13 @@ class FaceQuality:
                 return 0.0, 0.0, 0.0
         return 0.0, 0.0, 0.0
 
-    def _pose_score(self, yaw, pitch):
+    def _pose_score(self, yaw, pitch, roll):
         """
-        Calculate pose score based on yaw and pitch angles.
-
-        Args:
-            yaw: Yaw angle in degrees
-            pitch: Pitch angle in degrees
-        """
-        yaw_score = self._interp(abs(yaw), 0, 45, 1.0, 0.25)
-        pitch_score = self._interp(abs(pitch), 0, 35, 1.0, 0.25)
-
-        return (yaw_score + pitch_score) / 2
-
-    def _pose_correction_factor(self, yaw, pitch, roll):
-        """
-        Calculate pose-based correction factor for occlusion score.
-
-        The occlusion classifier (ConvNeXt) exhibits bias toward non-frontal poses,
-        incorrectly flagging angled faces as occluded. This correction compensates
-        by reducing the occlusion score's influence as pose deviates from frontal.
+        Performs non-linear calculation of pose score.
 
         Model properties:
         - Yaw is the primary driver (changes which features are visible)
         - Pitch and roll act as amplifiers of yaw's effect, not independent factors
-        - Conservative inflection point at 30° yaw for real-world face variability
         - cos² curve: gentle degradation at small angles, steep drop after inflection
 
         Args:
@@ -153,7 +132,7 @@ class FaceQuality:
             roll: Roll angle in degrees (head rotation/tilt)
 
         Returns:
-            Correction factor between 0.0 (fully discount occlusion) and 1.0 (trust fully)
+            Pose score between 0.0 (poorly posed) and 1.0 (frontal)
         """
         yaw_abs = abs(yaw)
         pitch_abs = abs(pitch)
@@ -165,9 +144,7 @@ class FaceQuality:
         roll_norm = min(1.0, roll_abs / 90)  # 90° = sideways
 
         # Base yaw effect using shifted cosine curve
-        # Inflection at 30°: stays high until 30°, then drops steeply
-        # Map 0-60° to 0-90° for cos² curve (so 30° → 45° → cos²(45°) = 0.5)
-        yaw_mapped = min(90, yaw_abs * 1.5)  # 30° → 45°, 60° → 90°
+        yaw_mapped = min(90, yaw_abs)  # cap at 90°
         yaw_base = math.cos(math.radians(yaw_mapped)) ** 2
 
         # Amplification factor from pitch and roll
@@ -201,13 +178,17 @@ class FaceQuality:
         # +1 (certain non-occluded) → 1.0
         return self._interp(occlusion_metric, -1.0, 1.0, 0.25, 1.0)
 
-    def _occlusion_score(self, raw_score, pose_correction_factor):
+    def _occlusion_score(self, raw_occlusion_score, pose_score):
         """
         Calculate final occlusion score with pose-based correction.
 
+        The occlusion classifier (ConvNeXt) exhibits bias toward non-frontal poses,
+        incorrectly flagging angled faces as occluded. This scoring method compensates
+        by reducing the occlusion score's influence as pose deviates from frontal.
+
         Args:
-            raw_score: Raw occlusion score between 0.25 and 1.0
-            correction_factor: Pose-based correction factor between 0.0 and 1.0
+            raw_occlusion_score: Raw occlusion score between 0.25 and 1.0
+            pose_score: Non-linear pose score between 0.0 and 1.0
 
         Returns:
             Final occlusion score between 0.25 and 1.0
@@ -216,7 +197,7 @@ class FaceQuality:
         # At pose_correction=1.0 (frontal): use raw_score
         # At pose_correction=0.0 (profile): use neutral score
         neutral_score = 0.625
-        corrected_score = pose_correction_factor * raw_score + (1 - pose_correction_factor) * neutral_score
+        corrected_score = pose_score * raw_occlusion_score + (1 - pose_score) * neutral_score
 
         return corrected_score
 
@@ -268,8 +249,8 @@ class FaceQuality:
         raw_occ_s = self._raw_occlusion_score(occlusion_pred, occlusion_prob)
         size_s = self._size_score(face_min_dim)
         yaw, pitch, roll = self._estimate_pose_angles(face)
-        pose_f = self._pose_correction_factor(yaw, pitch, roll)
-        pose_s = self._pose_score(yaw, pitch)
+        pose_s = self._pose_score(yaw, pitch, roll)
+        pose_f = self._pose_score(yaw * 1.5, pitch, roll)
         occ_s = self._occlusion_score(raw_occ_s, pose_f)
 
         face_img = frame[y1:y2, x1:x2]
