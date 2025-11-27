@@ -1,6 +1,8 @@
 """
 ONNX IQA Module
-Wrapper for TOPIQ-NR and CLIP-IQA+ ONNX models with Sobel fallback
+Laplacian variance for face sharpness scoring.
+TOPIQ-NR and CLIP-IQA+ ONNX models retained for potential future use
+(e.g., semantics or object detection services).
 """
 
 import os
@@ -12,49 +14,31 @@ from typing import Optional, Literal
 logger = logging.getLogger(__name__)
 
 # Environment configuration
-IQA_MODEL = os.getenv("IQA_MODEL", "topiq")  # topiq, clipiqa, sobel
 MODEL_DIR = os.getenv("MODEL_DIR", "/app/models")
 
 
 class IQAModel:
     """
-    Image Quality Assessment using ONNX models
+    Face Sharpness Assessment using Laplacian variance.
 
-    Supports 3-tier fallback:
-    1. TOPIQ-NR (most accurate, 384x384, ~133ms)
-    2. CLIP-IQA+ (faster, 224x224, ~24ms)
-    3. Sobel edge detection (always available)
+    Laplacian variance measures actual edge sharpness/blur, which is
+    appropriate for face crops. TOPIQ/CLIP-IQA are MOS-based image quality
+    models that don't discriminate well on face crops.
+
+    ONNX model loading code retained for potential future use in other services.
     """
 
-    def __init__(self, preferred_model: str = "topiq"):
+    def __init__(self, preferred_model: str = "laplacian"):
         """
-        Initialize IQA model with fallback strategy
+        Initialize sharpness model.
 
         Args:
-            preferred_model: "topiq", "clipiqa", or "sobel"
+            preferred_model: Only "laplacian" is supported for face sharpness.
+                            ONNX models (topiq, clipiqa) are not suitable for face crops.
         """
-        self.model = None
-        self.model_type = None
+        self.model_type = "laplacian"
         self.session = None
-
-        # Try to load preferred model
-        if preferred_model == "topiq":
-            if self._load_topiq():
-                return
-            logger.warning("TOPIQ model unavailable, falling back to CLIP-IQA+")
-            if self._load_clipiqa():
-                return
-            logger.warning("CLIP-IQA+ unavailable, falling back to Sobel")
-            self._use_sobel()
-
-        elif preferred_model == "clipiqa":
-            if self._load_clipiqa():
-                return
-            logger.warning("CLIP-IQA+ unavailable, falling back to Sobel")
-            self._use_sobel()
-
-        else:  # sobel or unknown
-            self._use_sobel()
+        logger.info("Using Laplacian variance for face sharpness scoring")
 
     def _load_topiq(self) -> bool:
         """Load TOPIQ-NR ONNX model"""
@@ -100,10 +84,6 @@ class IQAModel:
             logger.warning(f"Failed to load CLIP-IQA+ model: {e}")
             return False
 
-    def _use_sobel(self):
-        """Use Sobel edge detection fallback"""
-        self.model_type = "sobel"
-        logger.info("Using Sobel edge detection for sharpness scoring")
 
     def _preprocess_image(self, img_bgr: np.ndarray, target_size: int) -> np.ndarray:
         """
@@ -133,9 +113,10 @@ class IQAModel:
 
         return img_batch
 
-    def _sobel_score(self, img_bgr: np.ndarray) -> float:
+    def _laplacian_score(self, img_bgr: np.ndarray) -> float:
         """
-        Calculate sharpness using Sobel edge detection
+        Calculate sharpness using Laplacian variance.
+        Higher variance = sharper edges = better focus.
 
         Args:
             img_bgr: Input image in BGR format
@@ -143,62 +124,31 @@ class IQAModel:
         Returns:
             Sharpness score [0, 1] (higher = sharper)
         """
-        # Resize to small size for efficiency
-        small = cv2.resize(img_bgr, (32, 32), interpolation=cv2.INTER_AREA)
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-        # Calculate Sobel gradients
-        sx = cv2.Sobel(gray, cv2.CV_32F, 1, 0)
-        sy = cv2.Sobel(gray, cv2.CV_32F, 0, 1)
-        mag = np.sqrt(sx * sx + sy * sy)
+        # Resize to reasonable size for consistency
+        target_size = 128
+        if min(gray.shape) > target_size:
+            scale = target_size / min(gray.shape)
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
-        # Mean gradient magnitude
-        sharp_feat = mag.mean()
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        variance = laplacian.var()
 
-        # Map to [0, 1] using typical face ranges (5-40)
-        # 5 = very blurry, 40 = very sharp
-        score = np.clip((sharp_feat - 5) / (40 - 5), 0.0, 1.0)
+        # Normalize to [0, 1] - typical face range 50-250
+        # 50 = very blurry, 250 = very sharp
+        score = np.clip((variance - 50) / (250 - 50), 0.0, 1.0)
 
         return float(score)
 
     def score(self, img_bgr: np.ndarray) -> float:
         """
-        Calculate image quality score
+        Calculate face sharpness score using Laplacian variance.
 
         Args:
             img_bgr: Input image in BGR format (OpenCV default)
 
         Returns:
-            Quality score [0, 1] (higher = better quality)
+            Sharpness score [0, 1] (higher = sharper)
         """
-        try:
-            if self.model_type == "topiq":
-                # TOPIQ-NR: 384x384
-                img_input = self._preprocess_image(img_bgr, 384)
-                input_name = self.session.get_inputs()[0].name
-                output_name = self.session.get_outputs()[0].name
-
-                result = self.session.run([output_name], {input_name: img_input})
-                score = float(result[0][0][0])
-
-                # TOPIQ outputs are already in [0, 1] range
-                return np.clip(score, 0.0, 1.0)
-
-            elif self.model_type == "clipiqa":
-                # CLIP-IQA+: 224x224
-                img_input = self._preprocess_image(img_bgr, 224)
-                input_name = self.session.get_inputs()[0].name
-                output_name = self.session.get_outputs()[0].name
-
-                result = self.session.run([output_name], {input_name: img_input})
-                score = float(result[0][0][0])
-
-                # CLIP-IQA outputs are already in [0, 1] range
-                return np.clip(score, 0.0, 1.0)
-
-            else:  # sobel
-                return self._sobel_score(img_bgr)
-
-        except Exception as e:
-            logger.warning(f"IQA scoring failed ({self.model_type}): {e}, falling back to Sobel")
-            return self._sobel_score(img_bgr)
+        return self._laplacian_score(img_bgr)

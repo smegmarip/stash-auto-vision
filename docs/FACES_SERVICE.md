@@ -593,7 +593,6 @@ INSIGHTFACE_DEVICE=cuda          # cuda or cpu
 FACES_MIN_CONFIDENCE=0.9         # Detection confidence threshold (0.7 CPU, 0.9 GPU)
 FACES_MIN_QUALITY=0.0            # Minimum quality to keep (0.0 = no filtering)
 FACES_ENHANCEMENT_QUALITY_TRIGGER=0.5  # Trigger enhancement below this quality
-IQA_MODEL=topiq                  # IQA model: topiq (primary), clip-iqa (fallback), sobel (last resort)
 
 # Integration
 FRAME_SERVER_URL=http://frame-server:5001
