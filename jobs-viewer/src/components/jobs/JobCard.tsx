@@ -68,7 +68,7 @@ export function JobCard({ job }: JobCardProps) {
           {/* Scene ID */}
           {job.source_id && (
             <div className="text-xs text-muted-foreground">
-              Scene: <span className="font-mono">{job.source_id}</span>
+              Source ID: <span className="font-mono">{job.source_id}</span>
             </div>
           )}
 
