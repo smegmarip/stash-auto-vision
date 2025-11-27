@@ -263,6 +263,10 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             downloaded_file = await download_url(request.source)
             request.source = downloaded_file  # Replace with local path for processing
 
+        # Disable scenes for images (scene detection only makes sense for videos)
+        if is_image_file(request.source):
+            request.modules.scenes.enabled = False
+
         # Normalize image EXIF orientation if needed
         if is_image_file(request.source):
             normalized_path, was_normalized = normalize_image_if_needed(
