@@ -559,14 +559,9 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             metadata["failed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
         await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
-    finally:
-        # Clean up downloaded file
-        if downloaded_file and os.path.exists(downloaded_file):
-            try:
-                os.remove(downloaded_file)
-                logger.info(f"Cleaned up downloaded file: {downloaded_file}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up {downloaded_file}: {e}")
+    # Note: Downloaded files are NOT cleaned up immediately.
+    # They are retained for CACHE_TTL duration to support frame extraction.
+    # Cleanup is handled by cron job running cleanup_downloads.sh hourly.
 
 
 @app.post("/vision/analyze", response_model=AnalyzeJobResponse, status_code=202)
