@@ -1,5 +1,6 @@
 """Image utility functions for faces-service."""
 
+import numpy as np
 from PIL import Image, ImageOps
 import os
 import logging
@@ -8,9 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_image_if_needed(
-    image_path: str,
-    output_dir: str = "/tmp/downloads",
-    job_id: str = None
+    image_path: str, output_dir: str = "/tmp/downloads", job_id: str = None
 ) -> tuple[str, bool]:
     """
     Check EXIF orientation and save normalized copy if orientation != 1.
@@ -59,6 +58,29 @@ def normalize_image_if_needed(
 
 def is_image_file(path: str) -> bool:
     """Check if file is an image based on extension."""
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif'}
+    image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
     ext = os.path.splitext(path)[1].lower()
     return ext in image_extensions
+
+
+def get_image_area(image: np.ndarray) -> int:
+    """
+    Return the pixel area of an image represented as a NumPy array.
+    Handles grayscale (H, W) and multi-channel (H, W, C) images.
+
+    Args:
+        image: image array (BGR format from OpenCV)
+    Returns:
+        Pixel area (height * width)
+    """
+    if image.ndim == 2:
+        # grayscale: shape = (height, width)
+        height, width = image.shape
+    elif image.ndim == 3:
+        # color or multi-channel: shape = (height, width, channels)
+        height, width = image.shape[:2]
+    else:
+        logger.warning(f"Unsupported image shape: {image.shape}")
+        return 0
+
+    return height * width

@@ -72,6 +72,7 @@ services:
       - ENABLE_FALLBACK=${ENABLE_FALLBACK:-true}
       - ENABLE_ENHANCEMENT=${ENABLE_ENHANCEMENT:-false}
       - ENHANCEMENT_MODEL=${ENHANCEMENT_MODEL:-gfpgan}
+      - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -115,6 +116,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
       - SCENES_THRESHOLD=${SCENES_THRESHOLD:-27.0}
+      - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -159,6 +161,7 @@ services:
       - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
       - FACES_MIN_QUALITY=${FACES_MIN_QUALITY:-0.0}
       - FACES_ENHANCEMENT_QUALITY_TRIGGER=${FACES_ENHANCEMENT_QUALITY_TRIGGER:-0.5}
+      - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -206,6 +209,7 @@ services:
       - CACHE_TTL=${CACHE_TTL:-3600}
       - STUB_MODE=${SEMANTICS_STUB_MODE:-true} # Phase 1: return not_implemented
       - SEMANTICS_MIN_CONFIDENCE=${SEMANTICS_MIN_CONFIDENCE:-0.5}
+      - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -250,6 +254,7 @@ services:
       - CACHE_TTL=${CACHE_TTL:-3600}
       - STUB_MODE=${OBJECTS_STUB_MODE:-true} # Phase 1: return not_implemented
       - OBJECTS_MIN_CONFIDENCE=${OBJECTS_MIN_CONFIDENCE:-0.5}
+      - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
