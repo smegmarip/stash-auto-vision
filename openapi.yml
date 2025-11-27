@@ -1169,6 +1169,9 @@ components:
           type: string
           enum: [video, image, url]
           description: Source type (auto-detected if omitted)
+        original_source:
+          type: string
+          description: Original source path/URL before download (for metadata)
         source_id:
           type: string
           description: Source ID for reference
@@ -1497,6 +1500,11 @@ components:
       properties:
         source:
           type: string
+          description: Original source path or URL
+        source_type:
+          type: string
+          enum: [video, image, url]
+          description: Detected source type
         total_frames:
           type: integer
         frames_processed:

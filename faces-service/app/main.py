@@ -115,9 +115,6 @@ def detect_source_type(source: str, source_type: Optional[str] = None) -> str:
     Returns:
         Detected source type: 'video', 'image', or 'url'
     """
-    if source_type:
-        return source_type
-
     # URL detection
     if source.startswith("http://") or source.startswith("https://"):
         return "url"
@@ -138,6 +135,10 @@ def detect_source_type(source: str, source_type: Optional[str] = None) -> str:
             logger.warning(f"File not found: {source}, falling back to extension detection")
     except Exception as e:
         logger.warning(f"Error detecting MIME type: {e}, falling back to extension")
+
+    # Use explicit source_type if provided
+    if source_type:
+        return source_type
 
     # Fallback to extension-based detection
     if source.lower().endswith((".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v")):
@@ -273,6 +274,10 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
     """
     try:
         logger.info(f"Starting job {job_id}")
+
+        # Detect source type (video, image, or url) for metadata
+        source_type = detect_source_type(request.source, request.source_type)
+        logger.info(f"Detected source type: {source_type} for {request.source}")
 
         await cache_manager.update_job_status(
             job_id, status=JobStatus.PROCESSING.value, progress=0.0, stage="requesting_frames"
@@ -494,9 +499,13 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
 
         processing_time = time.time() - start_time
 
-        # Build metadata
+        # Use local path for source if source is a video
+        effective_source = request.source if source_type == "video" else request.original_source or request.source
+
+        # Build metadata (use original_source if provided, otherwise request.source)
         metadata = VideoMetadata(
-            source=request.source,
+            source=effective_source,
+            source_type=source_type,
             total_frames=frame_results["metadata"]["total_frames"],
             frames_processed=total_frames,
             unique_faces=len(faces),

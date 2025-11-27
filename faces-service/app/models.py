@@ -65,6 +65,9 @@ class AnalyzeFacesRequest(BaseModel):
     source_type: Optional[str] = Field(
         default=None, description="Source type: 'video', 'image', 'url' (auto-detected if omitted)"
     )
+    original_source: Optional[str] = Field(
+        default=None, description="Original source path/URL before download (for metadata)"
+    )
     source_id: str = Field(..., description="Scene ID for reference")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     parameters: FaceAnalysisParameters = Field(default_factory=FaceAnalysisParameters)
@@ -171,6 +174,7 @@ class VideoMetadata(BaseModel):
     """Video file metadata"""
 
     source: str
+    source_type: Optional[str] = Field(default=None, description="Source type: 'video', 'image', or 'url'")
     total_frames: int
     frames_processed: int
     unique_faces: int

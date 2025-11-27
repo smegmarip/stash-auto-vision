@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 async def download_url(url: str) -> str:
     """Download URL to temp file in shared volume, return local path"""
+    import mimetypes
+
     temp_dir = "/tmp/downloads"
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -46,15 +48,19 @@ async def download_url(url: str) -> str:
         response = await client.get(url)
         response.raise_for_status()
 
-        # Detect extension from content-type or URL
-        content_type = response.headers.get("content-type", "")
-        if "video/" in content_type:
-            ext = ".mp4"
-        elif "image/" in content_type:
-            ext = ".jpg"
-        else:
-            # Fallback to URL extension
-            ext = os.path.splitext(urlparse(url).path)[1] or ".mp4"
+        # Detect extension from content-type using mimetypes module
+        content_type = response.headers.get("content-type", "").split(";")[0].strip()
+        ext = mimetypes.guess_extension(content_type) if content_type else None
+
+        # Fallback to broad content-type category
+        if not ext:
+            if "video/" in content_type:
+                ext = ".mp4"
+            elif "image/" in content_type:
+                ext = ".jpg"
+            else:
+                # Fallback to URL extension
+                ext = os.path.splitext(urlparse(url).path)[1] or ".mp4"
 
         local_path = os.path.join(temp_dir, f"{file_id}{ext}")
         with open(local_path, "wb") as f:
@@ -242,15 +248,19 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
         request: Analysis request
     """
     downloaded_file = None
+    metadata = None
     try:
         logger.info(f"Starting orchestrated analysis job {job_id}")
+
+        # Preserve original source before potential download
+        original_source = request.source
 
         # Download URL if needed
         parsed = urlparse(request.source)
         is_url = bool(parsed.scheme and parsed.netloc)
         if is_url:
             downloaded_file = await download_url(request.source)
-            request.source = downloaded_file  # Replace with local path
+            request.source = downloaded_file  # Replace with local path for processing
 
         start_time = time.time()
 
@@ -338,6 +348,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
                 faces_request = {
                     "source": request.source,
+                    "original_source": original_source,
                     "source_id": request.source_id,
                     "job_id": f"faces-{job_id}",
                     "parameters": {
@@ -458,7 +469,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
 
             if request.modules.faces.enabled:
-                faces_request = {"source": request.source, "source_id": request.source_id, "job_id": f"faces-{job_id}"}
+                faces_request = {"source": request.source, "original_source": original_source, "source_id": request.source_id, "job_id": f"faces-{job_id}"}
                 tasks.append(call_service("faces", FACES_SERVICE_URL, faces_request))
 
             # Wait for all tasks
@@ -527,10 +538,25 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
 
-        await update_metadata(
-            job_id, metadata, status="failed", stage="failed", message=f"Job failed: {str(e)[:100]}", error=str(e)
-        )
-        metadata["failed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        # Create minimal metadata if it wasn't initialized (error during download)
+        if metadata is None:
+            metadata = {
+                "job_id": job_id,
+                "status": "failed",
+                "progress": 0.0,
+                "stage": "failed",
+                "message": f"Job failed: {str(e)[:100]}",
+                "error": str(e),
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+                "failed_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+                "source_id": request.source_id,
+                "source": request.source,
+            }
+        else:
+            await update_metadata(
+                job_id, metadata, status="failed", stage="failed", message=f"Job failed: {str(e)[:100]}", error=str(e)
+            )
+            metadata["failed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
         await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
     finally:
