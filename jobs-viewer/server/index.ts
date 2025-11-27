@@ -47,6 +47,39 @@ app.use('/api/frames', createProxyMiddleware({
   }
 }))
 
+// Proxy external media to bypass CORS (images, videos, etc.)
+app.get('/api/proxy', async (req, res) => {
+  const url = req.query.url as string
+  if (!url) {
+    return res.status(400).json({ error: 'Missing url parameter' })
+  }
+
+  // Validate URL is external (security)
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return res.status(400).json({ error: 'Invalid URL' })
+  }
+
+  try {
+    const response = await fetch(url)
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Failed to fetch resource' })
+    }
+
+    // Forward content-type and set CORS headers
+    const contentType = response.headers.get('content-type') || 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+
+    // Stream the response
+    const buffer = await response.arrayBuffer()
+    res.send(Buffer.from(buffer))
+  } catch (err) {
+    console.error('[Proxy Error]', err)
+    res.status(500).json({ error: 'Failed to proxy resource' })
+  }
+})
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({

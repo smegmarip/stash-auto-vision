@@ -79,6 +79,26 @@ export async function getJobResults(jobId: string): Promise<JobResults> {
 }
 
 // ============================================
+// URL Helpers
+// ============================================
+
+export function isExternalUrl(path: string): boolean {
+  return path.startsWith('http://') || path.startsWith('https://')
+}
+
+export function getImageUrl(
+  source: string,
+  timestamp: number,
+  options: { enhance?: boolean } = {}
+): string {
+  if (isExternalUrl(source)) {
+    // Route external URLs through proxy to avoid CORS issues
+    return `/api/proxy?url=${encodeURIComponent(source)}`
+  }
+  return getFrameUrl(source, timestamp, options)
+}
+
+// ============================================
 // Frame API
 // ============================================
 
