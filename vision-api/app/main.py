@@ -29,6 +29,7 @@ from .models import (
     ListJobsResponse,
 )
 from .cache_manager import CacheManager
+from .image_utils import normalize_image_if_needed, is_image_file
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -261,6 +262,17 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
         if is_url:
             downloaded_file = await download_url(request.source)
             request.source = downloaded_file  # Replace with local path for processing
+
+        # Normalize image EXIF orientation if needed
+        if is_image_file(request.source):
+            normalized_path, was_normalized = normalize_image_if_needed(
+                request.source,
+                output_dir="/tmp/downloads",
+                job_id=job_id
+            )
+            if was_normalized:
+                logger.info(f"Using EXIF-normalized image: {normalized_path}")
+                request.source = normalized_path
 
         start_time = time.time()
 

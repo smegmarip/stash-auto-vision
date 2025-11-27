@@ -40,6 +40,7 @@ from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
 from .recognition_manager import RecognitionManager
 from .frame_client import FrameServerClient
+from .image_utils import normalize_image_if_needed
 
 # Environment configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -499,12 +500,9 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
 
         processing_time = time.time() - start_time
 
-        # Use local path for source if source is a video
-        effective_source = request.source if source_type == "video" else request.original_source or request.source
-
         # Build metadata (use original_source if provided, otherwise request.source)
         metadata = VideoMetadata(
-            source=effective_source,
+            source=request.source,
             source_type=source_type,
             total_frames=frame_results["metadata"]["total_frames"],
             frames_processed=total_frames,
@@ -549,6 +547,17 @@ async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: Backgrou
     try:
         if not os.path.exists(request.source):
             raise HTTPException(status_code=404, detail=f"Video not found: {request.source}")
+
+        # Normalize image EXIF orientation if needed (for direct API calls)
+        source_type = detect_source_type(request.source, request.source_type)
+        if source_type == "image":
+            job_id_for_norm = request.job_id or str(uuid.uuid4())
+            normalized_path, was_normalized = normalize_image_if_needed(
+                request.source, output_dir="/tmp/downloads", job_id=job_id_for_norm
+            )
+            if was_normalized:
+                logger.info(f"Using EXIF-normalized image: {normalized_path}")
+                request.source = normalized_path
 
         # Generate cache key
         params = request.parameters.dict()
