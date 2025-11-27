@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getFrameUrl } from '@/api/client'
+import { getImageUrl } from '@/api/client'
 import { cn } from '@/lib/utils'
 
 interface FrameViewerProps {
@@ -44,7 +44,7 @@ export function FrameViewer({
     return () => observer.disconnect()
   }, [])
 
-  const frameUrl = getFrameUrl(videoPath, timestamp, { enhance })
+  const frameUrl = getImageUrl(videoPath, timestamp, { enhance })
 
   return (
     <div

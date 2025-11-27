@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getFrameUrl } from '@/api/client'
+import { getImageUrl } from '@/api/client'
 import type { BoundingBox } from '@/api/types'
 import { cn } from '@/lib/utils'
 
@@ -74,7 +74,7 @@ export function FaceThumbnail({
       setError(true)
     }
 
-    img.src = getFrameUrl(videoPath, timestamp, { enhance: enhanced })
+    img.src = getImageUrl(videoPath, timestamp, { enhance: enhanced })
   }, [videoPath, timestamp, bbox, size, enhanced])
 
   return (
