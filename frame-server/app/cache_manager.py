@@ -47,9 +47,57 @@ class CacheManager:
             self.redis = None
             logger.info("Disconnected from Redis")
 
+    def _is_temp_file(self, path: str) -> bool:
+        """Check if path is in a temporary directory."""
+        temp_prefixes = ("/tmp/", "/var/tmp/", "/temp/")
+        return any(path.startswith(prefix) for prefix in temp_prefixes)
+
+    def _compute_file_hash(self, file_path: str) -> str:
+        """
+        Compute fast heuristic hash using file size + sampled content.
+
+        Instead of reading entire file, samples:
+        - File size
+        - First 8KB
+        - Last 8KB (if file > 16KB)
+        - Middle 8KB (if file > 32KB)
+
+        This provides uniqueness for virtually all real-world files
+        while avoiding full file reads.
+        """
+        try:
+            file_size = os.path.getsize(file_path)
+            hasher = hashlib.sha256()
+
+            # Include file size in hash
+            hasher.update(str(file_size).encode())
+
+            with open(file_path, "rb") as f:
+                # Always read first 8KB
+                hasher.update(f.read(8192))
+
+                if file_size > 16384:
+                    # Read last 8KB
+                    f.seek(-8192, 2)
+                    hasher.update(f.read(8192))
+
+                if file_size > 32768:
+                    # Read middle 8KB
+                    f.seek(file_size // 2)
+                    hasher.update(f.read(8192))
+
+            return hasher.hexdigest()
+        except Exception as e:
+            logger.warning(f"Failed to compute file hash for {file_path}: {e}")
+            return ""
+
     def generate_cache_key(self, video_path: str, params: Dict[str, Any]) -> str:
         """
         Generate deterministic cache key from video + parameters
+
+        For files in temporary directories (normalized images, downloads),
+        uses content hash instead of path for cache key stability across
+        requests with different temp filenames.
 
         Args:
             video_path: Absolute path to video file
@@ -59,20 +107,29 @@ class CacheManager:
             SHA-256 hash (hex string)
         """
         try:
-            # Get file modification time (invalidates cache if video changes)
-            if os.path.exists(video_path):
-                video_mtime = os.path.getmtime(video_path)
-            else:
+            if not os.path.exists(video_path):
                 logger.warning(f"Video not found for cache key: {video_path}")
-                video_mtime = 0
+                # Fallback to path-based key
+                params_str = json.dumps(params, sort_keys=True)
+                fallback_str = f"{video_path}:{self.module}:{params_str}"
+                return hashlib.sha256(fallback_str.encode()).hexdigest()
 
-            # Sort params keys for deterministic JSON
+            # For temp files, use content hash instead of path
+            # This ensures same content = same cache key regardless of filename
+            if self._is_temp_file(video_path):
+                content_hash = self._compute_file_hash(video_path)
+                if content_hash:
+                    params_str = json.dumps(params, sort_keys=True)
+                    cache_str = f"content:{content_hash}:{self.module}:{params_str}"
+                    cache_key = hashlib.sha256(cache_str.encode()).hexdigest()
+                    logger.debug(f"Using content-based cache key for temp file: {video_path}")
+                    return cache_key
+                # Fall through to path-based if hash failed
+
+            # Standard path + mtime based key for permanent files
+            video_mtime = os.path.getmtime(video_path)
             params_str = json.dumps(params, sort_keys=True)
-
-            # Combine into cache key string
             cache_str = f"{video_path}:{video_mtime}:{self.module}:{params_str}"
-
-            # Hash to fixed-length key
             cache_key = hashlib.sha256(cache_str.encode()).hexdigest()
 
             return cache_key
