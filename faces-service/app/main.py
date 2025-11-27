@@ -40,7 +40,7 @@ from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
 from .recognition_manager import RecognitionManager
 from .frame_client import FrameServerClient
-from .image_utils import normalize_image_if_needed
+from .image_utils import normalize_image_if_needed, get_image_area
 
 # Environment configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -49,6 +49,7 @@ INSIGHTFACE_DEVICE = os.getenv("INSIGHTFACE_DEVICE", "cuda")
 FRAME_SERVER_URL = os.getenv("FRAME_SERVER_URL", "http://frame-server:5001")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+MAX_ENHANCEMENT_PIXELS = int(os.getenv("MAX_ENHANCEMENT_PIXELS", "2073600"))  # 1920*1080
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -81,7 +82,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize face recognizer with recognition manager
     face_recognizer = FaceRecognizer(
-        model_name=INSIGHTFACE_MODEL, device=INSIGHTFACE_DEVICE, recognition_manager=recognition_manager
+        model_name=INSIGHTFACE_MODEL,
+        device=INSIGHTFACE_DEVICE,
+        max_enhancement_pixels=MAX_ENHANCEMENT_PIXELS,
+        recognition_manager=recognition_manager,
     )
     model_info = face_recognizer.get_model_info()
     logger.info(f"Face recognizer initialized: {model_info}")
@@ -378,16 +382,31 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
             if request.parameters.enhancement.enabled:
                 quality = rep_detection["quality"]["composite"]
                 confidence = rep_detection["confidence"]
+                components = rep_detection["quality"]["components"]
+                size_s = components["size"]
+                sharpness_s = components["sharpness"]
+                pose_s = components["pose"]
+                image_area_pixels = get_image_area(frame)
 
-                # Only enhance if:
-                # 1. Quality is between face_min_quality and quality_trigger (worth enhancing)
-                # 2. Confidence is high enough (we're sure it's a face)
-                # 3. Non-sprite extraction (sprites are low-res)
+                # Granular enhancement criteria:
+                # - Size: small but viable (0.25-0.5 = ~100-165px)
+                # - Sharpness: has detail to enhance (>= 0.25)
+                # - Pose: feasible for enhancement (>= 0.5)
+                granular_enhance = size_s >= 0.25 and size_s < 0.5 and sharpness_s >= 0.25 and pose_s >= 0.5
+
+                # Optional composite override (still respects sharpness/pose gates)
+                quality_trigger = request.parameters.enhancement.quality_trigger
+                composite_override = (
+                    quality_trigger > 0 and quality < quality_trigger and sharpness_s >= 0.25 and pose_s >= 0.5
+                )
+
+                # Final decision
                 should_enhance = (
-                    quality >= request.parameters.face_min_quality
-                    and quality < request.parameters.enhancement.quality_trigger
+                    (granular_enhance or composite_override)
+                    and quality >= request.parameters.face_min_quality
                     and confidence >= request.parameters.face_min_confidence
                     and not request.parameters.use_sprites
+                    and image_area_pixels <= MAX_ENHANCEMENT_PIXELS
                 )
 
                 if should_enhance:

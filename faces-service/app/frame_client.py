@@ -60,7 +60,7 @@ class FrameServerClient:
             }
 
             logger.debug(f"Requesting enhanced frame: {video_path} @ {timestamp}s")
-            response = await self.client.get(url, params=params)
+            response = await self.client.get(url, params=params, timeout=600.0)
             response.raise_for_status()
 
             logger.info(f"Enhanced frame received: {len(response.content)} bytes")

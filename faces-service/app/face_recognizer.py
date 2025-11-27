@@ -15,9 +15,12 @@ if TYPE_CHECKING:
 from .occlusion_detector import OcclusionDetector
 from .face_quality import FaceQuality
 from .recognition_manager import RecognitionManager
+from .image_utils import get_image_area
+import httpx
 
 try:
     from insightface.app import FaceAnalysis
+
     INSIGHTFACE_AVAILABLE = True
 except ImportError:
     INSIGHTFACE_AVAILABLE = False
@@ -34,7 +37,8 @@ class FaceRecognizer:
         model_name: str = "buffalo_l",
         device: str = "cuda",
         det_size: Tuple[int, int] = (640, 640),
-        recognition_manager: Optional[RecognitionManager] = None
+        max_enhancement_pixels: int = 1920 * 1080,
+        recognition_manager: Optional[RecognitionManager] = None,
     ):
         """
         Initialize face recognizer
@@ -51,6 +55,7 @@ class FaceRecognizer:
         self.model_name = model_name
         self.device = device
         self.det_size = det_size
+        self.max_enhancement_pixels = max_enhancement_pixels
         self.recognition_manager = recognition_manager
 
         # If recognition_manager provided, use it; otherwise create single instance
@@ -59,9 +64,11 @@ class FaceRecognizer:
             logger.info(f"FaceRecognizer using RecognitionManager with {len(recognition_manager.apps)} instances")
         else:
             # Initialize single InsightFace instance (backward compatibility)
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
+            providers = (
+                ["CUDAExecutionProvider", "CPUExecutionProvider"] if device == "cuda" else ["CPUExecutionProvider"]
+            )
             self.app = FaceAnalysis(name=model_name, providers=providers)
-            self.app.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size)
+            self.app.prepare(ctx_id=0 if device == "cuda" else -1, det_size=det_size)
             logger.info(f"InsightFace initialized: {model_name} on {device} with det_size={det_size}")
 
         # Initialize occlusion detector
@@ -70,11 +77,7 @@ class FaceRecognizer:
         # Initialize face quality assessor
         self.face_quality = FaceQuality()
 
-    async def detect_faces(
-        self,
-        image: np.ndarray,
-        face_min_confidence: float = 0.9
-    ) -> List[Dict]:
+    async def detect_faces(self, image: np.ndarray, face_min_confidence: float = 0.9) -> List[Dict]:
         """
         Detect faces in image
 
@@ -96,7 +99,9 @@ class FaceRecognizer:
             # Detect faces
             faces = app.get(image)
 
-            logger.debug(f"InsightFace raw detection: found {len(faces)} faces (det_size={det_size}, face_min_confidence={face_min_confidence})")
+            logger.debug(
+                f"InsightFace raw detection: found {len(faces)} faces (det_size={det_size}, face_min_confidence={face_min_confidence})"
+            )
             for i, face in enumerate(faces):
                 logger.debug(f"  Face {i}: confidence={face.det_score:.3f}")
 
@@ -121,48 +126,43 @@ class FaceRecognizer:
                 pose = self._estimate_pose(face)
 
                 # Detect occlusion
-                face_crop = image[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+                face_crop = image[int(bbox[1]) : int(bbox[3]), int(bbox[0]) : int(bbox[2])]
                 occlusion_pred, occlusion_prob = self.occlusion_detector.detect(face_crop)
 
                 # Calculate quality score with components using local FaceQuality
                 quality_data = self.face_quality.calculate_quality(
-                    face=face,
-                    frame=image,
-                    occlusion_data=(occlusion_pred, occlusion_prob)
+                    face=face, frame=image, occlusion_data=(occlusion_pred, occlusion_prob)
                 )
 
                 detection = {
-                    'bbox': {
-                        'x_min': int(bbox[0]),
-                        'y_min': int(bbox[1]),
-                        'x_max': int(bbox[2]),
-                        'y_max': int(bbox[3])
+                    "bbox": {
+                        "x_min": int(bbox[0]),
+                        "y_min": int(bbox[1]),
+                        "x_max": int(bbox[2]),
+                        "y_max": int(bbox[3]),
                     },
-                    'landmarks': {
-                        'left_eye': landmarks[0].tolist(),
-                        'right_eye': landmarks[1].tolist(),
-                        'nose': landmarks[2].tolist(),
-                        'mouth_left': landmarks[3].tolist(),
-                        'mouth_right': landmarks[4].tolist()
+                    "landmarks": {
+                        "left_eye": landmarks[0].tolist(),
+                        "right_eye": landmarks[1].tolist(),
+                        "nose": landmarks[2].tolist(),
+                        "mouth_left": landmarks[3].tolist(),
+                        "mouth_right": landmarks[4].tolist(),
                     },
-                    'embedding': embedding,
-                    'confidence': float(face.det_score),
-                    'quality': quality_data,
-                    'pose': pose,
-                    'demographics': None,
-                    'enhanced': False,  # Default to False, will be set to True if enhanced
-                    'occlusion': {
-                        'occluded': bool(occlusion_pred),
-                        'probability': float(occlusion_prob)
-                    }
+                    "embedding": embedding,
+                    "confidence": float(face.det_score),
+                    "quality": quality_data,
+                    "pose": pose,
+                    "demographics": None,
+                    "enhanced": False,  # Default to False, will be set to True if enhanced
+                    "occlusion": {"occluded": bool(occlusion_pred), "probability": float(occlusion_prob)},
                 }
 
                 # Add demographics if available
-                if hasattr(face, 'age') and hasattr(face, 'gender'):
-                    detection['demographics'] = {
-                        'age': int(face.age),
-                        'gender': 'M' if face.gender == 1 else 'F',
-                        'emotion': 'neutral'  # InsightFace doesn't provide emotion by default
+                if hasattr(face, "age") and hasattr(face, "gender"):
+                    detection["demographics"] = {
+                        "age": int(face.age),
+                        "gender": "M" if face.gender == 1 else "F",
+                        "emotion": "neutral",  # InsightFace doesn't provide emotion by default
                     }
 
                 results.append(detection)
@@ -179,13 +179,13 @@ class FaceRecognizer:
         image: np.ndarray,
         video_path: str,
         timestamp: float,
-        frame_client: 'FrameServerClient',
+        frame_client: "FrameServerClient",
         face_min_confidence: float = 0.9,
         face_min_quality: float = 0.0,
         enhancement_enabled: bool = False,
         enhancement_quality_trigger: float = 0.5,
         enhancement_model: str = "codeformer",
-        enhancement_fidelity_weight: float = 0.5
+        enhancement_fidelity_weight: float = 0.5,
     ) -> List[Dict]:
         """
         Detect faces with optional enhancement for low-quality detections
@@ -211,8 +211,10 @@ class FaceRecognizer:
 
             if not enhancement_enabled:
                 # No enhancement - just filter by quality
-                filtered = [d for d in detections if d['quality']['composite'] >= face_min_quality]
-                logger.info(f"No enhancement: {len(filtered)}/{len(detections)} faces pass quality threshold {face_min_quality}")
+                filtered = [d for d in detections if d["quality"]["composite"] >= face_min_quality]
+                logger.info(
+                    f"No enhancement: {len(filtered)}/{len(detections)} faces pass quality threshold {face_min_quality}"
+                )
                 return filtered
 
             # Enhancement workflow
@@ -220,18 +222,44 @@ class FaceRecognizer:
             final_detections = []
 
             for detection in detections:
-                # Enhancement is ONLY for high-confidence, low-quality faces
-                # This is a corner case: we're confident it's a face, but quality is poor
-                # Use face_min_confidence as both the detection AND enhancement threshold
-                if (detection['confidence'] >= face_min_confidence and
-                    detection['quality']['composite'] < enhancement_quality_trigger):
+                components = detection["quality"]["components"]
+                size_s = components["size"]
+                sharpness_s = components["sharpness"]
+                pose_s = components["pose"]
+                composite = detection["quality"]["composite"]
+                image_area_pixels = get_image_area(image)
+
+                # Granular enhancement criteria:
+                # - Size: small but viable (0.25-0.5 = ~100-165px)
+                # - Sharpness: has detail to enhance (>= 0.25)
+                # - Pose: feasible for enhancement (>= 0.5)
+                granular_enhance = size_s >= 0.25 and size_s < 0.5 and sharpness_s >= 0.25 and pose_s >= 0.5
+
+                # Optional composite override (still respects sharpness/pose gates)
+                composite_override = (
+                    enhancement_quality_trigger > 0
+                    and composite < enhancement_quality_trigger
+                    and sharpness_s >= 0.25
+                    and pose_s >= 0.5
+                )
+
+                # Enhancement decision
+                should_enhance = (
+                    (granular_enhance or composite_override)
+                    and detection["confidence"] >= face_min_confidence
+                    and image_area_pixels <= self.max_enhancement_pixels
+                )
+
+                if should_enhance:
                     needs_enhancement.append(detection)
-                elif detection['quality']['composite'] >= face_min_quality:
+                elif composite >= face_min_quality:
                     # Quality is already good enough (already marked as enhanced=False)
                     final_detections.append(detection)
                 # Else: low confidence and/or low quality - skip entirely
 
-            logger.info(f"Enhancement: {len(needs_enhancement)} high-confidence low-quality faces (conf>={face_min_confidence}, quality<{enhancement_quality_trigger}), {len(final_detections)} already good")
+            logger.info(
+                f"Enhancement: {len(needs_enhancement)} faces meet criteria (size 0.25-0.5, sharpness>=0.25, pose>=0.5), {len(final_detections)} already good"
+            )
 
             # Enhance frame if needed
             if needs_enhancement:
@@ -241,15 +269,12 @@ class FaceRecognizer:
                     model=enhancement_model,
                     fidelity_weight=enhancement_fidelity_weight,
                     output_format="jpeg",
-                    quality=95
+                    quality=95,
                 )
 
                 if enhanced_frame_data:
                     # Decode enhanced frame
-                    enhanced_image = cv2.imdecode(
-                        np.frombuffer(enhanced_frame_data, np.uint8),
-                        cv2.IMREAD_COLOR
-                    )
+                    enhanced_image = cv2.imdecode(np.frombuffer(enhanced_frame_data, np.uint8), cv2.IMREAD_COLOR)
 
                     if enhanced_image is not None:
                         # Re-run detection on enhanced frame
@@ -265,9 +290,9 @@ class FaceRecognizer:
 
                         # Match enhanced detections to original (by bbox overlap)
                         for enhanced in enhanced_detections:
-                            if enhanced['quality']['composite'] >= face_min_quality:
+                            if enhanced["quality"]["composite"] >= face_min_quality:
                                 # Mark as enhanced
-                                enhanced['enhanced'] = True
+                                enhanced["enhanced"] = True
                                 final_detections.append(enhanced)
                                 logger.info(
                                     f"Enhanced face accepted: "
@@ -290,7 +315,7 @@ class FaceRecognizer:
         except Exception as e:
             logger.error(f"Error in detect_and_enhance_faces: {e}", exc_info=True)
             # Fallback to original detections with quality filtering
-            filtered = [d for d in detections if d['quality']['composite'] >= face_min_quality]
+            filtered = [d for d in detections if d["quality"]["composite"] >= face_min_quality]
             return filtered
 
     def _estimate_pose(self, face) -> str:
@@ -305,7 +330,7 @@ class FaceRecognizer:
         """
         try:
             # Use native InsightFace pose angles if available
-            if hasattr(face, 'pose'):
+            if hasattr(face, "pose"):
                 pitch, yaw, roll = face.pose  # [pitch, yaw, roll] in degrees
 
                 # Categorize based on yaw (left/right turn) and roll (head tilt)
@@ -375,12 +400,7 @@ class FaceRecognizer:
             logger.debug(f"Error in geometric pose estimation: {e}")
             return "front"
 
-
-    def cluster_faces(
-        self,
-        detections: List[Dict],
-        similarity_threshold: float = 0.6
-    ) -> Dict[str, List[int]]:
+    def cluster_faces(self, detections: List[Dict], similarity_threshold: float = 0.6) -> Dict[str, List[int]]:
         """
         Cluster face detections by embedding similarity
 
@@ -398,7 +418,7 @@ class FaceRecognizer:
         next_face_id = 0
 
         for idx, detection in enumerate(detections):
-            embedding = np.array(detection['embedding'])
+            embedding = np.array(detection["embedding"])
 
             # Find matching cluster
             matched = False
@@ -406,7 +426,7 @@ class FaceRecognizer:
             for face_id, detection_indices in clusters.items():
                 # Get representative embedding (highest quality detection in cluster)
                 rep_idx = detection_indices[0]
-                rep_embedding = np.array(detections[rep_idx]['embedding'])
+                rep_embedding = np.array(detections[rep_idx]["embedding"])
 
                 # Calculate cosine similarity
                 similarity = self._cosine_similarity(embedding, rep_embedding)
@@ -449,11 +469,7 @@ class FaceRecognizer:
 
         return float(similarity)
 
-    def get_representative_detection(
-        self,
-        detections: List[Dict],
-        indices: List[int]
-    ) -> int:
+    def get_representative_detection(self, detections: List[Dict], indices: List[int]) -> int:
         """
         Get index of best quality detection from cluster
 
@@ -469,10 +485,10 @@ class FaceRecognizer:
 
         # Find detection with highest quality score
         best_idx = indices[0]
-        best_quality = detections[best_idx]['quality']['composite']
+        best_quality = detections[best_idx]["quality"]["composite"]
 
         for idx in indices[1:]:
-            quality = detections[idx]['quality']['composite']
+            quality = detections[idx]["quality"]["composite"]
             if quality > best_quality:
                 best_quality = quality
                 best_idx = idx
@@ -495,7 +511,7 @@ class FaceRecognizer:
                 response = await client.get(url, timeout=30.0)
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with open(output_path, "wb") as f:
                     f.write(response.content)
 
                 return True
@@ -520,7 +536,7 @@ class FaceRecognizer:
                 "num_instances": len(self.recognition_manager.apps),
                 "embedding_size": 512,
                 "insightface_available": INSIGHTFACE_AVAILABLE,
-                "multi_size_enabled": True
+                "multi_size_enabled": True,
             }
         else:
             # Single instance mode
@@ -530,5 +546,5 @@ class FaceRecognizer:
                 "det_size": self.det_size,
                 "embedding_size": 512,
                 "insightface_available": INSIGHTFACE_AVAILABLE,
-                "multi_size_enabled": False
+                "multi_size_enabled": False,
             }
