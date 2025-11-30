@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
     curl \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -15,12 +18,6 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY app/ /app/app/
-
-# Create model directory
-RUN mkdir -p /app/models
 
 # Expose port
 EXPOSE 5004

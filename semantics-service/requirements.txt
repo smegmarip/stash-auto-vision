@@ -1,12 +1,15 @@
-# Phase 1: Stub mode (minimal dependencies)
+# Core dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 redis==5.0.1
 pydantic==2.5.0
 httpx==0.25.2
 
-# Phase 2: Uncomment when implementing
-# torch==2.1.1
-# transformers==4.35.2
-# pillow==10.1.0
-# numpy==1.24.3
+# Phase 2: CLIP/SigLIP implementation
+torch==2.1.1
+transformers==4.37.0  # Minimum version for SigLIP support
+sentencepiece==0.1.99  # Required for SigLIP tokenization
+protobuf==3.20.3  # Required for SigLIP tokenizer
+pillow==10.1.0
+numpy==1.24.3
+opencv-python==4.8.1.78
