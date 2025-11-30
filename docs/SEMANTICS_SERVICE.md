@@ -3,33 +3,37 @@
 **Service:** Semantics Service
 **Port:** 5004
 **Path:** `/semantics`
-**Status:** Phase 2 - STUB (Not Yet Implemented)
+**Status:** Phase 2 - IMPLEMENTED
 **Version:** 1.0.0
 
 ---
 
 ## Summary
 
-The Semantics Service is a planned microservice that will provide CLIP-based scene understanding, semantic tagging, and zero-shot classification capabilities for video content. This service is currently stubbed and returns "not_implemented" status for all endpoints.
+The Semantics Service provides SigLIP-based scene understanding, semantic tagging, and zero-shot classification capabilities for video content. This service uses Google's SigLIP (Sigmoid Loss for Language-Image Pre-Training) model for high-quality vision-language understanding.
 
-### Planned Features (Phase 2)
+### Implemented Features
 
-- **CLIP Integration:** Vision-language model (ViT-B/32 or ViT-L/14) for scene understanding
-- **Scene Classification:** Automatic categorization (indoor/outdoor, setting types, content types)
-- **Zero-Shot Tagging:** Custom text prompts for flexible classification
-- **Semantic Search:** Natural language queries to find scenes ("find scenes with two people talking in a kitchen")
+- **SigLIP Integration:** Google's siglip-base-patch16-224 model (768-D embeddings)
+- **Zero-Shot Classification:** Custom text prompts for flexible scene classification
 - **Scene Embeddings:** Multi-modal embeddings for similarity-based search
 - **Custom Tag Lists:** User-defined classification categories
+- **Batch Processing:** Configurable batch sizes for efficient GPU/CPU inference
+- **Scene-Aware Analysis:** Integration with scenes-service for scene boundary detection
+- **Content-Based Caching:** Redis-based caching with SHA-256 keys
+- **Memory Management:** Explicit cleanup to prevent GPU memory crashes
 
-### Current Status
+### Scene Integration
 
-This service is a **stub implementation** awaiting Phase 2 development. All endpoints return HTTP 202 (Accepted) or 501 (Not Implemented) with appropriate status messages. The health check endpoint returns "healthy" with `implemented: false` to indicate stub status.
+The Semantics Service supports two methods for scene-aware analysis:
 
-Phase 2 implementation is planned after Phase 1 (face recognition and scene detection) is complete. The service architecture is designed and API contracts are defined, but the core CLIP model integration and inference logic have not yet been implemented.
+1. **Vision-API Orchestration (Primary):** When both `scenes` and `semantics` modules are enabled in vision-api, scene boundaries are automatically passed from scenes-service to semantics-service. This enables per-scene semantic summaries without duplicate scene detection.
+
+2. **Standalone with scenes_job_id (Optional):** The service can be called directly with a `scenes_job_id` parameter to fetch pre-computed scene boundaries from scenes-service. This allows re-running semantics with different parameters without re-detecting scenes.
 
 ### Integration with Vision API
 
-When implemented, the Semantics Service will integrate into the Vision API's multi-module analysis workflow. Clients can enable semantic analysis by setting `modules.semantics.enabled: true` in the `/vision/analyze` request. The service will process frames extracted by the Frame Server and return semantic tags, scene classifications, and embeddings for each frame or scene boundary.
+The Semantics Service integrates into the Vision API's multi-module analysis workflow. Clients can enable semantic analysis by setting `modules.semantics.enabled: true` in the `/vision/analyze` request. The service processes frames extracted by the Frame Server and returns semantic tags, scene classifications, and embeddings for each frame. When scenes are detected, the service automatically generates per-scene semantic summaries with dominant tags.
 
 ---
 
@@ -144,35 +148,45 @@ components:
   schemas:
     AnalyzeSemanticsRequest:
       type: object
-      description: Request schema for semantic analysis (PLANNED)
+      description: Request schema for semantic analysis
+      required:
+        - source
+        - source_id
       properties:
-        video_path:
+        source:
           type: string
           description: Absolute path to video file
           example: "/media/videos/scene.mp4"
         source_id:
           type: string
           description: Scene identifier for reference
+        job_id:
+          type: string
+          description: Parent job ID for tracking (optional)
         frame_extraction_job_id:
           type: string
           description: Job ID from Frame Server (reuse extracted frames)
+        scenes_job_id:
+          type: string
+          description: Job ID from Scenes Service (fetch pre-computed scene boundaries)
         parameters:
           $ref: "#/components/schemas/SemanticsParameters"
 
     SemanticsParameters:
       type: object
-      description: Configuration parameters for semantic analysis (PLANNED)
+      description: Configuration parameters for semantic analysis
       properties:
         model:
           type: string
-          enum: [clip-vit-b-32, clip-vit-l-14]
-          default: clip-vit-b-32
-          description: CLIP model variant
+          default: google/siglip-base-patch16-224
+          description: SigLIP/CLIP model variant (HuggingFace model ID)
+          example: google/siglip-base-patch16-224
         classification_tags:
           type: array
           items:
             type: string
           description: Predefined tags for zero-shot classification
+          example: ["indoor", "outdoor", "conversation", "action"]
           example:
             [
               "indoor",
@@ -205,6 +219,31 @@ components:
           maximum: 20
           default: 5
           description: Maximum number of tags to return per frame
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 128
+          default: 32
+          description: Batch size for inference
+        sampling_interval:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 10.0
+          default: 2.0
+          description: Frame sampling interval in seconds
+        scene_boundaries:
+          type: array
+          items:
+            type: object
+            properties:
+              start_timestamp:
+                type: number
+                format: float
+              end_timestamp:
+                type: number
+                format: float
+          description: Scene boundaries from scenes-service (start_timestamp, end_timestamp)
 
     SemanticsJobResponse:
       type: object
@@ -394,85 +433,99 @@ components:
 
 ## Functional Details
 
-### Current Implementation: Stub Service
+### Current Implementation: Fully Functional
 
-The Semantics Service currently consists of a minimal FastAPI application that:
+The Semantics Service is a fully implemented service with SigLIP integration. It provides:
 
-1. **Accepts requests** at all planned endpoints
-2. **Returns stub responses** indicating not_implemented status
-3. **Provides health checks** with `implemented: false` flag
-4. **Does not process** any actual semantic analysis
+1. **Zero-shot classification** using Google's SigLIP model
+2. **Scene-aware analysis** with integration to scenes-service
+3. **Multi-modal embeddings** (768-D) for similarity search
+4. **Content-based caching** via Redis
+5. **Asynchronous job processing** with progress tracking
 
-**Stub Endpoints:**
+**Active Endpoints:**
 
 ```python
 # POST /analyze
-# Returns: {"job_id": "semantics-stub-{timestamp}", "status": "not_implemented"}
+# Returns: {"job_id": "uuid", "status": "queued|processing|completed"}
 
 # GET /jobs/{job_id}/status
-# Returns: {"status": "not_implemented", "message": "...Phase 2..."}
+# Returns: {"status": "...", "progress": 0.0-1.0, "stage": "..."}
 
 # GET /jobs/{job_id}/results
-# Returns: HTTP 501 with NotImplementedError
+# Returns: Full semantics results with frames, tags, embeddings, scene summaries
 
 # GET /health
-# Returns: {"status": "healthy", "implemented": false, "phase": 2}
+# Returns: {"status": "healthy", "implemented": true, "model": "google/siglip-base-patch16-224"}
 ```
 
-### Planned Implementation (Phase 2)
+### Implementation Details
 
-When Phase 2 development begins, the service will be upgraded with full CLIP integration.
+#### SigLIP Model Integration
 
-#### CLIP Model Integration
+**Model:**
 
-**Model Selection:**
-
-- **Primary:** OpenAI CLIP (ViT-B/32) - 224x224 input, 512-D embeddings
-- **Optional:** OpenCLIP (ViT-L/14) - Higher accuracy, 768-D embeddings
-- **Library:** `transformers` (Hugging Face) or `open_clip` (OpenCLIP)
+- **Current:** Google SigLIP (siglip-base-patch16-224) - 224x224 input, 768-D embeddings
+- **Library:** `transformers` (Hugging Face)
+- **Advantages:** Better zero-shot performance than CLIP, sigmoid loss for improved calibration
 
 **GPU Acceleration:**
 
 ```python
 import torch
-from transformers import CLIPProcessor, CLIPModel
+from transformers import AutoProcessor, AutoModel
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
+processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
 ```
 
 #### Processing Pipeline
 
 ```
-1. Receive Request
-   ├── Accept video_path or frame_extraction_job_id
-   └── Parse parameters (tags, prompts, model selection)
+0. Fetch Scene Boundaries (Optional)
+   ├── IF scenes_job_id provided:
+   │   ├── Call scenes-service to get pre-computed boundaries
+   │   └── Use for scene-aware aggregation
+   └── ELSE IF scene_boundaries in parameters:
+       └── Use provided boundaries (from vision-api orchestration)
 
-2. Frame Acquisition
+1. Frame Extraction
    ├── IF frame_extraction_job_id provided:
    │   └── Retrieve frames from Frame Server results
    └── ELSE:
-       └── Request frame extraction from Frame Server
+       └── Request frame extraction (sampling_interval default: 2.0s)
 
-3. CLIP Inference (Per Frame)
-   ├── Preprocess frame: Resize to 224x224, normalize
-   ├── Generate image embedding (512-D for ViT-B/32)
-   ├── IF classification_tags provided:
+2. Load Frame Images
+   └── Batch load frames from Frame Server
+
+3. SigLIP Classification (Batched)
+   ├── IF classification_tags or custom_prompts provided:
+   │   ├── Process frames in batches (default: 32)
+   │   ├── Generate image embeddings (768-D)
    │   ├── Encode text prompts
    │   ├── Calculate image-text similarity scores
-   │   └── Assign tags above min_confidence threshold
-   └── IF custom_prompts provided:
-       └── Zero-shot classification with user prompts
+   │   └── Assign tags above min_confidence threshold (default: 0.5)
+   └── Return top_k tags per frame (default: 5)
 
-4. Result Aggregation
-   ├── Collect per-frame tags and embeddings
-   ├── Generate scene summary (dominant tags, activities)
-   ├── Detect setting/scene changes
-   └── Format results as JSON
+4. Generate Embeddings (Optional)
+   ├── IF generate_embeddings=true (default):
+   │   └── Extract 768-D embeddings for similarity search
+   └── Clean up tensors/PIL images to prevent memory leaks
 
-5. Return Results
-   └── Store in Redis, return job_id
+5. Aggregate Scene Summaries (Optional)
+   ├── IF scene_boundaries provided:
+   │   ├── Group frames by scene
+   │   ├── Calculate dominant tags per scene (frequency-based)
+   │   ├── Compute average confidence per scene
+   │   └── Return scene summaries with timestamps
+   └── ELSE:
+       └── Return frame-level results only
+
+6. Return Results
+   ├── Store in Redis with content-based cache key
+   ├── Return job_id
+   └── Clean up memory (gc.collect(), torch.cuda.empty_cache())
 ```
 
 #### Zero-Shot Classification
@@ -600,19 +653,19 @@ CACHE_TTL=3600                    # Result cache TTL
 LOG_LEVEL=INFO
 ```
 
-### Integration with Vision API (Planned)
+### Integration with Vision API
 
 Enable semantic analysis in multi-module requests:
 
+**Example 1: Semantics Only**
 ```json
 {
-  "video_path": "/media/videos/scene.mp4",
-  "source_id": "12345",
+  "source": "/media/videos/scene.mp4",
+  "source_id": "test_001",
   "modules": {
     "semantics": {
       "enabled": true,
       "parameters": {
-        "model": "clip-vit-b-32",
         "classification_tags": ["indoor", "outdoor", "kitchen", "conversation"],
         "custom_prompts": ["two people talking"],
         "min_confidence": 0.5,
@@ -623,12 +676,55 @@ Enable semantic analysis in multi-module requests:
 }
 ```
 
+**Example 2: Scenes + Semantics (Scene-Aware Analysis)**
+```json
+{
+  "source": "/media/videos/scene.mp4",
+  "source_id": "test_002",
+  "modules": {
+    "scenes": {
+      "enabled": true,
+      "parameters": {
+        "threshold": 27.0
+      }
+    },
+    "semantics": {
+      "enabled": true,
+      "parameters": {
+        "classification_tags": ["indoor", "outdoor", "bedroom", "kitchen", "conversation", "action"],
+        "min_confidence": 0.5
+      }
+    }
+  }
+}
+```
+
 Vision API will:
 
-1. Extract frames via Frame Server
-2. Submit frames to Semantics Service
-3. Aggregate results with faces/scenes data
-4. Return combined analysis
+1. Detect scene boundaries via Scenes Service
+2. Pass boundaries to Semantics Service
+3. Semantics generates per-scene semantic summaries
+4. Return combined results with scene-level dominant tags
+
+**Example 3: Standalone with scenes_job_id**
+```bash
+# First, detect scenes
+curl -X POST http://localhost:5002/analyze \
+  -d '{"source": "/media/videos/scene.mp4", "source_id": "test_003"}'
+# Returns: {"job_id": "scenes-abc123"}
+
+# Then, run semantics with scene boundaries
+curl -X POST http://localhost:5004/analyze \
+  -d '{
+    "source": "/media/videos/scene.mp4",
+    "source_id": "test_003",
+    "scenes_job_id": "scenes-abc123",
+    "parameters": {
+      "classification_tags": ["bedroom", "kitchen", "office"],
+      "min_confidence": 0.6
+    }
+  }'
+```
 
 ### Use Cases (Phase 2 Goals)
 
@@ -658,5 +754,5 @@ Vision API will:
 
 ---
 
-**Last Updated:** 2025-11-09
-**Status:** Stub Service - Phase 2 Implementation Pending
+**Last Updated:** 2025-11-29
+**Status:** Phase 2 - Fully Implemented with Scene Integration

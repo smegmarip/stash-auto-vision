@@ -8,7 +8,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ## Project Overview
 
-Stash Auto Vision is a standalone microservices platform that processes video content to extract faces, detect scene boundaries, and (future) provide semantic classification and object detection. It serves as the video processing backend for stash-compreface-plugin and future advanced scene analysis features.
+Stash Auto Vision is a standalone microservices platform that processes video content to extract faces, detect scene boundaries, provide semantic classification, and (future) object detection. It serves as the video processing backend for stash-compreface-plugin and future advanced scene analysis features.
 
 ### Core Principles
 
@@ -20,7 +20,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 ### Key Capabilities
 
-**Phase 1 (Implemented):**
+**Phase 1 (Complete ✅):**
 
 - Video face detection and recognition (InsightFace buffalo_l, 99.86% accuracy)
 - Optional face enhancement via CodeFormer/GFPGAN (production-grade quality)
@@ -32,9 +32,17 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Content-based caching with SHA-256 keys
 - Asynchronous job processing with progress tracking
 
+**Phase 2 (Complete ✅):**
+
+- SigLIP model integration (google/siglip-base-patch16-224, 768-D embeddings)
+- Zero-shot scene classification with custom tags and prompts
+- Multi-modal embedding generation for similarity search
+- Scene-aware semantic analysis with vision-api orchestration
+- Standalone mode with scenes_job_id parameter
+- Memory-optimized batch processing
+
 **Future Phases:**
 
-- **Phase 2:** CLIP-based scene understanding and semantic tagging
 - **Phase 3:** YOLO-World open-vocabulary object detection
 - **Phase 4:** Multi-modal search and advanced tagging
 - **Phase 5:** stash-compreface-plugin integration
@@ -156,20 +164,20 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 ## Implementation Status
 
-### Phase 1: Complete ✅
+### Phase 1 & 2: Complete ✅
 
-**Implemented Services (6/6):**
+**Implemented Services (7/7):**
 
 - [x] redis - Cache and job queue
 - [x] dependency-checker - Health orchestration
 - [x] frame-server - GPU-accelerated frame extraction
 - [x] scenes-service - PySceneDetect integration
 - [x] faces-service - InsightFace recognition
+- [x] semantics-service - SigLIP semantic classification
 - [x] vision-api - Main orchestrator
 
-**Stubbed Services (2/2):**
+**Stubbed Services (1/2):**
 
-- [x] semantics-service - Returns "not_implemented" status
 - [x] objects-service - Returns "not_implemented" status
 
 **Core Features:**
@@ -195,7 +203,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] Sequential workflow validated
 - [x] Test data generated from Charades dataset
 
-### Phase 2-5: Planned 🔄
+### Phase 3-5: Planned 🔄
 
 See [Future Work](#future-work) section below.
 
@@ -228,25 +236,34 @@ See [Future Work](#future-work) section below.
 
 ---
 
-## Future Work
+## Completed Work
 
-### Phase 2: Semantic Analysis (CLIP Integration)
+### Phase 2: Semantic Analysis (SigLIP Integration) ✅
 
-**Duration:** 2-3 days
+**Status:** COMPLETE (2025-11-29)
 
-**Deliverables:**
+**Implemented:**
 
-- CLIP model integration (ViT-B/32)
-- Scene classification with predefined tags
-- Zero-shot tagging with custom prompts
+- SigLIP model integration (google/siglip-base-patch16-224, 768-D embeddings)
+- Scene classification with predefined tags and custom prompts
+- Zero-shot tagging with flexible text prompts
 - Scene embedding generation for similarity search
 - Integration with scenes-service for boundary-aware processing
+  - Vision-API orchestration (primary method)
+  - Standalone scenes_job_id parameter (optional method)
+- Memory-optimized batch processing with explicit cleanup
+- Content-based caching via Redis
 
-**Use Cases:**
+**Achieved Use Cases:**
 
-- Auto-tag scenes by content type (indoor, outdoor, intimate, action, etc.)
-- Semantic search: "find scenes with two people talking in a kitchen"
-- Similar scene finder based on embedding distance
+- Auto-tag scenes by content type (indoor, outdoor, conversation, action, etc.)
+- Semantic search capability with multi-modal embeddings
+- Per-scene semantic summaries with dominant tags
+- Scene-aware frame sampling and aggregation
+
+---
+
+## Future Work
 
 ### Phase 3: Object Detection (YOLO-World Integration)
 
@@ -550,6 +567,6 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 ---
 
-**Status:** Phase 1 Complete - Ready for Production Testing
-**Version:** 1.0.0
-**Last Updated:** 2025-11-09
+**Status:** Phase 1 & 2 Complete - Semantic Analysis Integrated
+**Version:** 2.0.0
+**Last Updated:** 2025-11-29
