@@ -17,7 +17,7 @@ class CacheManager:
     """Manages Redis caching and cross-service job aggregation"""
 
     # Service namespaces to query for job listing
-    SERVICE_NAMESPACES = ["vision", "faces", "scenes"]
+    SERVICE_NAMESPACES = ["vision", "faces", "scenes", "semantics", "objects"]
 
     # Priority order for deduplication (lower = higher priority)
     SERVICE_PRIORITY = {"vision": 0, "faces": 1, "scenes": 2}

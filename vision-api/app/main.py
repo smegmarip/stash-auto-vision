@@ -416,18 +416,25 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                     job_id, metadata, message=f"Face recognition complete ({face_count} unique faces found)"
                 )
 
-            # Step 3: Semantics (stub)
+            # Step 3: Semantics
             if request.modules.semantics.enabled:
-                logger.info("Running semantics analysis (stubbed)...")
+                logger.info("Running semantics analysis...")
                 await update_metadata(job_id, metadata, stage="semantic_analysis", message="Analyzing scene semantics")
 
+                semantics_params = request.modules.semantics.parameters or {}
                 semantics_request = {
                     "source": request.source,
                     "source_id": request.source_id,
                     "parameters": {
-                        "semantics_min_confidence": request.modules.semantics.parameters.get(
-                            "semantics_min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5"))
-                        )
+                        "model": semantics_params.get("model", os.getenv("CLIP_MODEL", "google/siglip-base-patch16-224")),
+                        "classification_tags": semantics_params.get("classification_tags", None),
+                        "custom_prompts": semantics_params.get("custom_prompts", None),
+                        "generate_embeddings": semantics_params.get("generate_embeddings", True),
+                        "min_confidence": semantics_params.get("min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5"))),
+                        "top_k_tags": semantics_params.get("top_k_tags", 5),
+                        "batch_size": semantics_params.get("batch_size", int(os.getenv("SEMANTICS_BATCH_SIZE", "32"))),
+                        "sampling_interval": semantics_params.get("sampling_interval", 2.0),
+                        "scene_boundaries": scene_boundaries if scene_boundaries else None
                     },
                 }
 

@@ -11,7 +11,7 @@ info:
     - Frame Server (port 5001) - Frame extraction and caching
     - Scenes Service (port 5002) - Scene boundary detection
     - Faces Service (port 5003) - Face detection, recognition, and quality assessment
-    - Semantics Service (port 5004) - CLIP-based scene understanding (stub - Phase 2)
+    - Semantics Service (port 5004) - SigLIP/CLIP-based scene understanding (Phase 2 implemented)
     - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
     - Vision API (port 5010) - Orchestration and rollup endpoint
 
@@ -40,7 +40,7 @@ servers:
   - url: http://localhost:5003
     description: Faces Service
   - url: http://localhost:5004
-    description: Semantics Service (Stub)
+    description: Semantics Service (Phase 2 - SigLIP/CLIP)
   - url: http://localhost:5005
     description: Objects Service (Stub)
 
@@ -54,7 +54,7 @@ tags:
   - name: faces
     description: Face detection, recognition, and quality assessment
   - name: semantics
-    description: Semantic scene understanding (stub)
+    description: Semantic scene understanding with SigLIP/CLIP (Phase 2)
   - name: objects
     description: Object detection and classification (stub)
   - name: health
@@ -539,6 +539,73 @@ paths:
         '409':
           description: Job not completed yet
 
+  # ==================== SEMANTICS SERVICE ====================
+
+  /analyze:
+    post:
+      tags: [semantics]
+      summary: Analyze scene semantics with CLIP/SigLIP
+      operationId: analyzeSemantics
+      servers:
+        - url: http://localhost:5004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeSemanticsRequest'
+      responses:
+        '202':
+          description: Analysis job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticsJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/status:
+    get:
+      tags: [semantics]
+      summary: Get semantics analysis job status
+      operationId: getSemanticsAnalysisStatus
+      servers:
+        - url: http://localhost:5004
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticsJobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/results:
+    get:
+      tags: [semantics]
+      summary: Get semantics analysis results
+      operationId: getSemanticsAnalysisResults
+      servers:
+        - url: http://localhost:5004
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticsJobResults'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Job not completed yet
+
 components:
   parameters:
     JobId:
@@ -627,10 +694,10 @@ components:
                 enabled:
                   type: boolean
                   default: false
-                  description: Enable CLIP semantic analysis (Phase 2 - not implemented)
+                  description: Enable CLIP/SigLIP semantic analysis (Phase 2)
                 parameters:
-                  type: object
-                  description: Semantic analysis parameters (Phase 2)
+                  allOf:
+                    - $ref: '#/components/schemas/SemanticsParameters'
             objects:
               type: object
               properties:
@@ -1524,3 +1591,254 @@ components:
             - $ref: '#/components/schemas/EnhancementParameters'
           nullable: true
           description: Frame enhancement settings used (null if enhancement was disabled)
+
+    # ==================== SEMANTICS SERVICE SCHEMAS ====================
+
+    AnalyzeSemanticsRequest:
+      type: object
+      required:
+        - source
+        - source_id
+      properties:
+        source:
+          type: string
+          description: Video path or URL
+        source_id:
+          type: string
+          description: Scene identifier for reference
+        job_id:
+          type: string
+          nullable: true
+          description: Parent job ID for tracking
+        frame_extraction_job_id:
+          type: string
+          nullable: true
+          description: Job ID from Frame Server (reuse extracted frames)
+        parameters:
+          $ref: '#/components/schemas/SemanticsParameters'
+
+    SemanticsParameters:
+      type: object
+      properties:
+        model:
+          type: string
+          default: google/siglip-base-patch16-224
+          description: CLIP/SigLIP model variant
+        classification_tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Predefined tags for zero-shot classification
+        custom_prompts:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Custom text prompts for zero-shot classification
+        generate_embeddings:
+          type: boolean
+          default: true
+          description: Generate multi-modal embeddings for similarity search
+        min_confidence:
+          type: number
+          default: 0.5
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum confidence threshold for tag assignment
+        top_k_tags:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 20
+          description: Maximum number of tags to return per frame
+        batch_size:
+          type: integer
+          default: 32
+          minimum: 1
+          maximum: 128
+          description: Batch size for inference
+        sampling_interval:
+          type: number
+          default: 2.0
+          minimum: 0.1
+          maximum: 10.0
+          description: Frame sampling interval in seconds
+        scene_boundaries:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              start_timestamp:
+                type: number
+              end_timestamp:
+                type: number
+          description: Scene boundaries from scenes-service
+
+    SemanticsJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, not_implemented]
+        message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        cache_hit:
+          type: boolean
+          default: false
+          description: Whether results were retrieved from cache
+
+    SemanticsJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, not_implemented]
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.0
+        stage:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    SemanticsJobResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        source_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, not_implemented]
+        frames:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameSemantics'
+        scene_summaries:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/SceneSemanticSummary'
+        metadata:
+          $ref: '#/components/schemas/SemanticsMetadata'
+
+    FrameSemantics:
+      type: object
+      properties:
+        frame_index:
+          type: integer
+        timestamp:
+          type: number
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticTag'
+        embedding:
+          type: array
+          nullable: true
+          items:
+            type: number
+          description: Multi-modal embedding (512-D for SigLIP-B)
+        scene_classification:
+          $ref: '#/components/schemas/SceneClassification'
+          nullable: true
+
+    SemanticTag:
+      type: object
+      properties:
+        tag:
+          type: string
+          description: Tag label
+        confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Confidence score from CLIP/SigLIP
+        source:
+          type: string
+          enum: [predefined, custom_prompt, zero_shot]
+          description: Tag source type
+
+    SceneClassification:
+      type: object
+      properties:
+        setting:
+          type: string
+          nullable: true
+          description: Scene setting (indoor/outdoor)
+        location:
+          type: string
+          nullable: true
+          description: Location type (kitchen, bedroom, etc.)
+        activity:
+          type: string
+          nullable: true
+          description: Primary activity
+
+    SceneSemanticSummary:
+      type: object
+      properties:
+        start_timestamp:
+          type: number
+        end_timestamp:
+          type: number
+        dominant_tags:
+          type: array
+          items:
+            type: string
+          description: Most frequent tags across frames
+        frame_count:
+          type: integer
+        avg_confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+
+    SemanticsMetadata:
+      type: object
+      properties:
+        model:
+          type: string
+        frames_analyzed:
+          type: integer
+        processing_time_seconds:
+          type: number
+        device:
+          type: string
+          description: Device used (cuda or cpu)
+        batch_size:
+          type: integer
+        total_tags_generated:
+          type: integer

@@ -43,7 +43,8 @@ services:
         - |
           curl -f http://frame-server:5001/health &&
           curl -f http://scenes-service:5002/health &&
-          curl -f http://faces-service:5003/health
+          curl -f http://faces-service:5003/health &&
+          curl -f http://semantics-service:5004/health
       interval: 5s
       timeout: 10s
       retries: 1
@@ -215,6 +216,10 @@ services:
       - ${SERVER_MEDIA_PATH}:/data:ro
       - ./semantics-service/app:/app/app
       - ./semantics-service/models:/app/models
+      - frames_cache:/tmp/frames
+      - sprites_cache:/tmp/sprites
+      - downloads_cache:/tmp/downloads
+      - torch_cache_2:/root/.cache/torch
     networks:
       - vision_network
     depends_on:
@@ -341,6 +346,10 @@ services:
     environment:
       - VISION_API_URL=http://vision-api:5010
       - FRAME_SERVER_URL=http://frame-server:5001
+      - SCENES_SERVICE_URL=http://scenes-service:5002
+      - FACES_SERVICE_URL=http://faces-service:5003
+      - SEMANTICS_SERVICE_URL=http://semantics-service:5004
+      - OBJECTS_SERVICE_URL=http://objects-service:5005
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     networks:
@@ -379,6 +388,7 @@ volumes:
   sprites_cache:
   downloads_cache:
   torch_cache:
+  torch_cache_2:
   enhancement_models:
   codeformer_weights:
   insightface_models:
