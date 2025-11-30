@@ -1,12 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listJobs, getJobStatus, getJobResults } from '@/api/client'
-import type { JobFilters, ListJobsResponse, JobStatusResponse, JobResults } from '@/api/types'
+import { listJobs, countJobs, getJobStatus, getJobResults } from '@/api/client'
+import type { JobFilters, ListJobsResponse, JobCountResponse, JobStatusResponse, JobResults } from '@/api/types'
 
 // Query keys
 export const jobsKeys = {
   all: ['jobs'] as const,
   lists: () => [...jobsKeys.all, 'list'] as const,
   list: (filters: JobFilters) => [...jobsKeys.lists(), filters] as const,
+  counts: () => [...jobsKeys.all, 'count'] as const,
+  count: (filters: Omit<JobFilters, 'limit' | 'offset' | 'include_results'>) => [...jobsKeys.counts(), filters] as const,
   details: () => [...jobsKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobsKeys.details(), id] as const,
   status: (id: string) => [...jobsKeys.detail(id), 'status'] as const,
@@ -19,6 +21,15 @@ export function useJobs(filters: JobFilters = {}) {
     queryKey: jobsKeys.list(filters),
     queryFn: () => listJobs(filters),
     refetchInterval: 5000, // Poll every 5 seconds
+  })
+}
+
+// Hook to fetch job counts
+export function useJobsCount(filters: Omit<JobFilters, 'limit' | 'offset' | 'include_results'> = {}) {
+  return useQuery<JobCountResponse>({
+    queryKey: jobsKeys.count(filters),
+    queryFn: () => countJobs(filters),
+    refetchInterval: 5000, // Poll every 5 seconds to stay in sync
   })
 }
 

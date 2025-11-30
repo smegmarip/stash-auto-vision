@@ -25,6 +25,17 @@ export interface ListJobsResponse {
   offset: number;
 }
 
+export interface JobCountResponse {
+  total: number;
+  by_service: {
+    vision: number;
+    faces: number;
+    scenes: number;
+    semantics: number;
+    objects?: number;
+  };
+}
+
 export interface JobFilters {
   status?: JobStatus;
   service?: ServiceName;

@@ -1,5 +1,6 @@
 import type {
   ListJobsResponse,
+  JobCountResponse,
   JobFilters,
   JobStatusResponse,
   JobResults,
@@ -68,6 +69,11 @@ function buildQueryString(filters: JobFilters): string {
 export async function listJobs(filters: JobFilters = {}): Promise<ListJobsResponse> {
   const queryString = buildQueryString(filters)
   return fetchApi<ListJobsResponse>(`/jobs${queryString}`)
+}
+
+export async function countJobs(filters: Omit<JobFilters, 'limit' | 'offset' | 'include_results'>): Promise<JobCountResponse> {
+  const queryString = buildQueryString(filters)
+  return fetchApi<JobCountResponse>(`/jobs/count${queryString}`)
 }
 
 export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {

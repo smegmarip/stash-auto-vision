@@ -1,4 +1,4 @@
-import { useJobs } from '@/hooks/useJobs'
+import { useJobs, useJobsCount } from '@/hooks/useJobs'
 import { useJobsStore } from '@/store/jobsStore'
 import { JobCard } from './JobCard'
 import { JobFilters } from './JobFilters'
@@ -11,6 +11,16 @@ export function JobList() {
   const { filters, viewMode, setViewMode, nextPage, prevPage } = useJobsStore()
   const { data, isLoading, isFetching, refetch } = useJobs(filters)
 
+  // Fetch job counts for accurate tab counts
+  const { data: counts } = useJobsCount({
+    status: filters.status,
+    service: filters.service,
+    source_id: filters.source_id,
+    source: filters.source,
+    start_date: filters.start_date,
+    end_date: filters.end_date,
+  })
+
   const jobs = data?.jobs || []
   const total = data?.total || 0
   const limit = filters.limit || 20
@@ -20,10 +30,11 @@ export function JobList() {
   const hasNextPage = offset + limit < total
   const hasPrevPage = offset > 0
 
-  // Filter jobs by service for per-service view
+  // Filter jobs by service for per-service view (current page only)
   const facesJobs = jobs.filter((j) => j.service === 'faces')
   const scenesJobs = jobs.filter((j) => j.service === 'scenes')
   const semanticsJobs = jobs.filter((j) => j.service === 'semantics')
+  const objectsJobs = jobs.filter((j) => j.service === 'objects')
 
   return (
     <div className="space-y-4">
@@ -45,16 +56,19 @@ export function JobList() {
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
         <TabsList>
           <TabsTrigger value="rollup">
-            All Jobs ({total})
+            All Jobs ({counts?.total ?? 0})
           </TabsTrigger>
           <TabsTrigger value="faces">
-            Faces ({facesJobs.length})
+            Faces ({counts?.by_service.faces ?? 0})
           </TabsTrigger>
           <TabsTrigger value="scenes">
-            Scenes ({scenesJobs.length})
+            Scenes ({counts?.by_service.scenes ?? 0})
           </TabsTrigger>
           <TabsTrigger value="semantics">
-            Semantics ({semanticsJobs.length})
+            Semantics ({counts?.by_service.semantics ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="objects">
+            Objects ({counts?.by_service.objects ?? 0})
           </TabsTrigger>
         </TabsList>
 
@@ -112,6 +126,21 @@ export function JobList() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {semanticsJobs.map((job) => (
+                <JobCard key={job.job_id} job={job} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Objects view */}
+        <TabsContent value="objects" className="mt-4">
+          {isLoading ? (
+            <JobListSkeleton />
+          ) : objectsJobs.length === 0 ? (
+            <EmptyState message="No objects jobs found" />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {objectsJobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>

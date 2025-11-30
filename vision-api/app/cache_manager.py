@@ -245,6 +245,122 @@ class CacheManager:
             logger.error(f"Error listing jobs: {e}")
             return [], 0
 
+    async def count_jobs(
+        self,
+        status: Optional[str] = None,
+        service: Optional[str] = None,
+        source_id: Optional[str] = None,
+        source: Optional[str] = None,
+        start_date: Optional[float] = None,
+        end_date: Optional[float] = None,
+    ) -> Tuple[int, Dict[str, int]]:
+        """
+        Count jobs across all services with filtering and deduplication.
+
+        Uses same filtering logic as list_jobs() but only counts jobs without
+        fetching full metadata or results for better performance.
+
+        Args:
+            status: Filter by job status
+            service: Filter by service (vision, faces, scenes, semantics, objects) or None for all
+            source_id: Filter by source_id
+            source: Filter by source video path
+            start_date: Filter by start date (Unix timestamp)
+            end_date: Filter by end date (Unix timestamp)
+
+        Returns:
+            Tuple of (total_count, counts_by_service)
+            Example: (147, {"vision": 23, "faces": 47, "scenes": 45, "semantics": 32})
+        """
+        try:
+            # Determine which service namespaces to query
+            services = [service] if service else self.SERVICE_NAMESPACES
+
+            # Collect all job keys across services
+            all_job_keys = []
+            for svc in services:
+                pattern = f"{svc}:job:*:metadata"
+                keys = await self.redis.keys(pattern)
+                all_job_keys.extend(keys)
+
+            # Count jobs by service
+            service_counts = {svc: 0 for svc in self.SERVICE_NAMESPACES}
+            seen_cache_keys = {}  # cache_key -> (service, job_id) for deduplication
+            total = 0
+
+            for key in all_job_keys:
+                # Extract service and job_id from key: "{service}:job:{job_id}:metadata"
+                parts = key.split(":")
+                if len(parts) < 4:
+                    continue
+                svc, job_id = parts[0], parts[2]
+
+                metadata_json = await self.redis.get(key)
+                if not metadata_json:
+                    continue
+
+                # Parse metadata - handle both JSON and Python dict str
+                try:
+                    metadata = json.loads(metadata_json)
+                except json.JSONDecodeError:
+                    try:
+                        metadata = eval(metadata_json)
+                    except:
+                        continue
+
+                # Apply filters
+                if status and metadata.get("status") != status:
+                    continue
+                if source_id and metadata.get("source_id") != source_id:
+                    continue
+                if source and metadata.get("source") != source:
+                    continue
+
+                # Date filtering
+                created_at = metadata.get("created_at")
+                if created_at:
+                    if isinstance(created_at, str):
+                        try:
+                            from datetime import datetime
+
+                            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                            created_ts = dt.timestamp()
+                        except:
+                            created_ts = 0
+                    else:
+                        created_ts = float(created_at)
+
+                    if start_date and created_ts < start_date:
+                        continue
+                    if end_date and created_ts > end_date:
+                        continue
+
+                # Deduplication by cache_key - prefer vision-level jobs
+                cache_key = metadata.get("cache_key")
+                if cache_key:
+                    if cache_key in seen_cache_keys:
+                        existing_svc, _ = seen_cache_keys[cache_key]
+                        # Prefer vision > faces > scenes
+                        if self.SERVICE_PRIORITY.get(svc, 99) < self.SERVICE_PRIORITY.get(existing_svc, 99):
+                            # Replace with higher priority service
+                            service_counts[existing_svc] -= 1
+                            service_counts[svc] += 1
+                            seen_cache_keys[cache_key] = (svc, job_id)
+                        continue
+                    seen_cache_keys[cache_key] = (svc, job_id)
+                    service_counts[svc] += 1
+                    total += 1
+                else:
+                    # No cache key - count it
+                    service_counts[svc] += 1
+                    total += 1
+
+            return total, service_counts
+
+        except Exception as e:
+            logger.error(f"Error counting jobs: {e}")
+            return 0, {}
+
     async def get_job_metadata(self, job_id: str, service: str = "vision") -> Optional[Dict[str, Any]]:
         """
         Retrieve job metadata by job ID

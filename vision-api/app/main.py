@@ -792,6 +792,75 @@ async def list_jobs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/vision/jobs/count")
+async def count_jobs(
+    status: Optional[str] = Query(None, description="Filter by job status (queued, processing, completed, failed)"),
+    service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes, semantics, objects)"),
+    source_id: Optional[str] = Query(None, description="Filter by source_id (scene identifier)"),
+    source: Optional[str] = Query(None, description="Filter by source video path"),
+    start_date: Optional[str] = Query(None, description="Filter by start date (ISO 8601 format)"),
+    end_date: Optional[str] = Query(None, description="Filter by end date (ISO 8601 format)"),
+) -> Dict[str, Any]:
+    """
+    Count jobs matching filters without fetching full results.
+
+    This endpoint provides efficient counting for pagination and tab displays.
+    It uses the same filtering logic as /vision/jobs but only counts jobs
+    without fetching full metadata or results.
+
+    Returns:
+        {
+            "total": 147,
+            "by_service": {
+                "vision": 23,
+                "faces": 47,
+                "scenes": 45,
+                "semantics": 32,
+                "objects": 0
+            }
+        }
+    """
+    try:
+        # Parse date strings to timestamps
+        start_ts = None
+        end_ts = None
+
+        if start_date:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                start_ts = dt.timestamp()
+            except Exception as e:
+                logger.warning(f"Invalid start_date format: {e}")
+
+        if end_date:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                end_ts = dt.timestamp()
+            except Exception as e:
+                logger.warning(f"Invalid end_date format: {e}")
+
+        # Count jobs using CacheManager
+        total, by_service = await cache_manager.count_jobs(
+            status=status,
+            service=service,
+            source_id=source_id,
+            source=source,
+            start_date=start_ts,
+            end_date=end_ts,
+        )
+
+        return {
+            "total": total,
+            "by_service": by_service
+        }
+
+    except Exception as e:
+        logger.error(f"Error counting jobs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check for orchestrator and all services"""

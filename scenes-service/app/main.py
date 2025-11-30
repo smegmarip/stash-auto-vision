@@ -149,6 +149,20 @@ async def process_detection_job(
             for scene_num, (start_frame, end_frame, start_time, end_time) in enumerate(scenes_raw)
         ]
 
+        # If no scenes detected, create a default scene spanning entire video
+        if not scenes:
+            logger.info("No scene boundaries detected, creating default scene for entire video")
+            scenes = [
+                SceneBoundary(
+                    scene_number=0,
+                    start_frame=0,
+                    end_frame=total_frames - 1,
+                    start_timestamp=0.0,
+                    end_timestamp=duration,
+                    duration=duration
+                )
+            ]
+
         # Create metadata
         metadata = VideoMetadata(
             video_path=request.video_path,
