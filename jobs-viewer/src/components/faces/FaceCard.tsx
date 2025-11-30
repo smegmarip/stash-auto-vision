@@ -209,6 +209,10 @@ export function FaceCard({ face, videoPath, showOverlay = true }: FaceCardProps)
                 <h4 className="font-medium mb-2">Face Data</h4>
                 <dl className="space-y-1 text-muted-foreground">
                   <div className="flex justify-between">
+                    <dt>Face ID</dt>
+                    <dd>{face.face_id}</dd>
+                  </div>
+                  <div className="flex justify-between">
                     <dt>Bounding Box</dt>
                     <dd>{Math.round(rep.bbox.x_max - rep.bbox.x_min)}px x {Math.round(rep.bbox.y_max - rep.bbox.y_min)}px</dd>
                   </div>

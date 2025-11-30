@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { RollupDetailView } from '@/components/rollup/RollupDetailView'
 import { FacesDetailView } from '@/components/faces/FacesDetailView'
 import { ScenesDetailView } from '@/components/scenes/ScenesDetailView'
+import { SemanticsDetailView } from '@/components/semantics/SemanticsDetailView'
 
 export function JobDetailPage() {
   const { jobId, service } = useParams<{ jobId: string; service?: string }>()
@@ -34,11 +35,7 @@ export function JobDetailPage() {
       case 'scenes':
         return <ScenesDetailView jobId={jobId} />
       case 'semantics':
-        return (
-          <div className="text-center py-12 text-muted-foreground">
-            Semantics service not yet implemented
-          </div>
-        )
+        return <SemanticsDetailView jobId={jobId} />
       case 'objects':
         return (
           <div className="text-center py-12 text-muted-foreground">

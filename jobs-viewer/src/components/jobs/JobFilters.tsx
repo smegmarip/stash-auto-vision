@@ -2,7 +2,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
 import { useJobsStore } from '@/store/jobsStore'
-import type { JobStatus } from '@/api/types'
+import type { JobStatus, ServiceName } from '@/api/types'
 
 export function JobFilters() {
   const { filters, setFilters, resetFilters } = useJobsStore()
@@ -34,7 +34,7 @@ export function JobFilters() {
       <Select
         value={filters.service || 'all'}
         onValueChange={(value) =>
-          setFilters({ service: value === 'all' ? undefined : (value as 'vision' | 'faces' | 'scenes') })
+          setFilters({ service: value === 'all' ? undefined : (value as ServiceName) })
         }
       >
         <SelectTrigger className="w-[140px]">
@@ -45,6 +45,7 @@ export function JobFilters() {
           <SelectItem value="vision">Vision</SelectItem>
           <SelectItem value="faces">Faces</SelectItem>
           <SelectItem value="scenes">Scenes</SelectItem>
+          <SelectItem value="semantics">Semantics</SelectItem>
         </SelectContent>
       </Select>
 

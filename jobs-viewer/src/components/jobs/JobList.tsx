@@ -23,6 +23,7 @@ export function JobList() {
   // Filter jobs by service for per-service view
   const facesJobs = jobs.filter((j) => j.service === 'faces')
   const scenesJobs = jobs.filter((j) => j.service === 'scenes')
+  const semanticsJobs = jobs.filter((j) => j.service === 'semantics')
 
   return (
     <div className="space-y-4">
@@ -51,6 +52,9 @@ export function JobList() {
           </TabsTrigger>
           <TabsTrigger value="scenes">
             Scenes ({scenesJobs.length})
+          </TabsTrigger>
+          <TabsTrigger value="semantics">
+            Semantics ({semanticsJobs.length})
           </TabsTrigger>
         </TabsList>
 
@@ -93,6 +97,21 @@ export function JobList() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {scenesJobs.map((job) => (
+                <JobCard key={job.job_id} job={job} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Semantics view */}
+        <TabsContent value="semantics" className="mt-4">
+          {isLoading ? (
+            <JobListSkeleton />
+          ) : semanticsJobs.length === 0 ? (
+            <EmptyState message="No semantics jobs found" />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {semanticsJobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>

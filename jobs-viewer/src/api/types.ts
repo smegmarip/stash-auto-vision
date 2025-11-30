@@ -6,7 +6,7 @@ export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface JobSummary {
   job_id: string;
-  service: "vision" | "faces" | "scenes";
+  service: ServiceName;
   status: JobStatus;
   progress: number;
   source?: string;
@@ -27,7 +27,7 @@ export interface ListJobsResponse {
 
 export interface JobFilters {
   status?: JobStatus;
-  service?: "vision" | "faces" | "scenes";
+  service?: ServiceName;
   source_id?: string;
   source?: string;
   start_date?: string;
@@ -40,6 +40,8 @@ export interface JobFilters {
 // ============================================
 // Vision API Types
 // ============================================
+
+export type ServiceName = "vision" | "faces" | "scenes" | "semantics" | "objects";
 
 export interface ServiceJobInfo {
   service: string;
@@ -71,7 +73,7 @@ export interface JobResults {
   status: string;
   scenes?: ScenesResult;
   faces?: FacesResult;
-  semantics?: Record<string, unknown>;
+  semantics?: SemanticsResult;
   objects?: Record<string, unknown>;
   metadata: JobMetadata;
 }
@@ -199,6 +201,56 @@ export interface ScenesResult {
   status: string;
   scenes: Scene[];
   metadata: ScenesMetadata;
+}
+
+// ============================================
+// Semantics Types
+// ============================================
+
+export interface SemanticTag {
+  tag: string;
+  confidence: number;
+  source: "predefined" | "custom_prompt" | "zero_shot";
+}
+
+export interface SceneClassification {
+  setting?: string;
+  location?: string;
+  activity?: string;
+}
+
+export interface FrameSemantics {
+  frame_index: number;
+  timestamp: number;
+  tags: SemanticTag[];
+  embedding?: number[];
+  scene_classification?: SceneClassification;
+}
+
+export interface SceneSemanticSummary {
+  start_timestamp: number;
+  end_timestamp: number;
+  dominant_tags: string[];
+  frame_count: number;
+  avg_confidence: number;
+}
+
+export interface SemanticsMetadata {
+  model: string;
+  frames_analyzed: number;
+  processing_time_seconds: number;
+  device: string;
+  batch_size: number;
+  total_tags_generated: number;
+}
+
+export interface SemanticsResult {
+  job_id: string;
+  source_id: string;
+  status: string;
+  frames: FrameSemantics[];
+  scene_summaries?: SceneSemanticSummary[];
+  metadata: SemanticsMetadata;
 }
 
 // ============================================
