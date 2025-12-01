@@ -5,13 +5,15 @@ import { SceneCard } from './SceneCard'
 import { SceneTimeline } from './SceneTimeline'
 import { formatDuration, formatNumber } from '@/lib/formatters'
 import { Film, Clock, Layers, Settings } from 'lucide-react'
+import { ScenesResult } from '@/api/types'
 
 interface ScenesDetailViewProps {
   jobId: string
 }
 
 export function ScenesDetailView({ jobId }: ScenesDetailViewProps) {
-  const { data: results, isLoading, error } = useJobResults(jobId)
+  const { data: jobResults, isLoading, error } = useJobResults(jobId)
+  const results = jobResults as ScenesResult | undefined
 
   if (isLoading) {
     return <ScenesDetailSkeleton />
@@ -28,7 +30,7 @@ export function ScenesDetailView({ jobId }: ScenesDetailViewProps) {
   }
 
   const scenesResult = results?.scenes
-  if (!scenesResult || !scenesResult.scenes) {
+  if (!scenesResult || !Array.isArray(scenesResult)) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground">
@@ -38,7 +40,8 @@ export function ScenesDetailView({ jobId }: ScenesDetailViewProps) {
     )
   }
 
-  const { scenes, metadata } = scenesResult
+  const scenes = scenesResult
+  const metadata = results.metadata
 
   // Handle different field naming conventions from backend
   const totalScenes = metadata?.total_scenes ?? scenes?.length ?? 0

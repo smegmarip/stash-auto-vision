@@ -247,6 +247,9 @@ export interface SceneSemanticSummary {
 }
 
 export interface SemanticsMetadata {
+  source: string;
+  source_type: string;
+  total_frames: number;
   model: string;
   frames_analyzed: number;
   processing_time_seconds: number;
