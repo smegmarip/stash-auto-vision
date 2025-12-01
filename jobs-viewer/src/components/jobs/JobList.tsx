@@ -1,15 +1,28 @@
-import { useJobs, useJobsCount } from '@/hooks/useJobs'
+import { useJobsInfinite, useJobsCount } from '@/hooks/useJobs'
 import { useJobsStore } from '@/store/jobsStore'
 import { JobCard } from './JobCard'
 import { JobFilters } from './JobFilters'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
+import { LazyLoader } from '@/components/shared/LazyLoader'
 
 export function JobList() {
-  const { filters, viewMode, setViewMode, nextPage, prevPage } = useJobsStore()
-  const { data, isLoading, isFetching, refetch } = useJobs(filters)
+  const { filters, viewMode, setViewMode } = useJobsStore()
+
+  // Service orchestrator - one infinite query per service
+  const serviceQueries = {
+    rollup: useJobsInfinite({ service: 'vision', ...filters }),
+    faces: useJobsInfinite({ service: 'faces', ...filters }),
+    scenes: useJobsInfinite({ service: 'scenes', ...filters }),
+    semantics: useJobsInfinite({ service: 'semantics', ...filters }),
+    objects: useJobsInfinite({ service: 'objects', ...filters })
+  }
+
+  // Active query driven by viewMode
+  const activeQuery = serviceQueries[viewMode]
+  const { data, isLoading, isFetching, fetchNextPage, hasNextPage, refetch } = activeQuery
 
   // Fetch job counts for accurate tab counts
   const { data: counts } = useJobsCount({
@@ -21,20 +34,10 @@ export function JobList() {
     end_date: filters.end_date,
   })
 
-  const jobs = data?.jobs || []
-  const total = data?.total || 0
-  const limit = filters.limit || 20
-  const offset = filters.offset || 0
-  const currentPage = Math.floor(offset / limit) + 1
-  const totalPages = Math.ceil(total / limit)
-  const hasNextPage = offset + limit < total
-  const hasPrevPage = offset > 0
-
-  // Filter jobs by service for per-service view (current page only)
-  const facesJobs = jobs.filter((j) => j.service === 'faces')
-  const scenesJobs = jobs.filter((j) => j.service === 'scenes')
-  const semanticsJobs = jobs.filter((j) => j.service === 'semantics')
-  const objectsJobs = jobs.filter((j) => j.service === 'objects')
+  // Flatten all pages into single array
+  const jobs = data?.pages.flatMap(page => page.jobs) ?? []
+  const total = data?.pages[0]?.total ?? 0
+  const hasMore = hasNextPage ?? false
 
   return (
     <div className="space-y-4">
@@ -56,7 +59,7 @@ export function JobList() {
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
         <TabsList>
           <TabsTrigger value="rollup">
-            All Jobs ({counts?.total ?? 0})
+            Vision ({counts?.by_service.vision ?? 0})
           </TabsTrigger>
           <TabsTrigger value="faces">
             Faces ({counts?.by_service.faces ?? 0})
@@ -72,12 +75,12 @@ export function JobList() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Rollup view - all jobs */}
+        {/* Rollup view - vision composite jobs only */}
         <TabsContent value="rollup" className="mt-4">
           {isLoading ? (
             <JobListSkeleton />
           ) : jobs.length === 0 ? (
-            <EmptyState />
+            <EmptyState message="No composite jobs found" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {jobs.map((job) => (
@@ -91,11 +94,11 @@ export function JobList() {
         <TabsContent value="faces" className="mt-4">
           {isLoading ? (
             <JobListSkeleton />
-          ) : facesJobs.length === 0 ? (
+          ) : jobs.length === 0 ? (
             <EmptyState message="No faces jobs found" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {facesJobs.map((job) => (
+              {jobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>
@@ -106,11 +109,11 @@ export function JobList() {
         <TabsContent value="scenes" className="mt-4">
           {isLoading ? (
             <JobListSkeleton />
-          ) : scenesJobs.length === 0 ? (
+          ) : jobs.length === 0 ? (
             <EmptyState message="No scenes jobs found" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {scenesJobs.map((job) => (
+              {jobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>
@@ -121,11 +124,11 @@ export function JobList() {
         <TabsContent value="semantics" className="mt-4">
           {isLoading ? (
             <JobListSkeleton />
-          ) : semanticsJobs.length === 0 ? (
+          ) : jobs.length === 0 ? (
             <EmptyState message="No semantics jobs found" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {semanticsJobs.map((job) => (
+              {jobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>
@@ -136,11 +139,11 @@ export function JobList() {
         <TabsContent value="objects" className="mt-4">
           {isLoading ? (
             <JobListSkeleton />
-          ) : objectsJobs.length === 0 ? (
+          ) : jobs.length === 0 ? (
             <EmptyState message="No objects jobs found" />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {objectsJobs.map((job) => (
+              {jobs.map((job) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </div>
@@ -148,31 +151,19 @@ export function JobList() {
         </TabsContent>
       </Tabs>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={prevPage}
-            disabled={!hasPrevPage || isLoading}
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={nextPage}
-            disabled={!hasNextPage || isLoading}
-          >
-            Next
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </div>
+      {/* Lazy loading */}
+      {hasMore && (
+        <LazyLoader
+          hasMore={hasMore}
+          isLoading={isLoading || isFetching}
+          onLoadMore={fetchNextPage}
+        />
+      )}
+
+      {!hasMore && jobs.length > 0 && (
+        <p className="text-center text-sm text-muted-foreground pt-4">
+          All {total} jobs loaded
+        </p>
       )}
     </div>
   )

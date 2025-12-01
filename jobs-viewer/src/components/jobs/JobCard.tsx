@@ -5,10 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { JobProgress } from "./JobProgress";
 import { formatRelativeTime, truncatePath } from "@/lib/formatters";
-import type { JobSummary } from "@/api/types";
+import type { JobSummary, ServiceName } from "@/api/types";
 
 interface JobCardProps {
   job: JobSummary;
+  service?: ServiceName;
 }
 
 const serviceIcons: Record<string, React.ReactNode> = {
@@ -27,7 +28,7 @@ export function JobCard({ job }: JobCardProps) {
   const isActive = job.status === "processing" || job.status === "queued";
 
   return (
-    <Link to={`/jobs/${job.job_id}`}>
+    <Link to={`/jobs/${job.job_id}/${job.service === "vision" ? "rollup" : job.service}`}>
       <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
