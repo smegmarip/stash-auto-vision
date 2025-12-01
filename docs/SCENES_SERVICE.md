@@ -37,12 +37,14 @@ The service analyzes video content using histogram comparison (HSV color space) 
 
 ## OpenAPI 3.0 Schema
 
+> **Note:** Live schema is auto-generated from FastAPI at runtime via `/openapi.json`. A documentation aggregation service is planned to combine all service schemas.
+
 ```yaml
 openapi: 3.0.3
 info:
   title: Scenes Service API
   description: Scene boundary detection service using PySceneDetect
-  version: 1.0.0
+  version: 1.1.0
 servers:
   - url: http://scenes-service:5002
     description: Internal Docker network

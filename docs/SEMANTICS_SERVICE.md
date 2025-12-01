@@ -39,12 +39,14 @@ The Semantics Service integrates into the Vision API's multi-module analysis wor
 
 ## OpenAPI 3.0 Schema
 
+> **Note:** The OpenAPI schema below is outdated. Live schema is auto-generated from FastAPI at runtime via `/openapi.json`. A documentation aggregation service is planned to combine all service schemas.
+
 ```yaml
 openapi: 3.0.3
 info:
-  title: Semantics Service API (Stubbed)
-  description: CLIP-based scene understanding service - Phase 2 implementation pending
-  version: 1.0.0
+  title: Semantics Service API
+  description: SigLIP-based scene understanding service - Fully Implemented
+  version: 2.0.0
 servers:
   - url: http://semantics-service:5004
     description: Internal Docker network

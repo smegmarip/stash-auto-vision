@@ -8,7 +8,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ## Features
 
-### Phase 1 (Current)
+### Phase 1 & 2 (Complete)
 
 - ✅ **Face Recognition** - InsightFace (99.86% accuracy, 512-D embeddings)
 - ✅ **Face Enhancement** - Optional CodeFormer/GFPGAN for low-quality faces
@@ -16,10 +16,11 @@ A modular, high-performance video analysis platform providing face recognition, 
 - ✅ **Scene Detection** - GPU-accelerated PySceneDetect (300-800 FPS)
 - ✅ **Frame Server** - Multi-method extraction with PyAV fallback
 - ✅ **Smart Caching** - Content-based Redis caching with automatic invalidation
+- ✅ **Semantic Analysis** - SigLIP-based scene classification (768-D embeddings)
+- ✅ **Jobs Viewer** - React-based UI for monitoring and browsing job results
 
-### Phase 2+ (Planned)
+### Phase 3+ (Planned)
 
-- 🔄 **Semantic Analysis** - CLIP-based scene classification
 - 🔄 **Object Detection** - YOLO-World open-vocabulary detection
 - 🔄 **Multi-modal Search** - Find scenes by description
 - 🔄 **Advanced Tagging** - Automatic content categorization

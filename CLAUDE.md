@@ -213,8 +213,9 @@ See [Future Work](#future-work) section below.
 
 ### API Documentation
 
-- **[OpenAPI Specification](openapi.yml)** - Complete API schemas for all 6 services
+- **OpenAPI Specification** - Auto-generated from FastAPI at runtime (`/openapi.json`)
 - Access live docs: `http://localhost:5010/docs` (after starting services)
+- **Jobs Viewer** - React-based job monitoring UI at `http://localhost:5173` (dev mode)
 
 ### Service-Specific Documentation
 
@@ -568,5 +569,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 ---
 
 **Status:** Phase 1 & 2 Complete - Semantic Analysis Integrated
-**Version:** 2.0.0
-**Last Updated:** 2025-11-29
+**Version:** 2.1.0
+**Last Updated:** 2025-12-01
+
+> **API Documentation:** OpenAPI schemas are auto-generated from FastAPI at runtime (`/openapi.json`). A documentation aggregation service is planned to combine all service schemas with frontend types.
