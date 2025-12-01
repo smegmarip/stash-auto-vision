@@ -191,21 +191,8 @@ class CacheManager:
                     if end_date and created_ts > end_date:
                         continue
 
-                # Deduplication by cache_key - prefer vision-level jobs
-                cache_key = metadata.get("cache_key")
-                if cache_key:
-                    if cache_key in seen_cache_keys:
-                        existing = seen_cache_keys[cache_key]
-                        # Prefer vision > faces > scenes
-                        if self.SERVICE_PRIORITY.get(svc, 99) < self.SERVICE_PRIORITY.get(existing["service"], 99):
-                            seen_cache_keys[cache_key] = metadata
-                        continue
-                    seen_cache_keys[cache_key] = metadata
-                else:
-                    jobs.append(metadata)
-
-            # Add deduplicated jobs (those with cache_keys)
-            jobs.extend(seen_cache_keys.values())
+                # No deduplication - always include job
+                jobs.append(metadata)
 
             # Optionally fetch full results
             if include_results:
@@ -335,25 +322,9 @@ class CacheManager:
                     if end_date and created_ts > end_date:
                         continue
 
-                # Deduplication by cache_key - prefer vision-level jobs
-                cache_key = metadata.get("cache_key")
-                if cache_key:
-                    if cache_key in seen_cache_keys:
-                        existing_svc, _ = seen_cache_keys[cache_key]
-                        # Prefer vision > faces > scenes
-                        if self.SERVICE_PRIORITY.get(svc, 99) < self.SERVICE_PRIORITY.get(existing_svc, 99):
-                            # Replace with higher priority service
-                            service_counts[existing_svc] -= 1
-                            service_counts[svc] += 1
-                            seen_cache_keys[cache_key] = (svc, job_id)
-                        continue
-                    seen_cache_keys[cache_key] = (svc, job_id)
-                    service_counts[svc] += 1
-                    total += 1
-                else:
-                    # No cache key - count it
-                    service_counts[svc] += 1
-                    total += 1
+                # No deduplication - count every job
+                service_counts[svc] += 1
+                total += 1
 
             return total, service_counts
 
