@@ -45,6 +45,7 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
   const totalTags = metadata?.total_tags_generated ?? 0
   const model = metadata?.model ?? 'unknown'
   const device = metadata?.device ?? 'unknown'
+  const videoPath = metadata?.source || ''
 
   // Collect all unique tags across frames
   const allTags = new Set<string>()
@@ -146,6 +147,7 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
               <FrameCard
                 key={frame.frame_index}
                 frame={frame}
+                videoPath={videoPath}
               />
             ))}
           </div>

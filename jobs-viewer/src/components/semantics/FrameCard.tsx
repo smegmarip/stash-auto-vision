@@ -3,12 +3,14 @@ import { Badge } from '@/components/ui/badge'
 import { formatDuration } from '@/lib/formatters'
 import { Clock, Tag } from 'lucide-react'
 import type { FrameSemantics } from '@/api/types'
+import { FrameViewer } from '../shared/FrameViewer'
 
 interface FrameCardProps {
   frame: FrameSemantics
+  videoPath?: string
 }
 
-export function FrameCard({ frame }: FrameCardProps) {
+export function FrameCard({ frame, videoPath }: FrameCardProps) {
   // Get source color for tags
   const getSourceColor = (source: string) => {
     switch (source) {
@@ -39,39 +41,52 @@ export function FrameCard({ frame }: FrameCardProps) {
           </span>
         </div>
 
-        {/* Tags */}
-        {frame.tags && frame.tags.length > 0 ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Tag className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">
-                {frame.tags.length} tag{frame.tags.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {frame.tags.map((tag, idx) => (
-                <div
-                  key={idx}
-                  className="flex flex-col gap-0.5"
-                >
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${getSourceColor(tag.source)}`}
+        <div className="flex items-center justify-between">
+          {/* Tags */}
+          {frame.tags && frame.tags.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Tag className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">
+                  {frame.tags.length} tag{frame.tags.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {frame.tags.map((tag, idx) => (
+                  <div
+                    key={idx}
+                    className="flex flex-col gap-0.5"
                   >
-                    {tag.tag}
-                  </Badge>
-                  <span className="text-[10px] text-muted-foreground text-center">
-                    {(tag.confidence * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${getSourceColor(tag.source)}`}
+                    >
+                      {tag.tag}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground text-center">
+                      {(tag.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground italic">
-            No tags detected
-          </div>
-        )}
+          ) : (
+            <div className="text-xs text-muted-foreground italic">
+              No tags detected
+            </div>
+          )}
+          {/* Thumbnail */}
+          {videoPath && (
+            <div className="mt-2">
+              <FrameViewer
+                videoPath={videoPath}
+                timestamp={frame.timestamp}
+                className="w-full h-16 rounded border bg-black object-cover"
+                alt={`Frame at ${formatDuration(frame.timestamp)}`}
+              />
+            </div>
+          )}
+        </div>
 
         {/* Embedding indicator */}
         {frame.embedding && (
