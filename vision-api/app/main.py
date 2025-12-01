@@ -237,7 +237,7 @@ async def update_metadata(
     if error is not None:
         metadata["error"] = error
 
-    await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
+    await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
 
 
 async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
@@ -294,7 +294,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             "processing_mode": request.processing_mode,
         }
 
-        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
+        await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
 
         results = {"scenes": None, "faces": None, "semantics": None, "objects": None}
 
@@ -321,6 +321,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
                 scenes_request = {
                     "video_path": request.source,
+                    "source_id": request.source_id,
                     "job_id": f"scenes-{job_id}",
                     "detection_method": request.modules.scenes.parameters.get("scene_detection_method", "content"),
                     "scene_threshold": request.modules.scenes.parameters.get(
@@ -540,7 +541,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
         }
 
         # Cache results
-        await redis_client.setex(f"vision:job:{job_id}:results", 3600, str(final_results))
+        await redis_client.setex(f"vision:job:{job_id}:results", CACHE_TTL, str(final_results))
 
         # Update metadata with completion status
         await update_metadata(
@@ -554,7 +555,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
         metadata["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
         metadata["result_summary"] = result_summary
 
-        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
+        await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
 
         logger.info(f"Job {job_id} completed in {processing_time:.2f}s")
 
@@ -581,7 +582,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             )
             metadata["failed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
-        await redis_client.setex(f"vision:job:{job_id}:metadata", 3600, str(metadata))
+        await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
     # Note: Downloaded files are NOT cleaned up immediately.
     # They are retained for CACHE_TTL duration to support frame extraction.
     # Cleanup is handled by cron job running cleanup_downloads.sh hourly.
@@ -635,7 +636,7 @@ async def get_job_status(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
@@ -682,7 +683,7 @@ async def get_job_results(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
