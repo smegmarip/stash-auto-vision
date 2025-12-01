@@ -28,6 +28,7 @@ class JobStatus(str, Enum):
 class DetectScenesRequest(BaseModel):
     """Request to detect scene boundaries in video"""
     video_path: str = Field(..., description="Absolute path to video file")
+    source_id: Optional[str] = Field(default="N/A", description="Optional source identifier")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     detection_method: DetectionMethod = DetectionMethod.CONTENT_DETECTOR
     scene_threshold: float = Field(default=float(os.getenv("SCENES_THRESHOLD", "27.0")), ge=0.0, le=100.0, description="Detection threshold")
@@ -48,6 +49,7 @@ class SceneBoundary(BaseModel):
 class DetectJobResponse(BaseModel):
     """Response for scene detection job submission"""
     job_id: str
+    source_id: str
     status: JobStatus
     created_at: str
     cache_key: str
@@ -57,6 +59,7 @@ class DetectJobResponse(BaseModel):
 class DetectJobStatus(BaseModel):
     """Job status response"""
     job_id: str
+    source_id: str
     status: JobStatus
     progress: float = Field(ge=0.0, le=1.0)
     stage: Optional[str] = None
@@ -81,6 +84,7 @@ class VideoMetadata(BaseModel):
 class DetectJobResults(BaseModel):
     """Complete job results"""
     job_id: str
+    source_id: str
     status: JobStatus
     cache_key: str
     scenes: List[SceneBoundary]

@@ -176,6 +176,7 @@ async def process_detection_job(
         # Create results
         results = DetectJobResults(
             job_id=job_id,
+            source_id=request.source_id,
             status=JobStatus.COMPLETED,
             cache_key=cache_key,
             scenes=scenes,
@@ -250,6 +251,7 @@ async def detect_scenes(
 
             return DetectJobResponse(
                 job_id=cached_job_id,
+                source_id=request.source_id,
                 status=JobStatus(metadata.get("status", "completed")),
                 created_at=metadata.get("created_at", ""),
                 cache_key=cache_key,
@@ -289,6 +291,7 @@ async def detect_scenes(
 
         return DetectJobResponse(
             job_id=job_id,
+            source_id=request.source_id,
             status=JobStatus.QUEUED,
             created_at=metadata["created_at"],
             cache_key=cache_key,
@@ -329,6 +332,7 @@ async def get_job_status(job_id: str):
 
         return DetectJobStatus(
             job_id=job_id,
+            source_id=metadata.get("source_id", "N/A"),
             status=JobStatus(metadata["status"]),
             progress=metadata.get("progress", 0.0),
             stage=metadata.get("stage"),
