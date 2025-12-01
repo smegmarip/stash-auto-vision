@@ -131,12 +131,23 @@ class SceneSemanticSummary(BaseModel):
 class SemanticsMetadata(BaseModel):
     """Processing metadata"""
 
+    source: str
+    source_type: Optional[str] = Field(default="video", description="Source type: 'video', 'image', or 'url'")
+    total_frames: int
     model: str
     frames_analyzed: int
     processing_time_seconds: float
     device: str = Field(description="Device used: 'cuda' or 'cpu'")
     batch_size: int
     total_tags_generated: int
+
+
+class SceneSemanticsOutcome(BaseModel):
+    """Semantic analysis results for a scene"""
+
+    frames: List[FrameSemantics]
+    scene_summaries: Optional[List[SceneSemanticSummary]] = None
+    metadata: SemanticsMetadata
 
 
 class AnalyzeSemanticsResponse(BaseModel):
@@ -162,15 +173,13 @@ class JobStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     error: Optional[str] = None
 
-
 class SemanticsResults(BaseModel):
     """Complete semantics analysis results"""
 
     job_id: str
     source_id: str
     status: JobStatus
-    frames: List[FrameSemantics]
-    scene_summaries: Optional[List[SceneSemanticSummary]] = None
+    semantics: SceneSemanticsOutcome
     metadata: SemanticsMetadata
 
 
@@ -186,3 +195,36 @@ class HealthResponse(BaseModel):
     model: Optional[str] = None
     device: Optional[str] = None
     default_min_confidence: float
+
+
+class Frame(BaseModel):
+    """Extracted frame metadata"""
+
+    index: int
+    timestamp: float
+    url: str
+    width: int
+    height: int
+
+class FrameMetadata(BaseModel):
+    """Metadata for a single extracted frame"""
+
+    video_path: str
+    extraction_method: str
+    total_frames: int
+    video_duration_seconds: float
+    video_fps: float
+    processing_time_seconds: float
+    enhancement_enabled: bool = False
+    enhancement_model: Optional[str] = None
+    faces_enhanced: Optional[int] = None
+    
+
+class FramesExtractionResult(BaseModel):
+    """Frame extraction result metadata"""
+
+    job_id: str
+    status: JobStatus
+    cache_key: str
+    frames: List[Frame]
+    metadata: FrameMetadata

@@ -10,6 +10,8 @@ import numpy as np
 import logging
 from typing import List, Dict, Any, Optional
 
+from app.models import FramesExtractionResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class FrameServerClient:
         sampling_interval: float = 2.0,
         method: str = "opencv",
         timeout: int = 300
-    ) -> List[Dict[str, Any]]:
+    ) -> FramesExtractionResult:
         """
         Extract frames from video via frame-server
 
@@ -84,7 +86,7 @@ class FrameServerClient:
 
                 frames = results.get("frames", [])
                 logger.info(f"Retrieved {len(frames)} frame metadata")
-                return frames
+                return FramesExtractionResult(**results)
 
         except httpx.HTTPStatusError as e:
             logger.error(f"Frame server HTTP error: {e.response.status_code} - {e.response.text}")

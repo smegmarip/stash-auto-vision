@@ -21,6 +21,7 @@ from .models import (
     AnalyzeSemanticsRequest,
     AnalyzeSemanticsResponse,
     JobStatusResponse,
+    SceneSemanticsOutcome,
     SemanticsResults,
     FrameSemantics,
     SemanticTag,
@@ -178,10 +179,11 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             message="Extracting frames from video"
         )
 
-        frame_metadata = await frame_client.extract_frames(
+        frame_extraction_result = await frame_client.extract_frames(
             video_path=request.source,
             sampling_interval=request.parameters.sampling_interval
         )
+        frame_metadata = frame_extraction_result.frames if frame_extraction_result else None
 
         if not frame_metadata:
             raise RuntimeError("No frames extracted from video")
@@ -197,7 +199,7 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             message=f"Loading {len(frame_metadata)} frame images"
         )
 
-        timestamps = [frame["timestamp"] for frame in frame_metadata]
+        timestamps = [frame.timestamp for frame in frame_metadata]
         frames = await frame_client.get_frames_batch(request.source, timestamps)
 
         # Filter out None frames (failed to load)
@@ -239,8 +241,8 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             # Build frame results with tags
             for meta, class_result in zip(valid_metadata, classification_results):
                 frame_result = {
-                    "frame_index": meta["index"],
-                    "timestamp": meta["timestamp"],
+                    "frame_index": meta.index,
+                    "timestamp": meta.timestamp,
                     "tags": class_result["tags"],
                     "embedding": None  # Will add if embeddings requested
                 }
@@ -250,8 +252,8 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             # No tags provided, just metadata
             for meta in valid_metadata:
                 frame_result = {
-                    "frame_index": meta["index"],
-                    "timestamp": meta["timestamp"],
+                    "frame_index": meta.index,
+                    "timestamp": meta.timestamp,
                     "tags": [],
                     "embedding": None
                 }
@@ -296,21 +298,34 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
 
         # Build final results
         processing_time = time.time() - start_time
+        total_frames = 0
+        if frame_extraction_result:
+            total_frames = frame_extraction_result.metadata.total_frames
+
+        result_metadata = SemanticsMetadata(
+            source=request.source,
+            source_type="video",
+            total_frames=total_frames,
+            model=request.parameters.model,
+            frames_analyzed=len(frame_results),
+            processing_time_seconds=processing_time,
+            device=CLIP_DEVICE,
+            batch_size=request.parameters.batch_size,
+            total_tags_generated=sum(len(f["tags"]) for f in frame_results)
+        )
+
+        outcome = SceneSemanticsOutcome(
+            frames=frame_results,
+            scene_summaries=scene_summaries,
+            metadata=result_metadata
+        )
 
         results = {
             "job_id": job_id,
             "source_id": request.source_id,
             "status": JobStatus.COMPLETED.value,
-            "frames": frame_results,
-            "scene_summaries": scene_summaries,
-            "metadata": {
-                "model": request.parameters.model,
-                "frames_analyzed": len(frame_results),
-                "processing_time_seconds": processing_time,
-                "device": CLIP_DEVICE,
-                "batch_size": request.parameters.batch_size,
-                "total_tags_generated": sum(len(f["tags"]) for f in frame_results)
-            }
+            "semantics": outcome.dict(),
+            "metadata": result_metadata.dict()
         }
 
         # Cache results
