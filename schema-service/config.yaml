@@ -1,0 +1,71 @@
+servers:
+  - url: http://localhost:5010
+    description: Vision API (Rollup/Orchestrator)
+    x-container-url: http://vision-api:5010
+  - url: http://localhost:5001
+    description: Frame Server Service
+    x-container-url: http://frame-server:5001
+  - url: http://localhost:5002
+    description: Scenes Service
+    x-container-url: http://scenes-service:5002
+  - url: http://localhost:5003
+    description: Faces Service
+    x-container-url: http://faces-service:5003
+  - url: http://localhost:5004
+    description: Semantics Service
+    x-container-url: http://semantics-service:5004
+  - url: http://localhost:5005
+    description: Objects Service
+    x-container-url: http://objects-service:5005
+  - url: http://localhost:5020
+    description: Jobs Viewer Service
+    x-container-url: http://jobs-viewer:5020
+tags:
+  - name: vision-api
+    description: Orchestration and multi-module analysis
+    externalDocs:
+      description: Learn more about Vision API
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/VISION_API.md
+    x-server: vision-api
+    x-port: 5010
+  - name: frames
+    description: Frame extraction and serving
+    externalDocs:
+      description: Learn more about Frame Service
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FRAME_SERVER.md
+    x-server: frame-server
+    x-port: 5001
+  - name: scenes
+    description: Scene boundary detection
+    externalDocs:
+      description: Learn more about Scenes Service
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SCENES_SERVICE.md
+    x-server: scenes-service
+    x-port: 5002
+  - name: faces
+    description: Face detection, recognition, and quality assessment
+    externalDocs:
+      description: Learn more about Faces Service
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FACES_SERVICE.md
+    x-server: faces-service
+    x-port: 5003
+  - name: semantics
+    description: Semantic scene understanding with SigLIP/CLIP
+    externalDocs:
+      description: Learn more about Semantics Service
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SEMANTICS_SERVICE.md
+    x-server: semantics-service
+    x-port: 5004
+  - name: objects
+    description: Object detection and classification
+    externalDocs:
+      description: Learn more about Objects Service
+      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
+    x-server: objects-service
+    x-port: 5005
+  - name: jobs
+    description: Job management and monitoring
+    x-server: jobs-viewer
+    x-port: 5020
+  - name: health
+    description: Service health checks

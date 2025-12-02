@@ -369,6 +369,49 @@ services:
         limits:
           memory: 512M
 
+  # ============================================
+  # Schema Service
+  # ============================================
+
+  schema-service:
+    build:
+      context: ./schema-service
+      dockerfile: Dockerfile
+    container_name: vision-schema-service
+    hostname: vision-schema-service
+    ports:
+      - "${SCHEMA_PORT:-5009}:5009"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./schema-service/app:/app/app
+      - ./schema-service/config.yaml:/config/config.yaml
+      - ./schema-service/template.yaml:/config/template.yaml
+    networks:
+      - vision_network
+    depends_on:
+      frame-server:
+        condition: service_started
+      scenes-service:
+        condition: service_started
+      faces-service:
+        condition: service_started
+      semantics-service:
+        condition: service_started
+      objects-service:
+        condition: service_started
+      vision-api:
+        condition: service_started
+      jobs-viewer:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # ============================================
 # Networks
 # ============================================

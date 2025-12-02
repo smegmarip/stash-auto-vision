@@ -1,0 +1,32 @@
+openapi: 3.1.1
+info:
+  title: Stash Auto Vision API
+  description: |
+    Complete video analysis service providing frame extraction, scene detection,
+    face recognition, semantic analysis, and object detection capabilities.
+
+    Architecture: Microservices (6 services) coordinated via Vision API rollup endpoint.
+
+    Services:
+    - Frame Server (port 5001) - Frame extraction and caching
+    - Scenes Service (port 5002) - Scene boundary detection
+    - Faces Service (port 5003) - Face detection, recognition, and quality assessment
+    - Semantics Service (port 5004) - SigLIP/CLIP-based scene understanding (Phase 2 implemented)
+    - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
+    - Jobs Viewer Service (port 5020) - Job management and monitoring UI
+    - Vision API (port 5010) - Orchestration and rollup endpoint
+
+    For detailed service documentation, see:
+    - docs/FRAME_SERVER.md
+    - docs/SCENES_SERVICE.md
+    - docs/FACES_SERVICE.md
+    - docs/SEMANTICS_SERVICE.md
+    - docs/OBJECTS_SERVICE.md
+    - docs/VISION_API.md
+  version: 1.0.0
+  contact:
+    name: Stash Auto Vision
+    url: https://github.com/stashapp/stash-auto-vision
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
