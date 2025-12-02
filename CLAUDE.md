@@ -428,7 +428,7 @@ See [docs/CACHE_STRATEGY.md](docs/CACHE_STRATEGY.md) for complete details.
 docker-compose up -d
 
 # Health check
-curl http://localhost:5010/health
+curl http://localhost:5010/vision/health
 
 # Run face detection on test video
 curl -X POST http://localhost:5010/vision/analyze/faces \
@@ -491,7 +491,7 @@ cp .env.example .env        # For production (edit paths)
 docker-compose up -d
 
 # Verify health
-curl http://localhost:5010/health
+curl http://localhost:5010/vision/health
 
 # View logs
 docker-compose logs -f vision-api

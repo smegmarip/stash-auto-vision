@@ -121,7 +121,7 @@ servers:
   - url: http://faces-service:5003
 
 paths:
-  /analyze:
+  /faces/analyze:
     post:
       summary: Submit face analysis job
       requestBody:
@@ -153,7 +153,7 @@ paths:
                   status: { type: string, enum: [queued] }
                   created_at: { type: string, format: date-time }
 
-  /jobs/{job_id}/status:
+  /faces/jobs/{job_id}/status:
     get:
       summary: Get job status
       parameters:
@@ -186,7 +186,7 @@ paths:
                       frames_processed: { type: integer }
                       processing_time_seconds: { type: number }
 
-  /jobs/{job_id}/results:
+  /faces/jobs/{job_id}/results:
     get:
       summary: Get analysis results
       parameters:
@@ -220,7 +220,7 @@ paths:
                       method: { type: string }
                       model: { type: string }
 
-  /health:
+  /faces/health:
     get:
       summary: Service health check
       responses:

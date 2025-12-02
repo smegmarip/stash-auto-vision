@@ -233,7 +233,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListJobsResponse"
 
-  /health:
+  /vision/health:
     get:
       summary: Service health check
       description: |
@@ -563,7 +563,7 @@ The Vision API implements a hub-and-spoke architecture where it acts as the cent
 - objects-service: `http://objects-service:5005`
 
 **Health Monitoring:**
-All downstream services are health-checked via `/health` endpoints with 5-second timeouts. The Vision API aggregates health status from all services.
+All downstream services are health-checked via `<service>/health` endpoints with 5-second timeouts. The Vision API aggregates health status from all services.
 
 ### Processing Modes
 
@@ -857,7 +857,7 @@ The Vision API monitors all downstream services and reports aggregated health:
 
 ```python
 # Health check all services
-response = requests.get("http://localhost:5010/health")
+response = requests.get("http://localhost:5010/vision/health")
 
 # Example response
 {

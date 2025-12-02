@@ -2,7 +2,7 @@
 
 **Service:** Semantics Service
 **Port:** 5004
-**Path:** `/semantics`
+**Path:** `/semantics/analyze`
 **Status:** Phase 2 - IMPLEMENTED
 **Version:** 1.0.0
 
@@ -52,7 +52,7 @@ servers:
     description: Internal Docker network
 
 paths:
-  /analyze:
+  /semantics/analyze:
     post:
       summary: Analyze scene semantics (STUB)
       description: |
@@ -86,7 +86,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /jobs/{job_id}/status:
+  /semantics/jobs/{job_id}/status:
     get:
       summary: Get analysis job status (STUB)
       description: Poll semantic analysis job status
@@ -105,7 +105,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SemanticsJobStatus"
 
-  /jobs/{job_id}/results:
+  /semantics/jobs/{job_id}/results:
     get:
       summary: Get analysis results (STUB)
       description: Retrieve semantic analysis results
@@ -134,7 +134,7 @@ paths:
                         type: string
                         example: "NotImplementedError"
 
-  /health:
+  /semantics/health:
     get:
       summary: Service health check
       operationId: healthCheck
@@ -448,16 +448,16 @@ The Semantics Service is a fully implemented service with SigLIP integration. It
 **Active Endpoints:**
 
 ```python
-# POST /analyze
+# POST /semantics/analyze
 # Returns: {"job_id": "uuid", "status": "queued|processing|completed"}
 
-# GET /jobs/{job_id}/status
+# GET /semantics/jobs/{job_id}/status
 # Returns: {"status": "...", "progress": 0.0-1.0, "stage": "..."}
 
-# GET /jobs/{job_id}/results
+# GET /semantics/jobs/{job_id}/results
 # Returns: Full semantics results with frames, tags, embeddings, scene summaries
 
-# GET /health
+# GET /semantics/health
 # Returns: {"status": "healthy", "implemented": true, "model": "google/siglip-base-patch16-224"}
 ```
 
@@ -660,6 +660,7 @@ LOG_LEVEL=INFO
 Enable semantic analysis in multi-module requests:
 
 **Example 1: Semantics Only**
+
 ```json
 {
   "source": "/media/videos/scene.mp4",
@@ -679,6 +680,7 @@ Enable semantic analysis in multi-module requests:
 ```
 
 **Example 2: Scenes + Semantics (Scene-Aware Analysis)**
+
 ```json
 {
   "source": "/media/videos/scene.mp4",
@@ -693,7 +695,14 @@ Enable semantic analysis in multi-module requests:
     "semantics": {
       "enabled": true,
       "parameters": {
-        "classification_tags": ["indoor", "outdoor", "bedroom", "kitchen", "conversation", "action"],
+        "classification_tags": [
+          "indoor",
+          "outdoor",
+          "bedroom",
+          "kitchen",
+          "conversation",
+          "action"
+        ],
         "min_confidence": 0.5
       }
     }
@@ -709,14 +718,15 @@ Vision API will:
 4. Return combined results with scene-level dominant tags
 
 **Example 3: Standalone with scenes_job_id**
+
 ```bash
 # First, detect scenes
-curl -X POST http://localhost:5002/analyze \
+curl -X POST http://localhost:5002/semantics/analyze \
   -d '{"source": "/media/videos/scene.mp4", "source_id": "test_003"}'
 # Returns: {"job_id": "scenes-abc123"}
 
 # Then, run semantics with scene boundaries
-curl -X POST http://localhost:5004/analyze \
+curl -X POST http://localhost:5004/semantics/analyze \
   -d '{
     "source": "/media/videos/scene.mp4",
     "source_id": "test_003",

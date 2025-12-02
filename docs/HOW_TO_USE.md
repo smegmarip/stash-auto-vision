@@ -7,10 +7,10 @@
 docker compose up -d
 
 # Check health
-curl http://localhost:5010/health
+curl http://localhost:5010/vision/health
 
 # Submit job
-curl -X POST http://localhost:5010/vision/analyze/faces \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene_12345.mp4",
@@ -18,10 +18,10 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
   }'
 
 # Check status
-curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/status
+curl http://localhost:5003/faces/jobs/{job_id}/status
 
 # Get results
-curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
+curl http://localhost:5003/faces/jobs/{job_id}/results
 ```
 
 ## Face Detection
@@ -29,7 +29,7 @@ curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
 **Simple:**
 
 ```bash
-curl -X POST http://localhost:5010/vision/analyze/faces \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene.mp4",
@@ -79,7 +79,7 @@ docker compose restart frame-server
 **Single frame:**
 
 ```bash
-curl "http://localhost:5001/extract-frame?video_path=/media/videos/scene.mp4&timestamp=1.0&enhance=1&fidelity_weight=0.7"
+curl "http://localhost:5001/frames/extract-frame?video_path=/media/videos/scene.mp4&timestamp=1.0&enhance=1&fidelity_weight=0.7"
 ```
 
 **Fidelity weight:** 0.0 (preserve original) to 1.0 (max enhancement). Default: 0.7

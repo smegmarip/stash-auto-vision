@@ -2,7 +2,7 @@
 
 **Service:** Objects Service
 **Port:** 5005
-**Path:** `/objects`
+**Path:** `/objects/analyze`
 **Status:** Phase 3 - STUB (Not Yet Implemented)
 **Version:** 1.0.0
 
@@ -62,7 +62,7 @@ servers:
     description: Development access
 
 paths:
-  /analyze:
+  /objects/analyze:
     post:
       summary: Analyze video for objects (STUB)
       description: |
@@ -91,7 +91,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /jobs/{job_id}/status:
+  /objects/jobs/{job_id}/status:
     get:
       summary: Get object detection job status (STUB)
       description: Returns "not_implemented" status for all job IDs
@@ -110,7 +110,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ObjectsJobStatus"
 
-  /jobs/{job_id}/results:
+  /objects/jobs/{job_id}/results:
     get:
       summary: Get object detection results (STUB)
       description: Returns 501 Not Implemented error
@@ -129,7 +129,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /health:
+  /objects/health:
     get:
       summary: Service health check
       description: Returns healthy status with implemented=false flag
@@ -284,10 +284,10 @@ The Objects Service is currently a minimal FastAPI application that:
 
 **Stub Behavior:**
 
-- POST `/analyze` → Returns 202 with `status: "not_implemented"`
-- GET `/jobs/{job_id}/status` → Returns 200 with `status: "not_implemented"`
-- GET `/jobs/{job_id}/results` → Returns 501 Not Implemented error
-- GET `/health` → Returns 200 with `implemented: false`
+- POST `/objects/analyze` → Returns 202 with `status: "not_implemented"`
+- GET `/objects/jobs/{job_id}/status` → Returns 200 with `status: "not_implemented"`
+- GET `/objects/jobs/{job_id}/results` → Returns 501 Not Implemented error
+- GET `/objects/health` → Returns 200 with `implemented: false`
 
 ### Planned Implementation (Phase 3)
 

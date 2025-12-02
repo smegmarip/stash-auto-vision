@@ -83,7 +83,7 @@ cp .env.cpu.example .env
 docker-compose up -d
 
 # Verify health
-curl http://localhost:5010/health
+curl http://localhost:5010/vision/health
 ```
 
 **Environment:**
@@ -109,7 +109,7 @@ docker-compose up -d
 docker exec -it vision-faces-service nvidia-smi
 
 # Verify health
-curl http://localhost:5000/health
+curl http://localhost:5000/vision/health
 ```
 
 **Environment:**
@@ -184,7 +184,7 @@ python generate_compound_videos.py
 
 ```bash
 # Test frame extraction with Charades video
-curl -X POST http://localhost:5001/extract \
+curl -X POST http://localhost:5001/frames/extract \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/charades/dataset/001YG.mp4",
@@ -226,7 +226,7 @@ ffmpeg -framerate 1 -pattern_type glob -i 'pose_*/*.jpg' \
 #### Health Check
 
 ```bash
-curl http://localhost:5001/health | jq .
+curl http://localhost:5001/frames/health | jq .
 ```
 
 **Expected Response:**
@@ -247,7 +247,7 @@ curl http://localhost:5001/health | jq .
 
 ```bash
 # Test OpenCV extraction
-curl -X POST http://localhost:5001/extract \
+curl -X POST http://localhost:5001/frames/extract \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
@@ -264,10 +264,10 @@ curl -X POST http://localhost:5001/extract \
 JOB_ID="test_frame_001"
 
 # Poll status
-curl "http://localhost:5001/jobs/$JOB_ID/status" | jq .
+curl "http://localhost:5001/frames/jobs/$JOB_ID/status" | jq .
 
 # Get results when completed
-curl "http://localhost:5001/jobs/$JOB_ID/results" | jq .
+curl "http://localhost:5001/frames/jobs/$JOB_ID/results" | jq .
 ```
 
 **Validation:**
@@ -299,7 +299,7 @@ file frame_5.jpg
 
 ```bash
 # Test FFmpeg method
-curl -X POST http://localhost:5001/extract \
+curl -X POST http://localhost:5001/frames/extract \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/frame-server/multi_scene_transitions.mp4",
@@ -324,7 +324,7 @@ curl -X POST http://localhost:5001/extract \
 #### Health Check
 
 ```bash
-curl http://localhost:5002/health | jq .
+curl http://localhost:5002/scenes/health | jq .
 ```
 
 **Expected Response:**
@@ -344,7 +344,7 @@ curl http://localhost:5002/health | jq .
 
 ```bash
 # Test ContentDetector
-curl -X POST http://localhost:5002/detect \
+curl -X POST http://localhost:5002/scenes/detect \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
@@ -357,10 +357,10 @@ curl -X POST http://localhost:5002/detect \
 JOB_ID="test_scenes_001"
 
 # Wait for completion
-curl "http://localhost:5002/jobs/$JOB_ID/status" | jq .
+curl "http://localhost:5002/scenes/jobs/$JOB_ID/status" | jq .
 
 # Get results
-curl "http://localhost:5002/jobs/$JOB_ID/results" | jq '{
+curl "http://localhost:5002/scenes/jobs/$JOB_ID/results" | jq '{
   scene_count: (.scenes | length),
   avg_scene_duration: ([.scenes[].duration] | add / length),
   processing_time: .metadata.processing_time_seconds
@@ -378,7 +378,7 @@ curl "http://localhost:5002/jobs/$JOB_ID/results" | jq '{
 
 ```bash
 # Test fade detection
-curl -X POST http://localhost:5002/detect \
+curl -X POST http://localhost:5002/scenes/detect \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/scenes-service/gradual_transitions.mp4",
@@ -400,7 +400,7 @@ curl -X POST http://localhost:5002/detect \
 #### Health Check
 
 ```bash
-curl http://localhost:5003/health | jq .
+curl http://localhost:5003/faces/health | jq .
 ```
 
 **Expected Response:**
@@ -421,7 +421,7 @@ curl http://localhost:5003/health | jq .
 
 ```bash
 # Submit job
-RESPONSE=$(curl -X POST http://localhost:5003/analyze \
+RESPONSE=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -440,8 +440,8 @@ JOB_ID=$(echo $RESPONSE | jq -r '.job_id')
 
 # Poll until complete
 while true; do
-  STATUS=$(curl -s "http://localhost:5003/jobs/$JOB_ID/status" | jq -r '.status')
-  PROGRESS=$(curl -s "http://localhost:5003/jobs/$JOB_ID/status" | jq -r '.progress')
+  STATUS=$(curl -s "http://localhost:5003/faces/jobs/$JOB_ID/status" | jq -r '.status')
+  PROGRESS=$(curl -s "http://localhost:5003/faces/jobs/$JOB_ID/status" | jq -r '.progress')
   echo "Status: $STATUS, Progress: $(echo "$PROGRESS * 100" | bc)%"
 
   if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
@@ -452,7 +452,7 @@ while true; do
 done
 
 # Get results
-curl "http://localhost:5003/jobs/$JOB_ID/results" | jq .
+curl "http://localhost:5003/faces/jobs/$JOB_ID/results" | jq .
 ```
 
 **Validation Checklist:**
@@ -461,7 +461,7 @@ curl "http://localhost:5003/jobs/$JOB_ID/results" | jq .
 
 ```bash
 # Count total detections vs expected
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '{
     total_detections: .metadata.total_detections,
     unique_faces: .metadata.unique_faces,
@@ -475,7 +475,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 
 ```bash
 # Check that same person's faces are clustered together
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '.faces[] | {
     face_id,
     detection_count: (.detections | length),
@@ -487,12 +487,12 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 
 ```bash
 # Check embedding dimensionality
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '.faces[0].embedding | length'
 # Expected: 512 dimensions
 
 # Check embedding normalization
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '.faces[0].embedding[0:5]'
 # Expected: Values roughly in [-1, 1] range
 ```
@@ -501,7 +501,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 
 ```bash
 # Check pose distribution
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '[.faces[].detections[].pose] | group_by(.) |
       map({pose: .[0], count: length})'
 
@@ -512,7 +512,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 
 ```bash
 # Check quality score range
-curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
+curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results" | \
   jq '[.faces[].detections[].quality_score] |
       {min: min, max: max, avg: (add/length)}'
 
@@ -523,7 +523,7 @@ curl -s "http://localhost:5003/jobs/$JOB_ID/results" | \
 
 ```bash
 # Test with multiple subjects
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/multiple_persons.mp4",
@@ -548,7 +548,7 @@ curl -X POST http://localhost:5003/analyze \
 #### Health Check
 
 ```bash
-curl http://localhost:5010/health | jq .
+curl http://localhost:5010/vision/health | jq .
 ```
 
 **Expected Response:**
@@ -637,10 +637,10 @@ docker-compose logs vision-api | grep "Completed module"
 #### Semantics Service (Phase 2)
 
 ```bash
-curl http://localhost:5004/health | jq .
+curl http://localhost:5004/semantics/health | jq .
 
 # Attempt analysis (should return not_implemented)
-curl -X POST http://localhost:5004/analyze \
+curl -X POST http://localhost:5004/semantics/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/test.mp4",
@@ -661,10 +661,10 @@ curl -X POST http://localhost:5004/analyze \
 #### Objects Service (Phase 3)
 
 ```bash
-curl http://localhost:5005/health | jq .
+curl http://localhost:5005/objects/health | jq .
 
 # Attempt analysis (should return not_implemented)
-curl -X POST http://localhost:5005/analyze \
+curl -X POST http://localhost:5005/objects/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/test.mp4",
@@ -696,7 +696,7 @@ docker-compose logs -f frame-server &
 LOGS_PID=$!
 
 # Submit face recognition job
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -761,7 +761,7 @@ docker-compose logs faces-service | grep "scene_boundaries"
 
 ```bash
 # Submit job
-JOB1=$(curl -X POST http://localhost:5003/analyze \
+JOB1=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -773,7 +773,7 @@ JOB1=$(curl -X POST http://localhost:5003/analyze \
 sleep 30
 
 # Submit identical request - should return same job_id
-JOB2=$(curl -X POST http://localhost:5003/analyze \
+JOB2=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -792,7 +792,7 @@ fi
 
 ```bash
 # Submit with different parameters
-JOB3=$(curl -X POST http://localhost:5003/analyze \
+JOB3=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -814,7 +814,7 @@ fi
 touch /Users/x/dev/resources/repo/stash-auto-vision/tests/data/compound/faces-service/single_person_varied_conditions.mp4
 
 # Submit same request - should create new job
-JOB4=$(curl -X POST http://localhost:5003/analyze \
+JOB4=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -842,7 +842,7 @@ for METHOD in opencv_cpu ffmpeg; do
 
   START=$(date +%s)
 
-  JOB_ID=$(curl -X POST http://localhost:5001/extract \
+  JOB_ID=$(curl -X POST http://localhost:5001/frames/extract \
     -H "Content-Type: application/json" \
     -d "{
       \"video_path\": \"/media/videos/compound/frame-server/long_video.mp4\",
@@ -852,7 +852,7 @@ for METHOD in opencv_cpu ffmpeg; do
 
   # Wait for completion
   while true; do
-    STATUS=$(curl -s "http://localhost:5001/jobs/$JOB_ID/status" | jq -r '.status')
+    STATUS=$(curl -s "http://localhost:5001/frames/jobs/$JOB_ID/status" | jq -r '.status')
     if [ "$STATUS" = "completed" ]; then
       break
     fi
@@ -862,7 +862,7 @@ for METHOD in opencv_cpu ffmpeg; do
   END=$(date +%s)
   DURATION=$((END - START))
 
-  FRAMES=$(curl -s "http://localhost:5001/jobs/$JOB_ID/results" | jq '.frames | length')
+  FRAMES=$(curl -s "http://localhost:5001/frames/jobs/$JOB_ID/results" | jq '.frames | length')
   FPS=$(echo "scale=2; $FRAMES / $DURATION" | bc)
 
   echo "$METHOD: $FRAMES frames in ${DURATION}s = ${FPS} FPS"
@@ -885,7 +885,7 @@ done
 # Benchmark face detection
 START=$(date +%s)
 
-JOB_ID=$(curl -X POST http://localhost:5003/analyze \
+JOB_ID=$(curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -898,8 +898,8 @@ JOB_ID=$(curl -X POST http://localhost:5003/analyze \
 
 # Wait for completion with progress updates
 while true; do
-  STATUS=$(curl -s "http://localhost:5003/jobs/$JOB_ID/status" | jq -r '.status')
-  PROGRESS=$(curl -s "http://localhost:5003/jobs/$JOB_ID/status" | jq -r '.progress')
+  STATUS=$(curl -s "http://localhost:5003/faces/jobs/$JOB_ID/status" | jq -r '.status')
+  PROGRESS=$(curl -s "http://localhost:5003/faces/jobs/$JOB_ID/status" | jq -r '.progress')
   echo "Progress: $(echo "$PROGRESS * 100" | bc)%"
 
   if [ "$STATUS" = "completed" ]; then
@@ -912,7 +912,7 @@ END=$(date +%s)
 DURATION=$((END - START))
 
 # Get statistics
-RESULTS=$(curl -s "http://localhost:5003/jobs/$JOB_ID/results")
+RESULTS=$(curl -s "http://localhost:5003/faces/jobs/$JOB_ID/results")
 FRAMES=$(echo $RESULTS | jq '.metadata.frames_processed')
 DETECTIONS=$(echo $RESULTS | jq '.metadata.total_detections')
 UNIQUE=$(echo $RESULTS | jq '.metadata.unique_faces')
@@ -941,7 +941,7 @@ echo "  FPS: $(echo "scale=2; $FRAMES / $DURATION" | bc)"
 # Benchmark scene detection
 START=$(date +%s)
 
-JOB_ID=$(curl -X POST http://localhost:5002/detect \
+JOB_ID=$(curl -X POST http://localhost:5002/scenes/detect \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/scenes-service/sharp_transitions.mp4",
@@ -951,7 +951,7 @@ JOB_ID=$(curl -X POST http://localhost:5002/detect \
 
 # Wait for completion
 while true; do
-  STATUS=$(curl -s "http://localhost:5002/jobs/$JOB_ID/status" | jq -r '.status')
+  STATUS=$(curl -s "http://localhost:5002/scenes/jobs/$JOB_ID/status" | jq -r '.status')
   if [ "$STATUS" = "completed" ]; then
     break
   fi
@@ -961,7 +961,7 @@ done
 END=$(date +%s)
 DURATION=$((END - START))
 
-RESULTS=$(curl -s "http://localhost:5002/jobs/$JOB_ID/results")
+RESULTS=$(curl -s "http://localhost:5002/scenes/jobs/$JOB_ID/results")
 TOTAL_FRAMES=$(echo $RESULTS | jq '.metadata.total_frames')
 FPS=$(echo "scale=2; $TOTAL_FRAMES / $DURATION" | bc)
 
@@ -993,10 +993,10 @@ docker-compose up -d
 sleep 30
 
 # Health check all services
-curl http://localhost:5010/health | jq .
+curl http://localhost:5010/vision/health | jq .
 
 # Test faces service with single person video
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",

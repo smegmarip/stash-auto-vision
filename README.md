@@ -73,7 +73,7 @@ open http://localhost:5010/docs
 
 ```bash
 # Test face recognition on sample video
-curl -X POST http://localhost:5010/vision/analyze/faces \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/compound/faces-service/single_person_varied_conditions.mp4",
@@ -86,8 +86,8 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
 
 # Poll for results
 JOB_ID="<paste-job-id-from-response>"
-curl "http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/status" | jq .
-curl "http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/results" | jq .
+curl "http://localhost:5003/faces/jobs/$JOB_ID/status" | jq .
+curl "http://localhost:5003/faces/jobs/$JOB_ID/results" | jq .
 ```
 
 ---
@@ -125,7 +125,7 @@ curl "http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/results" | jq .
 
 ```bash
 # Submit job
-curl -X POST http://localhost:5010/vision/analyze/faces \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source": "/media/videos/scene_12345.mp4",
@@ -147,13 +147,13 @@ curl -X POST http://localhost:5010/vision/analyze/faces \
 ### Check Status
 
 ```bash
-curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/status
+curl http://localhost:5003/faces/jobs/{job_id}/status
 ```
 
 ### Get Results
 
 ```bash
-curl http://localhost:5010/vision/analyze/faces/jobs/{job_id}/results
+curl http://localhost:5003/faces/jobs/{job_id}/results
 ```
 
 ### Comprehensive Analysis
@@ -177,7 +177,7 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 - **[How to Use](docs/HOW_TO_USE.md)** - Quick start, API examples, troubleshooting
 - **[Project Specification](CLAUDE.md)** - Architecture, status, development notes
-- **[OpenAPI Specification](openapi.yml)** - Complete API schemas for all services
+- **[OpenAPI Specification](http://localhost:5009/openapi.yaml)** - Complete API schemas for all services
 - **[Frame Server](docs/FRAME_SERVER.md)** - Frame extraction, sprite parsing, on-demand serving
 - **[Scenes Service](docs/SCENES_SERVICE.md)** - PySceneDetect algorithms, boundary detection
 - **[Testing Guide](docs/TESTING.md)** - Test scenarios and results

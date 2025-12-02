@@ -38,7 +38,7 @@ selfies/
 
 ```bash
 # Test single subject face recognition
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/selfies/1/3.mp4",
@@ -100,7 +100,7 @@ youtube_faces/
 
 ```bash
 # Test with celebrity subject (multiple videos)
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/youtube_faces/data/frame_images_DB/Aaron_Eckhart/0/*.jpg",
@@ -175,7 +175,7 @@ charades/
 
 ```bash
 # Test frame extraction performance
-curl -X POST http://localhost:5001/extract \
+curl -X POST http://localhost:5001/frames/extract \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/videos/001YG.mp4",
@@ -187,7 +187,7 @@ curl -X POST http://localhost:5001/extract \
   }'
 
 # Test scene detection
-curl -X POST http://localhost:5002/detect \
+curl -X POST http://localhost:5002/scenes/detect \
   -H "Content-Type: application/json" \
   -d '{
     "video_path": "/media/videos/001YG.mp4",
@@ -229,7 +229,7 @@ curl -X POST http://localhost:5002/detect \
 ```bash
 # Test all 10 subjects
 for i in {1..10}; do
-  curl -X POST http://localhost:5003/analyze \
+  curl -X POST http://localhost:5003/faces/analyze \
     -H "Content-Type: application/json" \
     -d "{
       \"video_path\": \"/media/selfies/$i/3.mp4\",
@@ -250,11 +250,11 @@ done
 # Aaron_Eckhart has multiple videos - should cluster to same person
 
 # Process video 0
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -d '{"video_path": "/media/youtube_faces/data/frame_images_DB/Aaron_Eckhart/0/..."}'
 
 # Process video 1
-curl -X POST http://localhost:5003/analyze \
+curl -X POST http://localhost:5003/faces/analyze \
   -d '{"video_path": "/media/youtube_faces/data/frame_images_DB/Aaron_Eckhart/1/..."}'
 
 # Validate: Embeddings from both videos should be similar (>0.6)

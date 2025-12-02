@@ -10,10 +10,10 @@ echo ""
 
 # Submit job
 echo "1. Submitting face analysis job..."
-RESPONSE=$(curl -s -X POST http://localhost:5010/vision/analyze/faces \
+RESPONSE=$(curl -s -X POST http://localhost:5003/faces/analyze \
   -H "Content-Type: application/json" \
   -d "{
-    \"video_path\": \"$VIDEO_PATH\",
+    \"source\": \"$VIDEO_PATH\",
     \"source_id\": \"$SCENE_ID\",
     \"parameters\": {
       \"min_confidence\": 0.8,
@@ -32,7 +32,7 @@ echo ""
 # Poll status
 echo "2. Polling job status..."
 while true; do
-  STATUS_RESPONSE=$(curl -s http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/status)
+  STATUS_RESPONSE=$(curl -s http://localhost:5003/faces/jobs/$JOB_ID/status)
   STATUS=$(echo "$STATUS_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])")
   PROGRESS=$(echo "$STATUS_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('progress', 0))")
   
@@ -51,5 +51,5 @@ done
 if [ "$STATUS" = "completed" ]; then
   echo ""
   echo "3. Fetching results..."
-  curl -s http://localhost:5010/vision/analyze/faces/jobs/$JOB_ID/results | python3 -m json.tool
+  curl -s http://localhost:5003/faces/jobs/$JOB_ID/results | python3 -m json.tool
 fi

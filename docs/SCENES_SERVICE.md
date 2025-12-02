@@ -2,7 +2,7 @@
 
 **Service:** Scenes Service
 **Port:** 5002
-**Path:** `/detect`
+**Path:** `/scenes/detect`
 **Status:** Phase 1 - Implemented
 **Version:** 1.0.0
 
@@ -25,10 +25,10 @@ The Scenes Service is a microservice that provides GPU-accelerated scene boundar
 
 The Scenes Service uses a straightforward async detection architecture:
 
-1. **Submit detection job** (POST /detect)
+1. **Submit detection job** (POST /scenes/detect)
 2. **Process video asynchronously** (PySceneDetect analysis)
-3. **Poll job status** (GET /jobs/{job_id}/status)
-4. **Retrieve results** (GET /jobs/{job_id}/results)
+3. **Poll job status** (GET /scenes/jobs/{job_id}/status)
+4. **Retrieve results** (GET /scenes/jobs/{job_id}/results)
 5. **Cache results** (Redis with configurable TTL)
 
 The service analyzes video content using histogram comparison (HSV color space) to detect scene boundaries based on significant visual changes between consecutive frames.
@@ -50,7 +50,7 @@ servers:
     description: Internal Docker network
 
 paths:
-  /detect:
+  /scenes/detect:
     post:
       summary: Submit scene detection job
       description: Asynchronously detect scene boundaries in video
@@ -81,7 +81,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /jobs/{job_id}/status:
+  /scenes/jobs/{job_id}/status:
     get:
       summary: Get detection job status
       operationId: getJobStatus
@@ -106,7 +106,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /jobs/{job_id}/results:
+  /scenes/jobs/{job_id}/results:
     get:
       summary: Get detection results
       operationId: getJobResults
@@ -129,7 +129,7 @@ paths:
         "409":
           description: Job not completed yet
 
-  /health:
+  /scenes/health:
     get:
       summary: Service health check
       operationId: healthCheck
@@ -470,8 +470,8 @@ The service follows this processing flow:
    └─ Store results in Redis with TTL
 
 6. Result Retrieval
-   └─ Poll /jobs/{job_id}/status until completed
-   └─ Fetch results from /jobs/{job_id}/results
+   └─ Poll /scenes/jobs/{job_id}/status until completed
+   └─ Fetch results from /scenes/jobs/{job_id}/results
 ```
 
 ### Parameters
