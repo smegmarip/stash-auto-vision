@@ -22,7 +22,7 @@ app = FastAPI(
 )
 
 
-@app.post("/analyze", status_code=202)
+@app.post("/objects/analyze", status_code=202)
 async def analyze_objects(request: dict):
     """
     Stub endpoint for object analysis
@@ -43,7 +43,7 @@ async def analyze_objects(request: dict):
     }
 
 
-@app.get("/jobs/{job_id}/status")
+@app.get("/objects/jobs/{job_id}/status")
 async def get_job_status(job_id: str):
     """Stub endpoint for job status"""
     return JSONResponse(
@@ -57,7 +57,7 @@ async def get_job_status(job_id: str):
     )
 
 
-@app.get("/jobs/{job_id}/results")
+@app.get("/objects/jobs/{job_id}/results")
 async def get_job_results(job_id: str):
     """Stub endpoint for job results"""
     return JSONResponse(
@@ -71,7 +71,7 @@ async def get_job_results(job_id: str):
     )
 
 
-@app.get("/health")
+@app.get("/objects/health")
 async def health_check():
     """Health check endpoint"""
     return {

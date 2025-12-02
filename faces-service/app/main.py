@@ -221,7 +221,7 @@ async def request_frames(video_path: str, job_id: str, parameters: dict) -> dict
 
             # Submit extraction job
             response = await client.post(
-                f"{FRAME_SERVER_URL}/extract",
+                f"{FRAME_SERVER_URL}/frames/extract",
                 json={
                     "video_path": video_path,
                     "job_id": f"frames-{job_id}",
@@ -247,7 +247,7 @@ async def request_frames(video_path: str, job_id: str, parameters: dict) -> dict
 
             # Poll for completion
             while True:
-                status_response = await client.get(f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/status")
+                status_response = await client.get(f"{FRAME_SERVER_URL}/frames/jobs/{frame_job_id}/status")
 
                 status = status_response.json()
 
@@ -259,7 +259,7 @@ async def request_frames(video_path: str, job_id: str, parameters: dict) -> dict
                 await asyncio.sleep(2)
 
             # Get results
-            results_response = await client.get(f"{FRAME_SERVER_URL}/jobs/{frame_job_id}/results")
+            results_response = await client.get(f"{FRAME_SERVER_URL}/frames/jobs/{frame_job_id}/results")
 
             return results_response.json()
 
@@ -560,7 +560,7 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
         await cache_manager.update_job_status(job_id, status=JobStatus.FAILED.value, progress=0.0, error=str(e))
 
 
-@app.post("/analyze", response_model=AnalyzeJobResponse, status_code=202)
+@app.post("/faces/analyze", response_model=AnalyzeJobResponse, status_code=202)
 async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: BackgroundTasks):
     """Submit face analysis job"""
     try:
@@ -622,7 +622,7 @@ async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: Backgrou
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/status", response_model=AnalyzeJobStatus)
+@app.get("/faces/jobs/{job_id}/status", response_model=AnalyzeJobStatus)
 async def get_job_status(job_id: str):
     """Get job status"""
     try:
@@ -662,7 +662,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/results", response_model=AnalyzeJobResults)
+@app.get("/faces/jobs/{job_id}/results", response_model=AnalyzeJobResults)
 async def get_job_results(job_id: str):
     """Get job results"""
     try:
@@ -688,7 +688,7 @@ async def get_job_results(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/faces/health", response_model=HealthResponse)
 async def health_check():
     """Service health check"""
     try:

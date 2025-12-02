@@ -299,7 +299,7 @@ async def process_extraction_job(
         )
 
 
-@app.post("/extract", response_model=ExtractJobResponse, status_code=202)
+@app.post("/frames/extract", response_model=ExtractJobResponse, status_code=202)
 async def extract_frames(
     request: ExtractFramesRequest,
     background_tasks: BackgroundTasks
@@ -393,7 +393,7 @@ async def extract_frames(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/status", response_model=ExtractJobStatus)
+@app.get("/frames/jobs/{job_id}/status", response_model=ExtractJobStatus)
 async def get_job_status(job_id: str):
     """
     Get job status and progress
@@ -440,7 +440,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/results", response_model=ExtractJobResults)
+@app.get("/frames/jobs/{job_id}/results", response_model=ExtractJobResults)
 async def get_job_results(job_id: str):
     """
     Get job results (only available when status=completed)
@@ -479,7 +479,7 @@ async def get_job_results(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/extract-frame")
+@app.get("/frames/extract-frame")
 async def extract_single_frame(
     video_path: str,
     timestamp: float,
@@ -745,7 +745,7 @@ async def get_frame(job_id: str, frame_index: int, wait: bool = True):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/frames/health", response_model=HealthResponse)
 async def health_check():
     """
     Service health check

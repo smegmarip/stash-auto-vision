@@ -213,7 +213,7 @@ async def process_detection_job(
         )
 
 
-@app.post("/detect", response_model=DetectJobResponse, status_code=202)
+@app.post("/scenes/detect", response_model=DetectJobResponse, status_code=202)
 async def detect_scenes(
     request: DetectScenesRequest,
     background_tasks: BackgroundTasks
@@ -305,7 +305,7 @@ async def detect_scenes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/status", response_model=DetectJobStatus)
+@app.get("/scenes/jobs/{job_id}/status", response_model=DetectJobStatus)
 async def get_job_status(job_id: str):
     """
     Get job status and progress
@@ -351,7 +351,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/results", response_model=DetectJobResults)
+@app.get("/scenes/jobs/{job_id}/results", response_model=DetectJobResults)
 async def get_job_results(job_id: str):
     """
     Get job results (only available when status=completed)
@@ -390,7 +390,7 @@ async def get_job_results(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/scenes/health", response_model=HealthResponse)
 async def health_check():
     """
     Service health check

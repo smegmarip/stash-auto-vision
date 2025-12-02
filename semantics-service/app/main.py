@@ -440,7 +440,7 @@ def aggregate_scene_semantics(
     return scene_summaries
 
 
-@app.post("/analyze", response_model=AnalyzeSemanticsResponse, status_code=202)
+@app.post("/semantics/analyze", response_model=AnalyzeSemanticsResponse, status_code=202)
 async def analyze_semantics(request: AnalyzeSemanticsRequest, background_tasks: BackgroundTasks):
     """Submit semantics analysis job"""
 
@@ -505,7 +505,7 @@ async def analyze_semantics(request: AnalyzeSemanticsRequest, background_tasks: 
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/status", response_model=JobStatusResponse)
+@app.get("/semantics/jobs/{job_id}/status", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
     """Get job status"""
 
@@ -546,7 +546,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/jobs/{job_id}/results", response_model=SemanticsResults)
+@app.get("/semantics/jobs/{job_id}/results", response_model=SemanticsResults)
 async def get_job_results(job_id: str):
     """Get job results"""
 
@@ -587,7 +587,7 @@ async def get_job_results(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/semantics/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
 

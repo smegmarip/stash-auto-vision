@@ -148,9 +148,9 @@ async def call_service(
             logger.info(f"Submitting job to {service_name}...")
 
             if service_name == "scenes":
-                endpoint = f"{service_url}/detect"
+                endpoint = f"{service_url}/scenes/detect"
             else:
-                endpoint = f"{service_url}/analyze"
+                endpoint = f"{service_url}/{service_name}/analyze"
 
             response = await client.post(endpoint, json=request_data)
 
@@ -164,7 +164,7 @@ async def call_service(
 
             # Poll for completion
             while True:
-                status_response = await client.get(f"{service_url}/jobs/{job_id}/status")
+                status_response = await client.get(f"{service_url}/{service_name}/jobs/{job_id}/status")
 
                 status = status_response.json()
 
@@ -196,7 +196,7 @@ async def call_service(
                 await asyncio.sleep(2)
 
             # Get results
-            results_response = await client.get(f"{service_url}/jobs/{job_id}/results")
+            results_response = await client.get(f"{service_url}/{service_name}/jobs/{job_id}/results")
 
             return results_response.json()
 
@@ -862,7 +862,7 @@ async def count_jobs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/vision/health", response_model=HealthResponse)
 async def health_check():
     """Health check for orchestrator and all services"""
     try:
@@ -877,7 +877,7 @@ async def health_check():
                 ("objects", OBJECTS_SERVICE_URL),
             ]:
                 try:
-                    response = await client.get(f"{url}/health")
+                    response = await client.get(f"{url}/{name}/health")
                     services[name] = response.json()
                 except Exception as e:
                     services[name] = {"status": "unhealthy", "error": str(e)}

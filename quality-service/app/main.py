@@ -102,7 +102,7 @@ async def load_image(source: str, source_type: str) -> np.ndarray:
         raise
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/quality/health", response_model=HealthResponse)
 async def health():
     """Health check endpoint"""
     return HealthResponse(status="healthy", model=MUSIQ_MODEL)
