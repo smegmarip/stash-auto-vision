@@ -3,7 +3,7 @@
   "info": {
     "title": "Jobs Viewer API Gateway",
     "description": "API gateway for vision analysis job monitoring. Proxies requests to vision-api and frame-server.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "servers": [
     { "url": "http://localhost:5020", "description": "Local development" },
@@ -22,6 +22,21 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/HealthResponse" }
               }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI schema",
+        "operationId": "getOpenApiSchema",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.0 schema",
+            "content": {
+              "application/json": {}
             }
           }
         }
@@ -48,45 +63,136 @@
         }
       }
     },
-    "/api/vision/{path}": {
+    "/api/vision/jobs": {
       "get": {
-        "summary": "Proxy to Vision API",
-        "description": "All requests to /api/vision/* are proxied to vision-api:5010/vision/*. See vision-api schema for details.",
-        "operationId": "proxyVision",
-        "tags": ["Vision API Proxy"],
-        "externalDocs": {
-          "description": "Vision API OpenAPI Schema",
-          "url": "http://localhost:5010/openapi.json"
-        },
+        "summary": "List jobs with filters",
+        "operationId": "listJobs",
+        "tags": ["Vision API"],
         "parameters": [
-          { "name": "path", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/JobStatus" } },
+          { "name": "service", "in": "query", "schema": { "$ref": "#/components/schemas/ServiceName" } },
+          { "name": "source_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "source", "in": "query", "schema": { "type": "string" } },
+          { "name": "start_date", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "end_date", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "include_results", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
         ],
         "responses": {
-          "200": { "description": "Response from vision-api" }
+          "200": {
+            "description": "List of jobs",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListJobsResponse" }
+              }
+            }
+          }
         }
       }
     },
-    "/api/frames/{path}": {
+    "/api/vision/jobs/count": {
       "get": {
-        "summary": "Proxy to Frame Server",
-        "description": "All requests to /api/frames/* are proxied to frame-server:5001/*. See frame-server schema for details.",
-        "operationId": "proxyFrames",
-        "tags": ["Frame Server Proxy"],
-        "externalDocs": {
-          "description": "Frame Server OpenAPI Schema",
-          "url": "http://localhost:5001/openapi.json"
-        },
+        "summary": "Count jobs by service",
+        "operationId": "countJobs",
+        "tags": ["Vision API"],
         "parameters": [
-          { "name": "path", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/JobStatus" } },
+          { "name": "service", "in": "query", "schema": { "$ref": "#/components/schemas/ServiceName" } },
+          { "name": "source_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "start_date", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "end_date", "in": "query", "schema": { "type": "string", "format": "date-time" } }
         ],
         "responses": {
-          "200": { "description": "Response from frame-server" }
+          "200": {
+            "description": "Job counts by service",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobCountResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vision/jobs/{job_id}/status": {
+      "get": {
+        "summary": "Get job status",
+        "operationId": "getJobStatus",
+        "tags": ["Vision API"],
+        "parameters": [
+          { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobStatusResponse" }
+              }
+            }
+          },
+          "404": { "description": "Job not found" }
+        }
+      }
+    },
+    "/api/vision/jobs/{job_id}/results": {
+      "get": {
+        "summary": "Get job results",
+        "operationId": "getJobResults",
+        "tags": ["Vision API"],
+        "parameters": [
+          { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job results",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobResults" }
+              }
+            }
+          },
+          "404": { "description": "Job not found" }
+        }
+      }
+    },
+    "/api/frames/extract-frame": {
+      "get": {
+        "summary": "Extract frame from video",
+        "operationId": "extractFrame",
+        "tags": ["Frame Server"],
+        "parameters": [
+          { "name": "video_path", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Path to video file" },
+          { "name": "timestamp", "in": "query", "required": true, "schema": { "type": "number" }, "description": "Timestamp in seconds" },
+          { "name": "output_format", "in": "query", "schema": { "type": "string", "enum": ["jpeg", "png"], "default": "jpeg" } },
+          { "name": "quality", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 95 } },
+          { "name": "enhance", "in": "query", "schema": { "type": "boolean", "default": false }, "description": "Apply face enhancement" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frame image",
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            }
+          },
+          "400": { "description": "Invalid parameters" },
+          "404": { "description": "Video not found" }
         }
       }
     }
   },
   "components": {
     "schemas": {
+      "JobStatus": {
+        "type": "string",
+        "enum": ["queued", "processing", "completed", "failed"]
+      },
+      "ServiceName": {
+        "type": "string",
+        "enum": ["vision", "faces", "scenes", "semantics", "objects"]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -96,13 +202,306 @@
           "uptime": { "type": "number", "description": "Uptime in seconds" }
         },
         "required": ["status", "service", "timestamp", "uptime"]
+      },
+      "ListJobsResponse": {
+        "type": "object",
+        "properties": {
+          "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/JobSummary" } },
+          "total": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
+        },
+        "required": ["jobs", "total", "limit", "offset"]
+      },
+      "JobSummary": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "service": { "$ref": "#/components/schemas/ServiceName" },
+          "status": { "$ref": "#/components/schemas/JobStatus" },
+          "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+          "source": { "type": "string" },
+          "source_id": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "result_summary": { "type": "object" }
+        },
+        "required": ["job_id", "service", "status", "progress"]
+      },
+      "JobCountResponse": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer" },
+          "by_service": {
+            "type": "object",
+            "properties": {
+              "vision": { "type": "integer" },
+              "faces": { "type": "integer" },
+              "scenes": { "type": "integer" },
+              "semantics": { "type": "integer" },
+              "objects": { "type": "integer" }
+            }
+          }
+        },
+        "required": ["total", "by_service"]
+      },
+      "JobStatusResponse": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/JobStatus" },
+          "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+          "processing_mode": { "type": "string" },
+          "stage": { "type": "string" },
+          "message": { "type": "string" },
+          "services": { "type": "array", "items": { "$ref": "#/components/schemas/ServiceJobInfo" } },
+          "created_at": { "type": "string", "format": "date-time" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "result_summary": { "type": "object" },
+          "error": { "type": "string" }
+        },
+        "required": ["job_id", "status", "progress", "processing_mode", "services", "created_at"]
+      },
+      "ServiceJobInfo": {
+        "type": "object",
+        "properties": {
+          "service": { "type": "string" },
+          "job_id": { "type": "string" },
+          "status": { "type": "string" },
+          "progress": { "type": "number" },
+          "message": { "type": "string" },
+          "error": { "type": "string" }
+        },
+        "required": ["service", "status", "progress"]
+      },
+      "JobResults": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "source_id": { "type": "string" },
+          "status": { "type": "string" },
+          "scenes": { "$ref": "#/components/schemas/ScenesResult" },
+          "faces": { "$ref": "#/components/schemas/FacesResult" },
+          "semantics": { "$ref": "#/components/schemas/SemanticsResult" },
+          "objects": { "type": "object" },
+          "metadata": { "$ref": "#/components/schemas/JobMetadata" }
+        },
+        "required": ["job_id", "source_id", "status", "metadata"]
+      },
+      "JobMetadata": {
+        "type": "object",
+        "properties": {
+          "processing_time_seconds": { "type": "number" },
+          "processing_mode": { "type": "string" },
+          "services_used": { "type": "object" }
+        }
+      },
+      "ScenesResult": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "source_id": { "type": "string" },
+          "status": { "type": "string" },
+          "scenes": { "type": "array", "items": { "$ref": "#/components/schemas/Scene" } },
+          "metadata": { "$ref": "#/components/schemas/ScenesMetadata" }
+        }
+      },
+      "Scene": {
+        "type": "object",
+        "properties": {
+          "scene_number": { "type": "integer" },
+          "start_time": { "type": "number" },
+          "end_time": { "type": "number" },
+          "start_timestamp": { "type": "number" },
+          "end_timestamp": { "type": "number" },
+          "start_frame": { "type": "integer" },
+          "end_frame": { "type": "integer" },
+          "duration": { "type": "number" }
+        }
+      },
+      "ScenesMetadata": {
+        "type": "object",
+        "properties": {
+          "video_path": { "type": "string" },
+          "total_duration_seconds": { "type": "number" },
+          "video_duration_seconds": { "type": "number" },
+          "total_scenes": { "type": "integer" },
+          "processing_time_seconds": { "type": "number" },
+          "detector": { "type": "string" },
+          "detection_method": { "type": "string" },
+          "threshold": { "type": "number" },
+          "total_frames": { "type": "integer" },
+          "video_fps": { "type": "number" }
+        }
+      },
+      "FacesResult": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "source_id": { "type": "string" },
+          "status": { "type": "string" },
+          "faces": { "type": "array", "items": { "$ref": "#/components/schemas/Face" } },
+          "metadata": { "$ref": "#/components/schemas/FacesMetadata" }
+        }
+      },
+      "Face": {
+        "type": "object",
+        "properties": {
+          "face_id": { "type": "string" },
+          "embedding": { "type": "array", "items": { "type": "number" } },
+          "demographics": { "$ref": "#/components/schemas/Demographics" },
+          "detections": { "type": "array", "items": { "$ref": "#/components/schemas/Detection" } },
+          "representative_detection": { "$ref": "#/components/schemas/Detection" }
+        }
+      },
+      "Detection": {
+        "type": "object",
+        "properties": {
+          "frame_index": { "type": "integer" },
+          "timestamp": { "type": "number" },
+          "bbox": { "$ref": "#/components/schemas/BoundingBox" },
+          "confidence": { "type": "number" },
+          "quality": { "$ref": "#/components/schemas/Quality" },
+          "pose": { "type": "string" },
+          "landmarks": { "$ref": "#/components/schemas/Landmarks" },
+          "enhanced": { "type": "boolean" },
+          "occlusion": { "$ref": "#/components/schemas/Occlusion" }
+        }
+      },
+      "BoundingBox": {
+        "type": "object",
+        "properties": {
+          "x_min": { "type": "number" },
+          "y_min": { "type": "number" },
+          "x_max": { "type": "number" },
+          "y_max": { "type": "number" }
+        },
+        "required": ["x_min", "y_min", "x_max", "y_max"]
+      },
+      "Quality": {
+        "type": "object",
+        "properties": {
+          "composite": { "type": "number" },
+          "components": { "$ref": "#/components/schemas/QualityComponents" }
+        }
+      },
+      "QualityComponents": {
+        "type": "object",
+        "properties": {
+          "size": { "type": "number" },
+          "pose": { "type": "number" },
+          "occlusion": { "type": "number" },
+          "sharpness": { "type": "number" }
+        }
+      },
+      "Landmarks": {
+        "type": "object",
+        "properties": {
+          "left_eye": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "right_eye": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "nose": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "mouth_left": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "mouth_right": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+        }
+      },
+      "Demographics": {
+        "type": "object",
+        "properties": {
+          "age": { "type": "integer" },
+          "gender": { "type": "string", "enum": ["M", "F"] },
+          "emotion": { "type": "string" }
+        }
+      },
+      "Occlusion": {
+        "type": "object",
+        "properties": {
+          "occluded": { "type": "boolean" },
+          "probability": { "type": "number" }
+        }
+      },
+      "FacesMetadata": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string" },
+          "total_frames": { "type": "integer" },
+          "frames_processed": { "type": "integer" },
+          "unique_faces": { "type": "integer" },
+          "total_detections": { "type": "integer" },
+          "processing_time_seconds": { "type": "number" },
+          "method": { "type": "string" },
+          "model": { "type": "string" }
+        }
+      },
+      "SemanticsResult": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "source_id": { "type": "string" },
+          "status": { "type": "string" },
+          "frames": { "type": "array", "items": { "$ref": "#/components/schemas/FrameSemantics" } },
+          "scene_summaries": { "type": "array", "items": { "$ref": "#/components/schemas/SceneSemanticSummary" } },
+          "metadata": { "$ref": "#/components/schemas/SemanticsMetadata" }
+        }
+      },
+      "FrameSemantics": {
+        "type": "object",
+        "properties": {
+          "frame_index": { "type": "integer" },
+          "timestamp": { "type": "number" },
+          "tags": { "type": "array", "items": { "$ref": "#/components/schemas/SemanticTag" } },
+          "embedding": { "type": "array", "items": { "type": "number" } },
+          "scene_classification": { "$ref": "#/components/schemas/SceneClassification" }
+        }
+      },
+      "SemanticTag": {
+        "type": "object",
+        "properties": {
+          "tag": { "type": "string" },
+          "confidence": { "type": "number" },
+          "source": { "type": "string", "enum": ["predefined", "custom_prompt", "zero_shot"] }
+        },
+        "required": ["tag", "confidence", "source"]
+      },
+      "SceneClassification": {
+        "type": "object",
+        "properties": {
+          "setting": { "type": "string" },
+          "location": { "type": "string" },
+          "activity": { "type": "string" }
+        }
+      },
+      "SceneSemanticSummary": {
+        "type": "object",
+        "properties": {
+          "start_timestamp": { "type": "number" },
+          "end_timestamp": { "type": "number" },
+          "dominant_tags": { "type": "array", "items": { "type": "string" } },
+          "frame_count": { "type": "integer" },
+          "avg_confidence": { "type": "number" }
+        }
+      },
+      "SemanticsMetadata": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string" },
+          "source_type": { "type": "string" },
+          "total_frames": { "type": "integer" },
+          "model": { "type": "string" },
+          "frames_analyzed": { "type": "integer" },
+          "processing_time_seconds": { "type": "number" },
+          "device": { "type": "string" },
+          "batch_size": { "type": "integer" },
+          "total_tags_generated": { "type": "integer" }
+        }
       }
     }
   },
   "tags": [
-    { "name": "Health", "description": "Service health endpoints" },
+    { "name": "Health", "description": "Service health and metadata endpoints" },
     { "name": "Proxy", "description": "CORS proxy utilities" },
-    { "name": "Vision API Proxy", "description": "Proxied vision-api endpoints" },
-    { "name": "Frame Server Proxy", "description": "Proxied frame-server endpoints" }
+    { "name": "Vision API", "description": "Job management endpoints (proxied to vision-api)" },
+    { "name": "Frame Server", "description": "Frame extraction endpoints (proxied to frame-server)" }
   ]
 }
