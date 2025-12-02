@@ -1,27 +1,14 @@
 openapi: 3.1.1
 info:
   title: Stash Auto Vision API
-  description: |
-    Complete video analysis service providing frame extraction, scene detection,
-    face recognition, semantic analysis, and object detection capabilities.
-
-    Architecture: Microservices (6 services) coordinated via Vision API rollup endpoint.
-
-    Services:
-    - Frame Server (port 5001) - Frame extraction and caching
-    - Scenes Service (port 5002) - Scene boundary detection
-    - Faces Service (port 5003) - Face detection, recognition, and quality assessment
-    - Semantics Service (port 5004) - SigLIP/CLIP-based scene understanding (Phase 2 implemented)
-    - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
-    - Vision API (port 5010) - Orchestration and rollup endpoint
-
-    For detailed service documentation, see:
-    - docs/FRAME_SERVER.md
-    - docs/SCENES_SERVICE.md
-    - docs/FACES_SERVICE.md
-    - docs/SEMANTICS_SERVICE.md
-    - docs/OBJECTS_SERVICE.md
-    - docs/VISION_API.md
+  description: "Complete video analysis service providing frame extraction, scene detection,\nface recognition, semantic analysis,
+    and object detection capabilities.\n\nArchitecture: Microservices (6 services) coordinated via Vision API rollup endpoint.\n\
+    \nServices:\n- Frame Server (port 5001) - Frame extraction and caching\n- Scenes Service (port 5002) - Scene boundary
+    detection\n- Faces Service (port 5003) - Face detection, recognition, and quality assessment\n- Semantics Service (port
+    5004) - SigLIP/CLIP-based scene understanding (Phase 2 implemented)\n- Objects Service (port 5005) - YOLO-World object
+    detection (stub - Phase 3)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010)
+    - Orchestration and rollup endpoint\n\nFor detailed service documentation, see:\n- docs/FRAME_SERVER.md\n- docs/SCENES_SERVICE.md\n\
+    - docs/FACES_SERVICE.md\n- docs/SEMANTICS_SERVICE.md\n- docs/OBJECTS_SERVICE.md\n- docs/VISION_API.md\n"
   version: 1.0.0
   contact:
     name: Stash Auto Vision
@@ -29,1389 +16,2062 @@ info:
   license:
     name: AGPL-3.0
     url: https://www.gnu.org/licenses/agpl-3.0.html
-
-servers:
-  - url: http://localhost:5010
-    description: Vision API (Rollup/Orchestrator)
-  - url: http://localhost:5001
-    description: Frame Server (Internal - not exposed via vision-api)
-  - url: http://localhost:5002
-    description: Scenes Service
-  - url: http://localhost:5003
-    description: Faces Service
-  - url: http://localhost:5004
-    description: Semantics Service (Phase 2 - SigLIP/CLIP)
-  - url: http://localhost:5005
-    description: Objects Service (Stub)
-
-tags:
-  - name: vision-api
-    description: Orchestration and multi-module analysis
-  - name: frames
-    description: Frame extraction and serving
-  - name: scenes
-    description: Scene boundary detection
-  - name: faces
-    description: Face detection, recognition, and quality assessment
-  - name: semantics
-    description: Semantic scene understanding with SigLIP/CLIP (Phase 2)
-  - name: objects
-    description: Object detection and classification (stub)
-  - name: health
-    description: Service health checks
-
 paths:
-  # ==================== VISION API (Rollup) ====================
-
   /vision/analyze:
     post:
-      tags: [vision-api]
-      summary: Analyze video (multi-module)
-      description: Submit a video for comprehensive analysis across multiple modules
-      operationId: analyzeVideo
+      summary: Analyze Video
+      description: Submit comprehensive video analysis job
+      operationId: analyze_video_vision_analyze_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AnalyzeRequest"
+              $ref: '#/components/schemas/AnalyzeVideoRequest'
+        required: true
       responses:
-        "202":
-          description: Analysis job accepted
+        '202':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalyzeJobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
+                $ref: '#/components/schemas/AnalyzeJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - vision-api
   /vision/jobs/{job_id}/status:
     get:
-      tags: [vision-api]
-      summary: Get analysis job status
-      operationId: getAnalysisStatus
+      summary: Get Job Status
+      description: "Get orchestrated job status.\n\nLooks up job across all service namespaces (vision, faces, scenes)."
+      operationId: get_job_status_vision_jobs__job_id__status_get
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: Job status
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalyzeJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
+                $ref: '#/components/schemas/AnalyzeJobStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - vision-api
   /vision/jobs/{job_id}/results:
     get:
-      tags: [vision-api]
-      summary: Get analysis results
-      operationId: getAnalysisResults
+      summary: Get Job Results
+      description: "Get orchestrated job results.\n\nLooks up job across all service namespaces (vision, faces, scenes)."
+      operationId: get_job_results_vision_jobs__job_id__results_get
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: Analysis results
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalyzeResults"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: Job not completed yet
-
+                $ref: '#/components/schemas/AnalyzeJobResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - vision-api
   /vision/jobs:
     get:
-      tags: [vision-api]
-      summary: List all jobs
-      description: |
-        List all jobs across all services (vision-api, faces-service, scenes-service)
-        with optional filtering and pagination.
-
-        Jobs are deduplicated by cache_key, preferring vision-level jobs over service-level jobs.
-      operationId: listJobs
+      summary: List Jobs
+      description: "List all jobs across all services with optional filtering.\n\nAggregates jobs from vision-api, faces-service,
+        and scenes-service.\nDeduplicates by cache_key, preferring vision-level jobs over service-level jobs."
+      operationId: list_jobs_vision_jobs_get
       parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [queued, processing, completed, failed]
-          description: Filter by job status
-        - name: service
-          in: query
-          schema:
-            type: string
-            enum: [vision, faces, scenes]
-          description: Filter by service (default is all services)
-        - name: source_id
-          in: query
-          schema:
-            type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by status (queued, processing, completed, failed)
+          title: Status
+        description: Filter by status (queued, processing, completed, failed)
+      - name: service
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by service (vision, faces, scenes)
+          title: Service
+        description: Filter by service (vision, faces, scenes)
+      - name: source_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
           description: Filter by source_id
-        - name: source
-          in: query
-          schema:
-            type: string
+          title: Source Id
+        description: Filter by source_id
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
           description: Filter by source video path
-        - name: start_date
-          in: query
-          schema:
-            type: string
-            format: date-time
+          title: Source
+        description: Filter by source video path
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
           description: Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)
-        - name: end_date
-          in: query
-          schema:
-            type: string
-            format: date-time
+          title: Start Date
+        description: Filter by start date (ISO format, e.g., 2025-01-01T00:00:00Z)
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
           description: Filter by end date (ISO format)
-        - name: include_results
-          in: query
-          schema:
-            type: boolean
-            default: false
+          title: End Date
+        description: Filter by end date (ISO format)
+      - name: include_results
+        in: query
+        required: false
+        schema:
+          type: boolean
           description: Include full job results in response
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 50
+          default: false
+          title: Include Results
+        description: Include full job results in response
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
           description: Maximum number of jobs to return
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-          description: Number of jobs to skip (for pagination)
+          default: 50
+          title: Limit
+        description: Maximum number of jobs to return
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of jobs to skip
+          default: 0
+          title: Offset
+        description: Number of jobs to skip
       responses:
-        "200":
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListJobsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - vision-api
+  /vision/jobs/count:
+    get:
+      summary: Count Jobs
+      description: "Count jobs matching filters without fetching full results.\n\nThis endpoint provides efficient counting
+        for pagination and tab displays.\nIt uses the same filtering logic as /vision/jobs but only counts jobs\nwithout fetching
+        full metadata or results.\n\nReturns:\n    {\n        \"total\": 147,\n        \"by_service\": {\n            \"vision\"\
+        : 23,\n            \"faces\": 47,\n            \"scenes\": 45,\n            \"semantics\": 32,\n            \"objects\"\
+        : 0\n        }\n    }"
+      operationId: count_jobs_vision_jobs_count_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by job status (queued, processing, completed, failed)
+          title: Status
+        description: Filter by job status (queued, processing, completed, failed)
+      - name: service
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by service (vision, faces, scenes, semantics, objects)
+          title: Service
+        description: Filter by service (vision, faces, scenes, semantics, objects)
+      - name: source_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by source_id (scene identifier)
+          title: Source Id
+        description: Filter by source_id (scene identifier)
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by source video path
+          title: Source
+        description: Filter by source video path
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by start date (ISO 8601 format)
+          title: Start Date
+        description: Filter by start date (ISO 8601 format)
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by end date (ISO 8601 format)
+          title: End Date
+        description: Filter by end date (ISO 8601 format)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Count Jobs Vision Jobs Count Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - vision-api
+  /vision/health:
+    get:
+      summary: Health Check
+      description: Health check for orchestrator and all services
+      operationId: health_check_vision_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - vision-api
+      - health
+  /frames/extract:
+    post:
+      summary: Extract Frames
+      description: "Submit frame extraction job\n\nArgs:\n    request: Extraction request parameters\n    background_tasks:
+        FastAPI background task manager\n\nReturns:\n    Job submission response with job_id and status"
+      operationId: extract_frames_frames_extract_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractFramesRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - frames
+  /frames/jobs/{job_id}/status:
+    get:
+      summary: Get Job Status
+      description: "Get job status and progress\n\nArgs:\n    job_id: Job identifier\n\nReturns:\n    Job status information"
+      operationId: get_job_status_frames_jobs__job_id__status_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractJobStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - frames
+  /frames/jobs/{job_id}/results:
+    get:
+      summary: Get Job Results
+      description: "Get job results (only available when status=completed)\n\nArgs:\n    job_id: Job identifier\n\nReturns:\n\
+        \    Complete job results with frames and metadata"
+      operationId: get_job_results_frames_jobs__job_id__results_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractJobResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - frames
+  /frames/extract-frame:
+    get:
+      summary: Extract Single Frame
+      description: "Extract a single frame from video at specific timestamp\n\nLightweight endpoint for one-off frame extraction
+        without job tracking.\nUseful for thumbnails, previews, and poster frames.\n\nUses automatic fallback across extraction
+        methods (OpenCV → PyAV → FFmpeg)\nfor robust handling of corrupted or poorly-encoded videos.\n\nArgs:\n    video_path:
+        Absolute path to video file\n    timestamp: Timestamp in seconds\n    output_format: jpeg or png\n    quality: JPEG
+        quality (1-100)\n    enhance: Enable face enhancement (0 = disabled, 1 = enabled)\n    fidelity_weight: Enhancement
+        fidelity (0.0-1.0, lower = preserve original)\n\nReturns:\n    FileResponse with extracted frame"
+      operationId: extract_single_frame_frames_extract_frame_get
+      parameters:
+      - name: video_path
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Video Path
+      - name: timestamp
+        in: query
+        required: true
+        schema:
+          type: number
+          title: Timestamp
+      - name: output_format
+        in: query
+        required: false
+        schema:
+          type: string
+          default: jpeg
+          title: Output Format
+      - name: quality
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 95
+          title: Quality
+      - name: enhance
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Enhance
+      - name: model
+        in: query
+        required: false
+        schema:
+          type: string
+          default: codeformer
+          title: Model
+      - name: fidelity_weight
+        in: query
+        required: false
+        schema:
+          type: number
+          default: 0.7
+          title: Fidelity Weight
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - frames
+  /frames/{job_id}/{frame_index}:
+    get:
+      summary: Get Frame
+      description: "Get a specific frame from an extraction job\n\nServes frames on-demand with polling support. If extraction
+        is in progress,\ncan optionally wait for the frame to become available.\n\nArgs:\n    job_id: Job identifier\n   \
+        \ frame_index: Frame index to retrieve\n    wait: If True, wait up to 30s for frame to be extracted\n\nReturns:\n\
+        \    FileResponse with frame image"
+      operationId: get_frame_frames__job_id___frame_index__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: frame_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Frame Index
+      - name: wait
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Wait
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - frames
+  /frames/health:
+    get:
+      summary: Health Check
+      description: "Service health check\n\nReturns:\n    Health status and service information"
+      operationId: health_check_frames_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - frames
+      - health
+  /scenes/detect:
+    post:
+      summary: Detect Scenes
+      description: "Submit scene detection job\n\nArgs:\n    request: Detection request parameters\n    background_tasks:
+        FastAPI background task manager\n\nReturns:\n    Job submission response with job_id and status"
+      operationId: detect_scenes_scenes_detect_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectScenesRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - scenes
+  /scenes/jobs/{job_id}/status:
+    get:
+      summary: Get Job Status
+      description: "Get job status and progress\n\nArgs:\n    job_id: Job identifier\n\nReturns:\n    Job status information"
+      operationId: get_job_status_scenes_jobs__job_id__status_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - scenes
+  /scenes/jobs/{job_id}/results:
+    get:
+      summary: Get Job Results
+      description: "Get job results (only available when status=completed)\n\nArgs:\n    job_id: Job identifier\n\nReturns:\n\
+        \    Complete job results with scene boundaries and metadata"
+      operationId: get_job_results_scenes_jobs__job_id__results_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectJobResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - scenes
+  /scenes/health:
+    get:
+      summary: Health Check
+      description: "Service health check\n\nReturns:\n    Health status and service information"
+      operationId: health_check_scenes_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - scenes
+      - health
+  /faces/analyze:
+    post:
+      summary: Analyze Faces
+      description: Submit face analysis job
+      operationId: analyze_faces_faces_analyze_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeFacesRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - faces
+  /faces/jobs/{job_id}/status:
+    get:
+      summary: Get Job Status
+      description: Get job status
+      operationId: get_job_status_faces_jobs__job_id__status_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeJobStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - faces
+  /faces/jobs/{job_id}/results:
+    get:
+      summary: Get Job Results
+      description: Get job results
+      operationId: get_job_results_faces_jobs__job_id__results_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeJobResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - faces
+  /faces/health:
+    get:
+      summary: Health Check
+      description: Service health check
+      operationId: health_check_faces_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - faces
+      - health
+  /semantics/analyze:
+    post:
+      summary: Analyze Semantics
+      description: Submit semantics analysis job
+      operationId: analyze_semantics_semantics_analyze_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeSemanticsRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeSemanticsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - semantics
+  /semantics/jobs/{job_id}/status:
+    get:
+      summary: Get Job Status
+      description: Get job status
+      operationId: get_job_status_semantics_jobs__job_id__status_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - semantics
+  /semantics/jobs/{job_id}/results:
+    get:
+      summary: Get Job Results
+      description: Get job results
+      operationId: get_job_results_semantics_jobs__job_id__results_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticsResults'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - semantics
+  /semantics/health:
+    get:
+      summary: Health Check
+      description: Health check endpoint
+      operationId: health_check_semantics_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - semantics
+      - health
+  /objects/analyze:
+    post:
+      summary: Analyze Objects
+      description: "Stub endpoint for object analysis\n\nPhase 3 implementation will use YOLO-World for:\n- Open-vocabulary
+        object detection\n- Custom object categories\n- Temporal object tracking\n- Bounding box annotations"
+      operationId: analyze_objects_objects_analyze_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Request
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - objects
+  /objects/jobs/{job_id}/status:
+    get:
+      summary: Get Job Status
+      description: Stub endpoint for job status
+      operationId: get_job_status_objects_jobs__job_id__status_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - objects
+  /objects/jobs/{job_id}/results:
+    get:
+      summary: Get Job Results
+      description: Stub endpoint for job results
+      operationId: get_job_results_objects_jobs__job_id__results_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - objects
+  /objects/health:
+    get:
+      summary: Health Check
+      description: Health check endpoint
+      operationId: health_check_objects_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      tags:
+      - objects
+      - health
+  /viewer/health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags:
+      - jobs
+      - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /openapi.json:
+    get:
+      summary: OpenAPI schema
+      operationId: getOpenApiSchema
+      tags:
+      - jobs
+      responses:
+        '200':
+          description: OpenAPI 3.0 schema
+          content:
+            application/json: {}
+  /api/proxy:
+    get:
+      summary: CORS proxy for external URLs
+      operationId: proxyUrl
+      tags:
+      - jobs
+      parameters:
+      - name: url
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uri
+        description: External URL to proxy (http/https)
+      responses:
+        '200':
+          description: Proxied content with CORS headers
+        '400':
+          description: Invalid or missing URL parameter
+        '500':
+          description: Failed to fetch external URL
+  /api/vision/jobs:
+    get:
+      summary: List jobs with filters
+      operationId: listJobs
+      tags:
+      - jobs
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/JobStatus'
+      - name: service
+        in: query
+        schema:
+          $ref: '#/components/schemas/ServiceName'
+      - name: source_id
+        in: query
+        schema:
+          type: string
+      - name: source
+        in: query
+        schema:
+          type: string
+      - name: start_date
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: end_date
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: include_results
+        in: query
+        schema:
+          type: boolean
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          default: 20
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          default: 0
+      responses:
+        '200':
           description: List of jobs
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListJobsResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-
-  /vision/health:
+                $ref: '#/components/schemas/ListJobsResponse'
+  /api/vision/jobs/count:
     get:
-      tags: [health, vision-api]
-      summary: Vision API health check
-      operationId: visionApiHealth
-      responses:
-        "200":
-          description: Service health with all downstream services
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VisionApiHealth"
-
-  # ==================== FRAME SERVER ====================
-
-  /frames/extract:
-    post:
-      tags: [frames]
-      summary: Extract frames from video
-      operationId: extractFrames
-      servers:
-        - url: http://localhost:5001
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ExtractRequest"
-      responses:
-        "202":
-          description: Extraction job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExtractJobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /frames/jobs/{job_id}/status:
-    get:
-      tags: [frames]
-      summary: Get extraction job status
-      operationId: getExtractionStatus
-      servers:
-        - url: http://localhost:5001
+      summary: Count jobs by service
+      operationId: countJobs
+      tags:
+      - jobs
       parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExtractJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /frames/jobs/{job_id}/results:
-    get:
-      tags: [frames]
-      summary: Get extraction results
-      operationId: getExtractionResults
-      servers:
-        - url: http://localhost:5001
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Extraction results
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExtractResults"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /frames/{job_id}/{frame_index}:
-    get:
-      tags: [frames]
-      summary: Get specific frame
-      operationId: getFrame
-      servers:
-        - url: http://localhost:5001
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: frame_index
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 0
-        - name: wait
-          in: query
-          schema:
-            type: boolean
-            default: true
-          description: Wait up to 30s for frame to be extracted
-      responses:
-        "200":
-          description: Frame image
-          headers:
-            X-Frame-Index:
-              schema:
-                type: integer
-          content:
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-            image/png:
-              schema:
-                type: string
-                format: binary
-        "202":
-          description: Extraction in progress (if wait=false)
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "408":
-          description: Timeout waiting for frame
-
-  /frames/extract-frame:
-    get:
-      tags: [frames]
-      summary: Extract single frame
-      description: Extract a single frame without job tracking (for thumbnails/previews)
-      operationId: extractSingleFrame
-      servers:
-        - url: http://localhost:5001
-      parameters:
-        - name: video_path
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: timestamp
-          in: query
-          required: true
-          schema:
-            type: number
-        - name: output_format
-          in: query
-          schema:
-            type: string
-            enum: [jpeg, png]
-            default: jpeg
-        - name: quality
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 95
-        - name: enhance
-          in: query
-          schema:
-            type: integer
-            enum: [0, 1]
-            default: 0
-          description: Enable face enhancement (0=disabled, 1=enabled)
-        - name: model
-          in: query
-          schema:
-            type: string
-            enum: [gfpgan, codeformer]
-            default: gfpgan
-          description: Enhancement model to use
-        - name: fidelity_weight
-          in: query
-          schema:
-            type: number
-            minimum: 0
-            maximum: 1
-            default: 0.7
-          description: Enhancement fidelity (0.0=preserve original, 1.0=max enhancement)
-      responses:
-        "200":
-          description: Frame image
-          headers:
-            X-Timestamp:
-              schema:
-                type: number
-            X-Frame-Number:
-              schema:
-                type: integer
-          content:
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-            image/png:
-              schema:
-                type: string
-                format: binary
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  # ==================== SCENES SERVICE ====================
-
-  /scenes/detect:
-    post:
-      tags: [scenes]
-      summary: Detect scene boundaries
-      operationId: detectScenes
-      servers:
-        - url: http://localhost:5002
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DetectScenesRequest"
-      responses:
-        "202":
-          description: Detection job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetectJobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /scenes/jobs/{job_id}/status:
-    get:
-      tags: [scenes]
-      summary: Get scene detection job status
-      operationId: getSceneDetectionStatus
-      servers:
-        - url: http://localhost:5002
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetectJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /scenes/jobs/{job_id}/results:
-    get:
-      tags: [scenes]
-      summary: Get scene detection results
-      operationId: getSceneDetectionResults
-      servers:
-        - url: http://localhost:5002
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Detection results
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetectJobResults"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: Job not completed yet
-
-  # ==================== FACES SERVICE ====================
-
-  /faces/analyze:
-    post:
-      tags: [faces]
-      summary: Analyze faces in video
-      operationId: analyzeFaces
-      servers:
-        - url: http://localhost:5003
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AnalyzeFacesRequest"
-      responses:
-        "202":
-          description: Analysis job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FacesJobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /faces/jobs/{job_id}/status:
-    get:
-      tags: [faces]
-      summary: Get face analysis job status
-      operationId: getFaceAnalysisStatus
-      servers:
-        - url: http://localhost:5003
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FacesJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /faces/jobs/{job_id}/results:
-    get:
-      tags: [faces]
-      summary: Get face analysis results
-      operationId: getFaceAnalysisResults
-      servers:
-        - url: http://localhost:5003
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Analysis results
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FacesJobResults"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: Job not completed yet
-
-  # ==================== SEMANTICS SERVICE ====================
-
-  /semantics/analyze:
-    post:
-      tags: [semantics]
-      summary: Analyze scene semantics with CLIP/SigLIP
-      operationId: analyzeSemantics
-      servers:
-        - url: http://localhost:5004
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AnalyzeSemanticsRequest"
-      responses:
-        "202":
-          description: Analysis job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SemanticsJobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /semantics/jobs/{job_id}/status:
-    get:
-      tags: [semantics]
-      summary: Get semantics analysis job status
-      operationId: getSemanticsAnalysisStatus
-      servers:
-        - url: http://localhost:5004
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SemanticsJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /semantics/jobs/{job_id}/results:
-    get:
-      tags: [semantics]
-      summary: Get semantics analysis results
-      operationId: getSemanticsAnalysisResults
-      servers:
-        - url: http://localhost:5004
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Analysis results
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SemanticsJobResults"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: Job not completed yet
-
-components:
-  parameters:
-    JobId:
-      name: job_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: Job identifier
-
-  responses:
-    BadRequest:
-      description: Invalid request
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-
-  schemas:
-    Error:
-      type: object
-      properties:
-        detail:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/JobStatus'
+      - name: service
+        in: query
+        schema:
+          $ref: '#/components/schemas/ServiceName'
+      - name: source_id
+        in: query
+        schema:
           type: string
-
-    # Vision API Schemas
-    AnalyzeRequest:
+      - name: start_date
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: end_date
+        in: query
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: Job counts by service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCountResponse'
+  /api/vision/jobs/{job_id}/status:
+    get:
+      summary: Get job status
+      operationId: getJobStatus
+      tags:
+      - jobs
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '404':
+          description: Job not found
+  /api/vision/jobs/{job_id}/results:
+    get:
+      summary: Get job results
+      operationId: getJobResults
+      tags:
+      - jobs
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Job results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResults'
+        '404':
+          description: Job not found
+  /api/frames/extract-frame:
+    get:
+      summary: Extract frame from video
+      operationId: extractFrame
+      tags:
+      - jobs
+      parameters:
+      - name: video_path
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Path to video file
+      - name: timestamp
+        in: query
+        required: true
+        schema:
+          type: number
+        description: Timestamp in seconds
+      - name: output_format
+        in: query
+        schema:
+          type: string
+          enum:
+          - jpeg
+          - png
+          default: jpeg
+      - name: quality
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 95
+      - name: enhance
+        in: query
+        schema:
+          type: boolean
+          default: false
+        description: Apply face enhancement
+      responses:
+        '200':
+          description: Frame image
+          content:
+            image/jpeg: {}
+            image/png: {}
+        '400':
+          description: Invalid parameters
+        '404':
+          description: Video not found
+components:
+  schemas:
+    AnalyzeJobResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        created_at:
+          type: string
+          title: Created At
       type: object
       required:
-        - source
-        - source_id
+      - job_id
+      - status
+      - created_at
+      title: AnalyzeJobResponse
+      description: Response for face analysis job submission
+    AnalyzeJobResults:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        faces:
+          items:
+            $ref: '#/components/schemas/Face'
+          type: array
+          title: Faces
+        metadata:
+          $ref: '#/components/schemas/VideoMetadata'
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - faces
+      - metadata
+      title: AnalyzeJobResults
+      description: Complete job results
+    AnalyzeJobStatus:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Progress
+        stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+        created_at:
+          type: string
+          title: Created At
+        started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Started At
+        completed_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Completed At
+        result_summary:
+          anyOf:
+          - type: object
+          - type: 'null'
+          title: Result Summary
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - job_id
+      - status
+      - progress
+      - created_at
+      title: AnalyzeJobStatus
+      description: Job status response
+    AnalyzeVideoRequest:
       properties:
         source:
           type: string
+          title: Source
           description: Path, URL, or image source to analyze
-          example: /media/videos/scene.mp4
-        source_type:
-          type: string
-          enum: [video, image, url]
-          description: Source type (auto-detected if omitted)
         source_id:
           type: string
-          description: Source identifier
+          title: Source Id
+          description: Scene ID for reference
         job_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
           description: Job ID for tracking
         processing_mode:
           type: string
-          enum: [sequential, parallel]
+          title: Processing Mode
+          description: sequential or parallel
           default: sequential
-          description: Processing mode (sequential recommended to avoid GPU memory contention)
         modules:
-          type: object
-          description: Module configuration with explicit parameter schemas
-          properties:
-            scenes:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: true
-                  description: Enable scene detection
-                parameters:
-                  allOf:
-                    - $ref: "#/components/schemas/ScenesParameters"
-            faces:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: true
-                  description: Enable face recognition
-                parameters:
-                  allOf:
-                    - $ref: "#/components/schemas/FacesParameters"
-            semantics:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                  description: Enable CLIP/SigLIP semantic analysis (Phase 2)
-                parameters:
-                  allOf:
-                    - $ref: "#/components/schemas/SemanticsParameters"
-            objects:
-              type: object
-              properties:
-                enabled:
-                  type: boolean
-                  default: false
-                  description: Enable YOLO object detection (Phase 3 - not implemented)
-                parameters:
-                  type: object
-                  description: Object detection parameters (Phase 3)
-
-    AnalyzeJobResponse:
+          $ref: '#/components/schemas/ModulesConfig'
       type: object
+      required:
+      - source
+      - source_id
+      title: AnalyzeVideoRequest
+      description: Request to analyze video with all services
+    HTTPValidationError:
       properties:
-        job_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [queued, processing, completed, failed]
-        created_at:
-          type: string
-          format: date-time
-        services_enabled:
-          type: object
-          properties:
-            scenes:
-              type: boolean
-            faces:
-              type: boolean
-            semantics:
-              type: boolean
-            objects:
-              type: boolean
-        processing_mode:
-          type: string
-          enum: [sequential, parallel]
-
-    AnalyzeJobStatus:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-          enum: [queued, processing, completed, failed]
-        progress:
-          type: number
-          minimum: 0
-          maximum: 1
-        processing_mode:
-          type: string
-        services:
-          type: array
+        detail:
           items:
-            type: object
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        error:
-          type: string
-          nullable: true
-
-    AnalyzeResults:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
       type: object
-      properties:
-        job_id:
-          type: string
-        source_id:
-          type: string
-        status:
-          type: string
-        scenes:
-          type: object
-          nullable: true
-        faces:
-          type: object
-          nullable: true
-        semantics:
-          type: object
-          nullable: true
-        objects:
-          type: object
-          nullable: true
-        metadata:
-          type: object
-
-    VisionApiHealth:
+      title: HTTPValidationError
+    HealthResponse:
       type: object
       properties:
         status:
           type: string
+          example: healthy
         service:
           type: string
-        version:
+          example: jobs-viewer
+        timestamp:
           type: string
-        services:
-          type: object
-          additionalProperties:
-            type: object
-
-    ListJobsResponse:
-      type: object
-      properties:
-        jobs:
-          type: array
-          items:
-            $ref: "#/components/schemas/JobSummary"
-        total:
-          type: integer
-          description: Total number of jobs matching filters (before pagination)
-        limit:
-          type: integer
-        offset:
-          type: integer
-
+          format: date-time
+        uptime:
+          type: number
+          description: Uptime in seconds
+      required:
+      - status
+      - service
+      - timestamp
+      - uptime
     JobSummary:
       type: object
       properties:
         job_id:
           type: string
         service:
-          type: string
-          enum: [vision, faces, scenes]
-          description: Service that owns the job
+          $ref: '#/components/schemas/ServiceName'
         status:
-          type: string
-          enum: [queued, processing, completed, failed]
+          $ref: '#/components/schemas/JobStatus'
         progress:
           type: number
-          minimum: 0.0
-          maximum: 1.0
+          minimum: 0
+          maximum: 1
         source:
           type: string
-          nullable: true
         source_id:
           type: string
-          nullable: true
         created_at:
           type: string
           format: date-time
-          nullable: true
         started_at:
           type: string
           format: date-time
-          nullable: true
         completed_at:
           type: string
           format: date-time
-          nullable: true
         result_summary:
           type: object
-          nullable: true
-        results:
-          type: object
-          nullable: true
-          description: Full job results (only when include_results=true)
-
-    # Frame Server Schemas
-    ExtractRequest:
-      type: object
       required:
-        - video_path
-      properties:
-        video_path:
-          type: string
-        job_id:
-          type: string
-          description: Parent job ID for tracking
-        extraction_method:
-          type: string
-          enum: [opencv_cpu, opencv_cuda, ffmpeg, sprites]
-          default: opencv_cpu
-        sampling_strategy:
-          type: object
-          properties:
-            mode:
-              type: string
-              enum: [interval, keyframe, uniform]
-              default: interval
-            interval_seconds:
-              type: number
-            num_frames:
-              type: integer
-        scene_boundaries:
-          type: array
-          description: Scene boundaries from scenes-service for targeted extraction
-          items:
-            type: object
-            properties:
-              start_timestamp:
-                type: number
-              end_timestamp:
-                type: number
-        output_format:
-          type: string
-          enum: [jpeg, png]
-          default: jpeg
-        quality:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 95
-        cache_duration:
-          type: integer
-          default: 7200
-          description: Cache TTL in seconds
-        use_sprites:
-          type: boolean
-          default: false
-        sprite_vtt_url:
-          type: string
-        sprite_image_url:
-          type: string
-        enhancement:
-          $ref: "#/components/schemas/FrameEnhancementOptions"
-
-    FrameEnhancementModel:
-      type: string
-      enum: [gfpgan, codeformer]
-      description: Face enhancement model
-
-    FrameEnhancementOptions:
+      - job_id
+      - service
+      - status
+      - progress
+    ListJobsResponse:
       type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSummary'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+      - jobs
+      - total
+      - limit
+      - offset
+    ModuleConfig:
       properties:
         enabled:
           type: boolean
-          default: false
+          title: Enabled
+          default: true
+        parameters:
+          type: object
+          title: Parameters
+      type: object
+      title: ModuleConfig
+      description: Configuration for a single module
+    ModulesConfig:
+      properties:
+        scenes:
+          $ref: '#/components/schemas/ModuleConfig'
+        faces:
+          $ref: '#/components/schemas/ModuleConfig'
+        semantics:
+          $ref: '#/components/schemas/ModuleConfig'
+        objects:
+          $ref: '#/components/schemas/ModuleConfig'
+      type: object
+      title: ModulesConfig
+      description: Module configurations
+    ServiceJobInfo:
+      type: object
+      properties:
+        service:
+          type: string
+        job_id:
+          type: string
+        status:
+          type: string
+        progress:
+          type: number
+        message:
+          type: string
+        error:
+          type: string
+      required:
+      - service
+      - status
+      - progress
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    EnhancementModel:
+      type: string
+      enum:
+      - gfpgan
+      - codeformer
+      title: EnhancementModel
+      description: Face enhancement models
+    EnhancementOptions:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
           description: Enable face enhancement
+          default: false
         model:
-          $ref: "#/components/schemas/FrameEnhancementModel"
+          allOf:
+          - $ref: '#/components/schemas/EnhancementModel'
+          description: Enhancement model to use
           default: gfpgan
         fidelity_weight:
           type: number
-          default: 0.7
-          minimum: 0
-          maximum: 1
+          maximum: 1.0
+          minimum: 0.0
+          title: Fidelity Weight
           description: Balance between quality and fidelity (0=preserve original, 1=max enhancement)
+          default: 0.7
         upscale:
           type: integer
-          default: 2
-          minimum: 1
-          maximum: 4
+          maximum: 4.0
+          minimum: 1.0
+          title: Upscale
           description: Upscaling factor
+          default: 2
         only_center_face:
           type: boolean
-          default: false
+          title: Only Center Face
           description: Only enhance the most centered face
+          default: false
         paste_back:
           type: boolean
-          default: true
+          title: Paste Back
           description: Paste enhanced faces back to original image
-
-    ExtractJobResponse:
+          default: true
       type: object
+      title: EnhancementOptions
+      description: Face enhancement configuration
+    ExtractFramesRequest:
+      properties:
+        video_path:
+          type: string
+          title: Video Path
+          description: Absolute path to video file
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+          description: Parent job ID for tracking
+        extraction_method:
+          allOf:
+          - $ref: '#/components/schemas/ExtractionMethod'
+          default: opencv_cuda
+        sampling_strategy:
+          $ref: '#/components/schemas/SamplingStrategy'
+        use_sprites:
+          type: boolean
+          title: Use Sprites
+          description: Use sprite sheets if available
+          default: false
+        sprite_vtt_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Vtt Url
+        sprite_image_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Image Url
+        scene_boundaries:
+          anyOf:
+          - items:
+              additionalProperties:
+                type: number
+              type: object
+            type: array
+          - type: 'null'
+          title: Scene Boundaries
+          description: Scene boundaries from scenes-service
+        output_format:
+          allOf:
+          - $ref: '#/components/schemas/OutputFormat'
+          default: jpeg
+        quality:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Quality
+          description: JPEG quality
+          default: 95
+        enhancement:
+          allOf:
+          - $ref: '#/components/schemas/EnhancementOptions'
+          description: Face enhancement options
+        cache_duration:
+          type: integer
+          minimum: 0.0
+          title: Cache Duration
+          description: Cache TTL in seconds
+          default: 3600
+      type: object
+      required:
+      - video_path
+      title: ExtractFramesRequest
+      description: Request to extract frames from video
+    ExtractJobResponse:
       properties:
         job_id:
           type: string
+          title: Job Id
         status:
-          type: string
+          $ref: '#/components/schemas/JobStatus'
         created_at:
           type: string
-          format: date-time
+          title: Created At
         cache_key:
           type: string
+          title: Cache Key
         estimated_frames:
-          type: integer
-
-    ExtractJobStatus:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Estimated Frames
       type: object
+      required:
+      - job_id
+      - status
+      - created_at
+      - cache_key
+      title: ExtractJobResponse
+      description: Response for frame extraction job submission
+    ExtractJobResults:
       properties:
         job_id:
           type: string
+          title: Job Id
         status:
+          $ref: '#/components/schemas/JobStatus'
+        cache_key:
           type: string
+          title: Cache Key
+        frames:
+          items:
+            $ref: '#/components/schemas/FrameMetadata'
+          type: array
+          title: Frames
+        metadata:
+          $ref: '#/components/schemas/VideoMetadata'
+      type: object
+      required:
+      - job_id
+      - status
+      - cache_key
+      - frames
+      - metadata
+      title: ExtractJobResults
+      description: Complete job results
+    ExtractJobStatus:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
         progress:
           type: number
-          minimum: 0.0
           maximum: 1.0
+          minimum: 0.0
+          title: Progress
         stage:
-          type: string
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage
         message:
-          type: string
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
         frames_extracted:
-          type: integer
-          nullable: true
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Frames Extracted
         frames_total:
-          type: integer
-          nullable: true
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Frames Total
         created_at:
           type: string
-          format: date-time
+          title: Created At
         started_at:
-          type: string
-          format: date-time
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Started At
         completed_at:
-          type: string
-          format: date-time
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Completed At
         error:
-          type: string
-          nullable: true
-
-    ExtractResults:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
       type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        cache_key:
-          type: string
-        frames:
-          type: array
-          items:
-            $ref: "#/components/schemas/FrameMetadata"
-        metadata:
-          $ref: "#/components/schemas/VideoMetadata"
-
+      required:
+      - job_id
+      - status
+      - progress
+      - created_at
+      title: ExtractJobStatus
+      description: Job status response
+    ExtractionMethod:
+      type: string
+      enum:
+      - opencv_cuda
+      - opencv_cpu
+      - ffmpeg
+      - sprites
+      title: ExtractionMethod
+      description: Frame extraction methods
     FrameMetadata:
-      type: object
       properties:
         index:
           type: integer
+          title: Index
         timestamp:
           type: number
+          title: Timestamp
         url:
           type: string
+          title: Url
         width:
           type: integer
+          title: Width
         height:
           type: integer
-
+          title: Height
+      type: object
+      required:
+      - index
+      - timestamp
+      - url
+      - width
+      - height
+      title: FrameMetadata
+      description: Metadata for a single extracted frame
+    JobStatus:
+      type: string
+      enum:
+      - queued
+      - processing
+      - completed
+      - failed
+    OutputFormat:
+      type: string
+      enum:
+      - jpeg
+      - png
+      title: OutputFormat
+      description: Output image format
+    SamplingMode:
+      type: string
+      enum:
+      - interval
+      - timestamps
+      - scene_based
+      title: SamplingMode
+      description: Frame sampling strategies
+    SamplingStrategy:
+      properties:
+        mode:
+          allOf:
+          - $ref: '#/components/schemas/SamplingMode'
+          default: interval
+        interval_seconds:
+          anyOf:
+          - type: number
+            maximum: 10.0
+            minimum: 0.1
+          - type: 'null'
+          title: Interval Seconds
+          default: 2.0
+        timestamps:
+          anyOf:
+          - items:
+              type: number
+            type: array
+          - type: 'null'
+          title: Timestamps
+      type: object
+      title: SamplingStrategy
+      description: Frame sampling configuration
     VideoMetadata:
-      type: object
-      properties:
-        video_path:
-          type: string
-        extraction_method:
-          type: string
-        total_frames:
-          type: integer
-        video_duration_seconds:
-          type: number
-        video_fps:
-          type: number
-        processing_time_seconds:
-          type: number
-        enhancement_enabled:
-          type: boolean
-          default: false
-          description: Whether face enhancement was enabled for this extraction
-        enhancement_model:
-          type: string
-          nullable: true
-          description: Enhancement model used (gfpgan or codeformer), null if enhancement disabled
-        faces_enhanced:
-          type: integer
-          nullable: true
-          description: Total number of faces enhanced across all frames, null if enhancement disabled
-
-    # Scenes Service Schemas
-    DetectScenesRequest:
-      type: object
-      required:
-        - video_path
-      properties:
-        video_path:
-          type: string
-        source_id:
-          type: string
-        job_id:
-          type: string
-          description: Parent job ID for tracking
-        detection_method:
-          type: string
-          enum: [content, threshold, adaptive]
-          default: content
-        scene_threshold:
-          type: number
-          default: 27.0
-          minimum: 0.0
-          maximum: 100.0
-          description: Detection threshold
-        min_scene_length:
-          type: number
-          default: 0.6
-          minimum: 0.1
-          description: Minimum scene length in seconds
-        cache_duration:
-          type: integer
-          default: 3600
-          minimum: 0
-          description: Cache TTL in seconds
-
-    ScenesParameters:
-      type: object
-      properties:
-        detection_method:
-          type: string
-          enum: [content, threshold, adaptive]
-          default: content
-        scene_threshold:
-          type: number
-          default: 27.0
-          minimum: 0.0
-          maximum: 100.0
-          description: Content detection threshold
-        min_scene_length:
-          type: number
-          default: 0.6
-          minimum: 0.1
-          description: Minimum scene duration in seconds
-
-    DetectJobResponse:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        cache_key:
-          type: string
-        estimated_scenes:
-          type: integer
-          nullable: true
-
-    DetectJobStatus:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        progress:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-        stage:
-          type: string
-          nullable: true
-        message:
-          type: string
-          nullable: true
-        scenes_detected:
-          type: integer
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        error:
-          type: string
-          nullable: true
-
-    DetectJobResults:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        cache_key:
-          type: string
-        scenes:
-          type: array
-          items:
-            $ref: "#/components/schemas/SceneBoundary"
-        metadata:
-          $ref: "#/components/schemas/ScenesVideoMetadata"
-
-    SceneBoundary:
-      type: object
-      properties:
-        scene_number:
-          type: integer
-        start_frame:
-          type: integer
-        end_frame:
-          type: integer
-        start_timestamp:
-          type: number
-        end_timestamp:
-          type: number
-        duration:
-          type: number
-
-    ScenesVideoMetadata:
-      type: object
-      properties:
-        video_path:
-          type: string
-        detection_method:
-          type: string
-        total_frames:
-          type: integer
-        video_duration_seconds:
-          type: number
-        video_fps:
-          type: number
-        processing_time_seconds:
-          type: number
-
-    # Faces Service Schemas
-    AnalyzeFacesRequest:
-      type: object
-      required:
-        - source
-        - source_id
       properties:
         source:
           type: string
+          title: Source
+        source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Type
+          description: "Source type: 'video', 'image', or 'url'"
+        total_frames:
+          type: integer
+          title: Total Frames
+        frames_processed:
+          type: integer
+          title: Frames Processed
+        unique_faces:
+          type: integer
+          title: Unique Faces
+        total_detections:
+          type: integer
+          title: Total Detections
+        processing_time_seconds:
+          type: number
+          title: Processing Time Seconds
+        method:
+          type: string
+          title: Method
+        model:
+          type: string
+          title: Model
+        frame_enhancement:
+          anyOf:
+          - $ref: '#/components/schemas/EnhancementParameters'
+          - type: 'null'
+          description: Frame enhancement settings used (if enhancement was enabled)
+      type: object
+      required:
+      - source
+      - total_frames
+      - frames_processed
+      - unique_faces
+      - total_detections
+      - processing_time_seconds
+      - method
+      - model
+      title: VideoMetadata
+      description: Video file metadata
+    DetectJobResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        created_at:
+          type: string
+          title: Created At
+        cache_key:
+          type: string
+          title: Cache Key
+        estimated_scenes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Estimated Scenes
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - created_at
+      - cache_key
+      title: DetectJobResponse
+      description: Response for scene detection job submission
+    DetectJobResults:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        cache_key:
+          type: string
+          title: Cache Key
+        scenes:
+          items:
+            $ref: '#/components/schemas/SceneBoundary'
+          type: array
+          title: Scenes
+        metadata:
+          $ref: '#/components/schemas/VideoMetadata'
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - cache_key
+      - scenes
+      - metadata
+      title: DetectJobResults
+      description: Complete job results
+    DetectJobStatus:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Progress
+        stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stage
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+        scenes_detected:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Scenes Detected
+        created_at:
+          type: string
+          title: Created At
+        started_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Started At
+        completed_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Completed At
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - progress
+      - created_at
+      title: DetectJobStatus
+      description: Job status response
+    DetectScenesRequest:
+      properties:
+        video_path:
+          type: string
+          title: Video Path
+          description: Absolute path to video file
+        source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Id
+          description: Optional source identifier
+          default: N/A
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+          description: Parent job ID for tracking
+        detection_method:
+          allOf:
+          - $ref: '#/components/schemas/DetectionMethod'
+          default: content
+        scene_threshold:
+          type: number
+          maximum: 100.0
+          minimum: 0.0
+          title: Scene Threshold
+          description: Detection threshold
+          default: 27.0
+        min_scene_length:
+          type: number
+          minimum: 0.1
+          title: Min Scene Length
+          description: Minimum scene length in seconds
+          default: 0.6
+        cache_duration:
+          type: integer
+          minimum: 0.0
+          title: Cache Duration
+          description: Cache TTL in seconds
+          default: 31536000
+      type: object
+      required:
+      - video_path
+      title: DetectScenesRequest
+      description: Request to detect scene boundaries in video
+    DetectionMethod:
+      type: string
+      enum:
+      - content
+      - threshold
+      - adaptive
+      title: DetectionMethod
+      description: Scene detection methods
+    SceneBoundary:
+      properties:
+        scene_number:
+          type: integer
+          title: Scene Number
+        start_frame:
+          type: integer
+          title: Start Frame
+        end_frame:
+          type: integer
+          title: End Frame
+        start_timestamp:
+          type: number
+          title: Start Timestamp
+        end_timestamp:
+          type: number
+          title: End Timestamp
+        duration:
+          type: number
+          title: Duration
+      type: object
+      required:
+      - scene_number
+      - start_frame
+      - end_frame
+      - start_timestamp
+      - end_timestamp
+      - duration
+      title: SceneBoundary
+      description: Scene boundary information
+    AnalyzeFacesRequest:
+      properties:
+        source:
+          type: string
+          title: Source
           description: Path, URL, or image source to analyze
         source_type:
-          type: string
-          enum: [video, image, url]
-          description: Source type (auto-detected if omitted)
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Type
+          description: "Source type: 'video', 'image', 'url' (auto-detected if omitted)"
         original_source:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Original Source
           description: Original source path/URL before download (for metadata)
         source_id:
           type: string
-          description: Source ID for reference
+          title: Source Id
+          description: Scene ID for reference
         job_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
           description: Parent job ID for tracking
         parameters:
-          $ref: "#/components/schemas/FacesParameters"
-
-    FacesParameters:
+          $ref: '#/components/schemas/FaceAnalysisParameters'
+      type: object
+      required:
+      - source
+      - source_id
+      title: AnalyzeFacesRequest
+      description: Request to analyze faces in video/image
+    BoundingBox:
       type: object
       properties:
-        face_min_confidence:
+        x_min:
           type: number
-          default: 0.9
-          minimum: 0
-          maximum: 1
-          description: Minimum detection confidence threshold (default configurable via FACES_MIN_CONFIDENCE env var)
-        face_min_quality:
+        y_min:
           type: number
-          default: 0.0
-          minimum: 0
-          maximum: 1
-          description: Minimum quality threshold (filter faces below this, default configurable via FACES_MIN_QUALITY env var)
-        max_faces:
-          type: integer
-          default: 50
-          minimum: 1
-          maximum: 1000
-        sampling_interval:
+        x_max:
           type: number
-          default: 2.0
-          minimum: 0.1
-          maximum: 10.0
-          description: Seconds between sampled frames
-        use_sprites:
-          type: boolean
-          default: false
-          description: Use sprite sheets if available
-        sprite_vtt_url:
-          type: string
-          description: URL to WebVTT sprite manifest
-        sprite_image_url:
-          type: string
-          description: URL to sprite sheet image
-        enable_deduplication:
-          type: boolean
-          default: true
-          description: Cluster faces by embedding similarity
-        embedding_similarity_threshold:
+        y_max:
           type: number
-          default: 0.6
-          minimum: 0
-          maximum: 1
-          description: Cosine similarity threshold for clustering
-        detect_demographics:
-          type: boolean
-          default: true
-          description: Detect age, gender, emotion
-        scene_boundaries:
-          type: array
-          description: Scene boundaries for targeted face detection
-          items:
-            type: object
-            properties:
-              start_timestamp:
-                type: number
-              end_timestamp:
-                type: number
-        cache_duration:
-          type: integer
-          default: 3600
-          minimum: 0
-          description: Cache TTL in seconds
-        enhancement:
-          $ref: "#/components/schemas/EnhancementParameters"
-
-    EnhancementParameters:
+      required:
+      - x_min
+      - y_min
+      - x_max
+      - y_max
+    Demographics:
       type: object
+      properties:
+        age:
+          type: integer
+        gender:
+          type: string
+          enum:
+          - M
+          - F
+        emotion:
+          type: string
+    Detection:
+      type: object
+      properties:
+        frame_index:
+          type: integer
+        timestamp:
+          type: number
+        bbox:
+          $ref: '#/components/schemas/BoundingBox'
+        confidence:
+          type: number
+        quality:
+          $ref: '#/components/schemas/Quality'
+        pose:
+          type: string
+        landmarks:
+          $ref: '#/components/schemas/Landmarks'
+        enhanced:
+          type: boolean
+        occlusion:
+          $ref: '#/components/schemas/Occlusion'
+    EnhancementParameters:
       properties:
         enabled:
           type: boolean
+          title: Enabled
+          description: Enable face enhancement
           default: false
-          description: Enable face enhancement via CodeFormer/GFPGAN
         quality_trigger:
           type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Quality Trigger
+          description: Trigger enhancement if quality below this
           default: 0.5
-          minimum: 0
-          maximum: 1
-          description: Trigger enhancement if quality score below this threshold (default configurable via FACES_ENHANCEMENT_QUALITY_TRIGGER env var)
         model:
           type: string
-          enum: [gfpgan, codeformer]
+          title: Model
+          description: "Enhancement model: 'gfpgan' or 'codeformer'"
           default: codeformer
-          description: Enhancement model to use
         fidelity_weight:
           type: number
-          default: 0.5
-          minimum: 0
-          maximum: 1
-          description: Fidelity vs quality tradeoff (0=quality, 1=fidelity)
-
-    FacesJobResponse:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-
-    FacesJobStatus:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-        progress:
-          type: number
-          minimum: 0.0
           maximum: 1.0
-        stage:
-          type: string
-          nullable: true
-        message:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        result_summary:
-          type: object
-          nullable: true
-          properties:
-            unique_faces:
-              type: integer
-            total_detections:
-              type: integer
-            frames_processed:
-              type: integer
-            processing_time_seconds:
-              type: number
-        error:
-          type: string
-          nullable: true
-
-    FacesJobResults:
+          minimum: 0.0
+          title: Fidelity Weight
+          description: Fidelity vs quality tradeoff
+          default: 0.5
       type: object
-      properties:
-        job_id:
-          type: string
-        source_id:
-          type: string
-        status:
-          type: string
-        faces:
-          type: array
-          items:
-            $ref: "#/components/schemas/Face"
-        metadata:
-          $ref: "#/components/schemas/FacesVideoMetadata"
-
+      title: EnhancementParameters
+      description: Face enhancement configuration
     Face:
       type: object
       properties:
@@ -1421,157 +2081,583 @@ components:
           type: array
           items:
             type: number
-          description: 512-D ArcFace embedding
         demographics:
-          $ref: "#/components/schemas/Demographics"
+          $ref: '#/components/schemas/Demographics'
         detections:
           type: array
           items:
-            $ref: "#/components/schemas/Detection"
+            $ref: '#/components/schemas/Detection'
         representative_detection:
-          $ref: "#/components/schemas/Detection"
-
-    Detection:
-      type: object
+          $ref: '#/components/schemas/Detection'
+    FaceAnalysisParameters:
       properties:
-        frame_index:
+        face_min_confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Face Min Confidence
+          default: 0.7
+        face_min_quality:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Face Min Quality
+          description: Minimum quality threshold (filter below this)
+          default: 0.2
+        max_faces:
           type: integer
-        timestamp:
+          maximum: 1000.0
+          minimum: 1.0
+          title: Max Faces
+          default: 50
+        sampling_interval:
           type: number
-        bbox:
-          $ref: "#/components/schemas/BoundingBox"
-        confidence:
-          type: number
-        quality:
-          $ref: "#/components/schemas/Quality"
-        pose:
-          type: string
-          description: "front, left, right, front-rotate-left, front-rotate-right"
-        landmarks:
-          $ref: "#/components/schemas/Landmarks"
-        enhanced:
+          maximum: 10.0
+          minimum: 0.1
+          title: Sampling Interval
+          description: Sampling interval in seconds (auto-adjusted for short videos)
+          default: 2.0
+        use_sprites:
           type: boolean
+          title: Use Sprites
           default: false
-          description: Indicates if this face was enhanced via CodeFormer/GFPGAN
-        occlusion:
-          $ref: "#/components/schemas/Occlusion"
-
-    Quality:
-      type: object
-      properties:
-        composite:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Overall quality score (0.0-1.0)
-        components:
-          $ref: "#/components/schemas/QualityComponents"
-
-    QualityComponents:
-      type: object
-      properties:
-        size:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Face size score (0.0-1.0)
-        pose:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Face pose score (0.0-1.0)
-        occlusion:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Occlusion score (0.0-1.0)
-        sharpness:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Sharpness/IQA score (0.0-1.0) via TOPIQ/CLIP-IQA
-
-    Occlusion:
-      type: object
-      properties:
-        occluded:
+        sprite_vtt_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Vtt Url
+        sprite_image_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Image Url
+        enable_deduplication:
           type: boolean
-          description: Whether face is occluded (glasses, mask, hand, etc.)
-        probability:
+          title: Enable Deduplication
+          default: true
+        embedding_similarity_threshold:
           type: number
-          minimum: 0.0
           maximum: 1.0
-          description: Occlusion probability (0.0-1.0)
-
-    BoundingBox:
+          minimum: 0.0
+          title: Embedding Similarity Threshold
+          default: 0.6
+        detect_demographics:
+          type: boolean
+          title: Detect Demographics
+          default: true
+        scene_boundaries:
+          anyOf:
+          - items:
+              additionalProperties:
+                type: number
+              type: object
+            type: array
+          - type: 'null'
+          title: Scene Boundaries
+        cache_duration:
+          type: integer
+          minimum: 0.0
+          title: Cache Duration
+          default: 31536000
+        enhancement:
+          $ref: '#/components/schemas/EnhancementParameters'
       type: object
-      properties:
-        x_min:
-          type: integer
-        y_min:
-          type: integer
-        x_max:
-          type: integer
-        y_max:
-          type: integer
-
+      title: FaceAnalysisParameters
+      description: Face analysis configuration
     Landmarks:
       type: object
       properties:
         left_eye:
           type: array
           items:
-            type: integer
+            type: number
           minItems: 2
           maxItems: 2
         right_eye:
           type: array
           items:
-            type: integer
+            type: number
           minItems: 2
           maxItems: 2
         nose:
           type: array
           items:
-            type: integer
+            type: number
           minItems: 2
           maxItems: 2
         mouth_left:
           type: array
           items:
-            type: integer
+            type: number
           minItems: 2
           maxItems: 2
         mouth_right:
           type: array
           items:
-            type: integer
+            type: number
           minItems: 2
           maxItems: 2
-
-    Demographics:
+    Occlusion:
       type: object
-      nullable: true
       properties:
-        age:
+        occluded:
+          type: boolean
+        probability:
+          type: number
+    Quality:
+      type: object
+      properties:
+        composite:
+          type: number
+        components:
+          $ref: '#/components/schemas/QualityComponents'
+    QualityComponents:
+      type: object
+      properties:
+        size:
+          type: number
+        pose:
+          type: number
+        occlusion:
+          type: number
+        sharpness:
+          type: number
+    AnalyzeSemanticsRequest:
+      properties:
+        source:
+          type: string
+          title: Source
+          description: Video path or URL
+        source_id:
+          type: string
+          title: Source Id
+          description: Scene identifier for reference
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+          description: Parent job ID for tracking
+        frame_extraction_job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Frame Extraction Job Id
+          description: Job ID from Frame Server (reuse extracted frames)
+        scenes_job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scenes Job Id
+          description: Job ID from Scenes Service (fetch pre-computed scene boundaries)
+        parameters:
+          $ref: '#/components/schemas/SemanticsParameters'
+      type: object
+      required:
+      - source
+      - source_id
+      title: AnalyzeSemanticsRequest
+      description: Request to analyze scene semantics
+    AnalyzeSemanticsResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+        created_at:
+          type: string
+          title: Created At
+        cache_hit:
+          type: boolean
+          title: Cache Hit
+          description: Whether results were retrieved from cache
+          default: false
+      type: object
+      required:
+      - job_id
+      - status
+      - created_at
+      title: AnalyzeSemanticsResponse
+      description: Response for semantics analysis job submission
+    FrameSemantics:
+      type: object
+      properties:
+        frame_index:
           type: integer
-        gender:
+        timestamp:
+          type: number
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticTag'
+        embedding:
+          type: array
+          items:
+            type: number
+        scene_classification:
+          $ref: '#/components/schemas/SceneClassification'
+    JobStatusResponse:
+      type: object
+      properties:
+        job_id:
           type: string
-          enum: [M, F]
-        emotion:
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        processing_mode:
           type: string
-          enum: [neutral, happy, sad, angry, surprise, disgust, fear]
-
-    FacesVideoMetadata:
+        stage:
+          type: string
+        message:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceJobInfo'
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        result_summary:
+          type: object
+        error:
+          type: string
+      required:
+      - job_id
+      - status
+      - progress
+      - processing_mode
+      - services
+      - created_at
+    SceneClassification:
+      type: object
+      properties:
+        setting:
+          type: string
+        location:
+          type: string
+        activity:
+          type: string
+    SceneSemanticSummary:
+      type: object
+      properties:
+        start_timestamp:
+          type: number
+        end_timestamp:
+          type: number
+        dominant_tags:
+          type: array
+          items:
+            type: string
+        frame_count:
+          type: integer
+        avg_confidence:
+          type: number
+    SceneSemanticsOutcome:
+      properties:
+        frames:
+          items:
+            $ref: '#/components/schemas/FrameSemantics'
+          type: array
+          title: Frames
+        scene_summaries:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/SceneSemanticSummary'
+            type: array
+          - type: 'null'
+          title: Scene Summaries
+        metadata:
+          $ref: '#/components/schemas/SemanticsMetadata'
+      type: object
+      required:
+      - frames
+      - metadata
+      title: SceneSemanticsOutcome
+      description: Semantic analysis results for a scene
+    SemanticTag:
+      type: object
+      properties:
+        tag:
+          type: string
+        confidence:
+          type: number
+        source:
+          type: string
+          enum:
+          - predefined
+          - custom_prompt
+          - zero_shot
+      required:
+      - tag
+      - confidence
+      - source
+    SemanticsMetadata:
       type: object
       properties:
         source:
           type: string
-          description: Original source path or URL
         source_type:
           type: string
-          enum: [video, image, url]
-          description: Detected source type
+        total_frames:
+          type: integer
+        model:
+          type: string
+        frames_analyzed:
+          type: integer
+        processing_time_seconds:
+          type: number
+        device:
+          type: string
+        batch_size:
+          type: integer
+        total_tags_generated:
+          type: integer
+    SemanticsParameters:
+      properties:
+        model:
+          type: string
+          title: Model
+          description: CLIP/SigLIP model variant
+          default: google/siglip-base-patch16-224
+        classification_tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Classification Tags
+          description: Predefined tags for zero-shot classification
+        custom_prompts:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Custom Prompts
+          description: Custom text prompts for zero-shot classification
+        generate_embeddings:
+          type: boolean
+          title: Generate Embeddings
+          description: Generate multi-modal embeddings for similarity search
+          default: true
+        min_confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Min Confidence
+          description: Minimum confidence threshold for tag assignment
+          default: 0.5
+        top_k_tags:
+          type: integer
+          maximum: 20.0
+          minimum: 1.0
+          title: Top K Tags
+          description: Maximum number of tags to return per frame
+          default: 5
+        batch_size:
+          type: integer
+          maximum: 128.0
+          minimum: 1.0
+          title: Batch Size
+          description: Batch size for inference
+          default: 32
+        sampling_interval:
+          type: number
+          maximum: 10.0
+          minimum: 0.1
+          title: Sampling Interval
+          description: Frame sampling interval in seconds
+          default: 2.0
+        scene_boundaries:
+          anyOf:
+          - items:
+              additionalProperties:
+                type: number
+              type: object
+            type: array
+          - type: 'null'
+          title: Scene Boundaries
+          description: Scene boundaries from scenes-service (start_timestamp, end_timestamp)
+      type: object
+      title: SemanticsParameters
+      description: Semantics analysis configuration
+    SemanticsResults:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        semantics:
+          $ref: '#/components/schemas/SceneSemanticsOutcome'
+        metadata:
+          $ref: '#/components/schemas/SemanticsMetadata'
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - semantics
+      - metadata
+      title: SemanticsResults
+      description: Complete semantics analysis results
+    ServiceName:
+      type: string
+      enum:
+      - vision
+      - faces
+      - scenes
+      - semantics
+      - objects
+    JobCountResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        by_service:
+          type: object
+          properties:
+            vision:
+              type: integer
+            faces:
+              type: integer
+            scenes:
+              type: integer
+            semantics:
+              type: integer
+            objects:
+              type: integer
+      required:
+      - total
+      - by_service
+    JobResults:
+      type: object
+      properties:
+        job_id:
+          type: string
+        source_id:
+          type: string
+        status:
+          type: string
+        scenes:
+          $ref: '#/components/schemas/ScenesResult'
+        faces:
+          $ref: '#/components/schemas/FacesResult'
+        semantics:
+          $ref: '#/components/schemas/SemanticsResult'
+        objects:
+          type: object
+        metadata:
+          $ref: '#/components/schemas/JobMetadata'
+      required:
+      - job_id
+      - source_id
+      - status
+      - metadata
+    JobMetadata:
+      type: object
+      properties:
+        processing_time_seconds:
+          type: number
+        processing_mode:
+          type: string
+        services_used:
+          type: object
+    ScenesResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+        source_id:
+          type: string
+        status:
+          type: string
+        scenes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scene'
+        metadata:
+          $ref: '#/components/schemas/ScenesMetadata'
+    Scene:
+      type: object
+      properties:
+        scene_number:
+          type: integer
+        start_time:
+          type: number
+        end_time:
+          type: number
+        start_timestamp:
+          type: number
+        end_timestamp:
+          type: number
+        start_frame:
+          type: integer
+        end_frame:
+          type: integer
+        duration:
+          type: number
+    ScenesMetadata:
+      type: object
+      properties:
+        video_path:
+          type: string
+        total_duration_seconds:
+          type: number
+        video_duration_seconds:
+          type: number
+        total_scenes:
+          type: integer
+        processing_time_seconds:
+          type: number
+        detector:
+          type: string
+        detection_method:
+          type: string
+        threshold:
+          type: number
+        total_frames:
+          type: integer
+        video_fps:
+          type: number
+    FacesResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+        source_id:
+          type: string
+        status:
+          type: string
+        faces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Face'
+        metadata:
+          $ref: '#/components/schemas/FacesMetadata'
+    FacesMetadata:
+      type: object
+      properties:
+        source:
+          type: string
         total_frames:
           type: integer
         frames_processed:
@@ -1586,259 +2672,74 @@ components:
           type: string
         model:
           type: string
-        frame_enhancement:
-          allOf:
-            - $ref: "#/components/schemas/EnhancementParameters"
-          nullable: true
-          description: Frame enhancement settings used (null if enhancement was disabled)
-
-    # ==================== SEMANTICS SERVICE SCHEMAS ====================
-
-    AnalyzeSemanticsRequest:
-      type: object
-      required:
-        - source
-        - source_id
-      properties:
-        source:
-          type: string
-          description: Video path or URL
-        source_id:
-          type: string
-          description: Scene identifier for reference
-        job_id:
-          type: string
-          nullable: true
-          description: Parent job ID for tracking
-        frame_extraction_job_id:
-          type: string
-          nullable: true
-          description: Job ID from Frame Server (reuse extracted frames)
-        parameters:
-          $ref: "#/components/schemas/SemanticsParameters"
-
-    SemanticsParameters:
-      type: object
-      properties:
-        model:
-          type: string
-          default: google/siglip-base-patch16-224
-          description: CLIP/SigLIP model variant
-        classification_tags:
-          type: array
-          items:
-            type: string
-          nullable: true
-          description: Predefined tags for zero-shot classification
-        custom_prompts:
-          type: array
-          items:
-            type: string
-          nullable: true
-          description: Custom text prompts for zero-shot classification
-        generate_embeddings:
-          type: boolean
-          default: true
-          description: Generate multi-modal embeddings for similarity search
-        min_confidence:
-          type: number
-          default: 0.5
-          minimum: 0.0
-          maximum: 1.0
-          description: Minimum confidence threshold for tag assignment
-        top_k_tags:
-          type: integer
-          default: 5
-          minimum: 1
-          maximum: 20
-          description: Maximum number of tags to return per frame
-        batch_size:
-          type: integer
-          default: 32
-          minimum: 1
-          maximum: 128
-          description: Batch size for inference
-        sampling_interval:
-          type: number
-          default: 2.0
-          minimum: 0.1
-          maximum: 10.0
-          description: Frame sampling interval in seconds
-        scene_boundaries:
-          type: array
-          nullable: true
-          items:
-            type: object
-            properties:
-              start_timestamp:
-                type: number
-              end_timestamp:
-                type: number
-          description: Scene boundaries from scenes-service
-
-    SemanticsJobResponse:
+    SemanticsResult:
       type: object
       properties:
         job_id:
           type: string
-          format: uuid
-        status:
-          type: string
-          enum: [queued, processing, completed, failed, not_implemented]
-        message:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        cache_hit:
-          type: boolean
-          default: false
-          description: Whether results were retrieved from cache
-
-    SemanticsJobStatus:
-      type: object
-      properties:
-        job_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [queued, processing, completed, failed, not_implemented]
-        progress:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          default: 0.0
-        stage:
-          type: string
-          nullable: true
-        message:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        error:
-          type: string
-          nullable: true
-
-    SemanticsJobResults:
-      type: object
-      properties:
-        job_id:
-          type: string
-          format: uuid
         source_id:
           type: string
         status:
           type: string
-          enum: [queued, processing, completed, failed, not_implemented]
         frames:
           type: array
           items:
-            $ref: "#/components/schemas/FrameSemantics"
+            $ref: '#/components/schemas/FrameSemantics'
         scene_summaries:
           type: array
-          nullable: true
           items:
-            $ref: "#/components/schemas/SceneSemanticSummary"
+            $ref: '#/components/schemas/SceneSemanticSummary'
         metadata:
-          $ref: "#/components/schemas/SemanticsMetadata"
-
-    FrameSemantics:
-      type: object
-      properties:
-        frame_index:
-          type: integer
-        timestamp:
-          type: number
-        tags:
-          type: array
-          items:
-            $ref: "#/components/schemas/SemanticTag"
-        embedding:
-          type: array
-          nullable: true
-          items:
-            type: number
-          description: Multi-modal embedding (512-D for SigLIP-B)
-        scene_classification:
-          $ref: "#/components/schemas/SceneClassification"
-          nullable: true
-
-    SemanticTag:
-      type: object
-      properties:
-        tag:
-          type: string
-          description: Tag label
-        confidence:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-          description: Confidence score from CLIP/SigLIP
-        source:
-          type: string
-          enum: [predefined, custom_prompt, zero_shot]
-          description: Tag source type
-
-    SceneClassification:
-      type: object
-      properties:
-        setting:
-          type: string
-          nullable: true
-          description: Scene setting (indoor/outdoor)
-        location:
-          type: string
-          nullable: true
-          description: Location type (kitchen, bedroom, etc.)
-        activity:
-          type: string
-          nullable: true
-          description: Primary activity
-
-    SceneSemanticSummary:
-      type: object
-      properties:
-        start_timestamp:
-          type: number
-        end_timestamp:
-          type: number
-        dominant_tags:
-          type: array
-          items:
-            type: string
-          description: Most frequent tags across frames
-        frame_count:
-          type: integer
-        avg_confidence:
-          type: number
-          minimum: 0.0
-          maximum: 1.0
-
-    SemanticsMetadata:
-      type: object
-      properties:
-        model:
-          type: string
-        frames_analyzed:
-          type: integer
-        processing_time_seconds:
-          type: number
-        device:
-          type: string
-          description: Device used (cuda or cpu)
-        batch_size:
-          type: integer
-        total_tags_generated:
-          type: integer
+          $ref: '#/components/schemas/SemanticsMetadata'
+  securitySchemes: {}
+security: []
+tags:
+- name: vision-api
+  description: Orchestration and multi-module analysis
+  externalDocs:
+    description: Learn more about Vision API
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/VISION_API.md
+- name: health
+  description: Service health checks
+- name: frames
+  description: Frame extraction and serving
+  externalDocs:
+    description: Learn more about Frame Service
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FRAME_SERVER.md
+- name: scenes
+  description: Scene boundary detection
+  externalDocs:
+    description: Learn more about Scenes Service
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SCENES_SERVICE.md
+- name: faces
+  description: Face detection, recognition, and quality assessment
+  externalDocs:
+    description: Learn more about Faces Service
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FACES_SERVICE.md
+- name: semantics
+  description: Semantic scene understanding with SigLIP/CLIP
+  externalDocs:
+    description: Learn more about Semantics Service
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SEMANTICS_SERVICE.md
+- name: objects
+  description: Object detection and classification
+  externalDocs:
+    description: Learn more about Objects Service
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
+- name: jobs
+  description: Job management and monitoring
+servers:
+- url: http://localhost:5010
+  description: Vision API (Rollup/Orchestrator)
+- url: http://localhost:5001
+  description: Frame Server Service
+- url: http://localhost:5002
+  description: Scenes Service
+- url: http://localhost:5003
+  description: Faces Service
+- url: http://localhost:5004
+  description: Semantics Service
+- url: http://localhost:5005
+  description: Objects Service
+- url: http://localhost:5020
+  description: Jobs Viewer Service
