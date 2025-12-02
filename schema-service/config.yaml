@@ -70,7 +70,7 @@ tags:
       url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
     x-server: objects-service
     x-port: 5005
-  - name: jobs
+  - name: jobs-viewer
     description: Job management and monitoring
     x-server: jobs-viewer
     x-port: 5020

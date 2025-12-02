@@ -906,7 +906,7 @@ paths:
       summary: Health check
       operationId: getHealth
       tags:
-      - jobs
+      - jobs-viewer
       - health
       responses:
         '200':
@@ -920,7 +920,7 @@ paths:
       summary: OpenAPI schema
       operationId: getOpenApiSchema
       tags:
-      - jobs
+      - jobs-viewer
       responses:
         '200':
           description: OpenAPI 3.0 schema
@@ -931,7 +931,7 @@ paths:
       summary: CORS proxy for external URLs
       operationId: proxyUrl
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: url
         in: query
@@ -952,7 +952,7 @@ paths:
       summary: List jobs with filters
       operationId: listJobs
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: status
         in: query
@@ -1006,7 +1006,7 @@ paths:
       summary: Count jobs by service
       operationId: countJobs
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: status
         in: query
@@ -1042,7 +1042,7 @@ paths:
       summary: Get job status
       operationId: getJobStatus
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: job_id
         in: path
@@ -1063,7 +1063,7 @@ paths:
       summary: Get job results
       operationId: getJobResults
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: job_id
         in: path
@@ -1084,7 +1084,7 @@ paths:
       summary: Extract frame from video
       operationId: extractFrame
       tags:
-      - jobs
+      - jobs-viewer
       parameters:
       - name: video_path
         in: query
@@ -2726,7 +2726,7 @@ tags:
   externalDocs:
     description: Learn more about Objects Service
     url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
-- name: jobs
+- name: jobs-viewer
   description: Job management and monitoring
 servers:
 - url: http://localhost:5010
