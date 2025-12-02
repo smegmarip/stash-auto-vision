@@ -90,14 +90,20 @@ app.get('/health', (_req, res) => {
   })
 })
 
-// Serve OpenAPI schema
-app.get('/openapi.json', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../public/openapi.json'))
-})
-
 // Serve static files from the built React app
 const staticPath = path.join(__dirname, '../dist/client')
 app.use(express.static(staticPath))
+
+// Serve OpenAPI schema
+app.get('/openapi.json', (_req, res) => {
+  const openapiPath = path.join(staticPath, 'openapi.json')
+  res.sendFile(openapiPath, (err) => {
+    if (err) {
+      // In development, the static files might not exist
+      res.status(404).json({ error: 'Schema not found', hint: 'Build schema manually first' })
+    }
+  })
+})
 
 // SPA fallback - serve index.html for all other routes
 app.get('*', (req, res) => {
