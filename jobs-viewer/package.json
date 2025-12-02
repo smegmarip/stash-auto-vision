@@ -2,6 +2,9 @@
   "name": "jobs-viewer",
   "version": "1.0.0",
   "type": "module",
+  "description": "Front-end jobs viewer UI for stash-auto-vision APIs",
+  "author": "Smegmarip <smegmarip@example.com>",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

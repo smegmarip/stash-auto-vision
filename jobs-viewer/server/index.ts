@@ -90,6 +90,11 @@ app.get('/health', (_req, res) => {
   })
 })
 
+// Serve OpenAPI schema
+app.get('/openapi.json', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../public/openapi.json'))
+})
+
 // Serve static files from the built React app
 const staticPath = path.join(__dirname, '../dist/client')
 app.use(express.static(staticPath))

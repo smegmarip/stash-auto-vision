@@ -1,0 +1,108 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Jobs Viewer API Gateway",
+    "description": "API gateway for vision analysis job monitoring. Proxies requests to vision-api and frame-server.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:5020", "description": "Local development" },
+    { "url": "http://jobs-viewer:5020", "description": "Docker network" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "getHealth",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proxy": {
+      "get": {
+        "summary": "CORS proxy for external URLs",
+        "operationId": "proxyUrl",
+        "tags": ["Proxy"],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "External URL to proxy (http/https)"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Proxied content with CORS headers" },
+          "400": { "description": "Invalid or missing URL parameter" },
+          "500": { "description": "Failed to fetch external URL" }
+        }
+      }
+    },
+    "/api/vision/{path}": {
+      "get": {
+        "summary": "Proxy to Vision API",
+        "description": "All requests to /api/vision/* are proxied to vision-api:5010/vision/*. See vision-api schema for details.",
+        "operationId": "proxyVision",
+        "tags": ["Vision API Proxy"],
+        "externalDocs": {
+          "description": "Vision API OpenAPI Schema",
+          "url": "http://localhost:5010/openapi.json"
+        },
+        "parameters": [
+          { "name": "path", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Response from vision-api" }
+        }
+      }
+    },
+    "/api/frames/{path}": {
+      "get": {
+        "summary": "Proxy to Frame Server",
+        "description": "All requests to /api/frames/* are proxied to frame-server:5001/*. See frame-server schema for details.",
+        "operationId": "proxyFrames",
+        "tags": ["Frame Server Proxy"],
+        "externalDocs": {
+          "description": "Frame Server OpenAPI Schema",
+          "url": "http://localhost:5001/openapi.json"
+        },
+        "parameters": [
+          { "name": "path", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Response from frame-server" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "healthy" },
+          "service": { "type": "string", "example": "jobs-viewer" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "uptime": { "type": "number", "description": "Uptime in seconds" }
+        },
+        "required": ["status", "service", "timestamp", "uptime"]
+      }
+    }
+  },
+  "tags": [
+    { "name": "Health", "description": "Service health endpoints" },
+    { "name": "Proxy", "description": "CORS proxy utilities" },
+    { "name": "Vision API Proxy", "description": "Proxied vision-api endpoints" },
+    { "name": "Frame Server Proxy", "description": "Proxied frame-server endpoints" }
+  ]
+}
