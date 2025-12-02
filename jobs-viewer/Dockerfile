@@ -42,7 +42,7 @@ EXPOSE 5020
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:5020/health || exit 1
+  CMD curl -f http://localhost:5020/viewer/health || exit 1
 
 # Run server using tsx for TypeScript support
 CMD ["npx", "tsx", "server/index.ts"]

@@ -41,10 +41,10 @@ services:
         - "sh"
         - "-c"
         - |
-          curl -f http://frame-server:5001/health &&
-          curl -f http://scenes-service:5002/health &&
-          curl -f http://faces-service:5003/health &&
-          curl -f http://semantics-service:5004/health
+          curl -f http://frame-server:5001/frames/health &&
+          curl -f http://scenes-service:5002/scenes/health &&
+          curl -f http://faces-service:5003/faces/health &&
+          curl -f http://semantics-service:5004/semantics/health
       interval: 5s
       timeout: 10s
       retries: 1
@@ -91,7 +91,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/frames/health"]
       interval: 30s
       timeout: 30s
       retries: 3
@@ -130,7 +130,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5002/scenes/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -181,7 +181,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5003/faces/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -231,7 +231,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5004/semantics/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -274,7 +274,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5005/objects/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -321,7 +321,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5010/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5010/vision/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -359,7 +359,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5020/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5020/viewer/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -406,7 +406,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5009/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5009/schema/health"]
       interval: 30s
       timeout: 10s
       retries: 3
