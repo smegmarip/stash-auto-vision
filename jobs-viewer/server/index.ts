@@ -37,7 +37,7 @@ app.use('/api/vision', createProxyMiddleware({
 app.use('/api/frames', createProxyMiddleware({
   target: FRAME_SERVER_URL,
   changeOrigin: true,
-  pathRewrite: { '^/api/frames': '' },
+  pathRewrite: { '^/api/frames': '/frames' },
   onProxyReq: (proxyReq, req) => {
     console.log(`[Proxy] ${req.method} ${req.url} -> ${FRAME_SERVER_URL}`)
   },
@@ -81,7 +81,7 @@ app.get('/api/proxy', async (req, res) => {
 })
 
 // Health check
-app.get('/health', (_req, res) => {
+app.get('/viewer/health', (_req, res) => {
   res.json({
     status: 'healthy',
     service: 'jobs-viewer',
@@ -127,7 +127,7 @@ server.listen(PORT, () => {
 ║           Jobs Viewer - Stash Auto Vision                 ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Server:      http://localhost:${PORT}                       ║
-║  Health:      http://localhost:${PORT}/health                ║
+║  Health:      http://localhost:${PORT}/viewer/health         ║
 ║  Vision API:  ${VISION_API_URL.padEnd(39)}║
 ║  Frame Server: ${FRAME_SERVER_URL.padEnd(38)}║
 ╚═══════════════════════════════════════════════════════════╝

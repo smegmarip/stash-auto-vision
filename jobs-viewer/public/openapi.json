@@ -10,7 +10,7 @@
     { "url": "http://jobs-viewer:5020", "description": "Docker network" }
   ],
   "paths": {
-    "/health": {
+    "/viewer/health": {
       "get": {
         "summary": "Health check",
         "operationId": "getHealth",

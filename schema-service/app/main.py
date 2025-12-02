@@ -102,6 +102,7 @@ async def generate_openapi_schema():
                         resp = await client.get(f"{svr['x-container-url'].rstrip('/')}/openapi.json", timeout=10)
                         data = resp.json()
 
+                    namespace = svr.get("x-namespace", "unknown")
                     port = svr["x-container-url"].split(":")[-1]
                     tags = list(filter(lambda tag: tag.get("x-port") == int(port), config["tags"]))
                     # filter tag properties to name/description only
@@ -116,13 +117,13 @@ async def generate_openapi_schema():
                                     for method in paths[route]:
                                         # add tags to each path method
                                         paths[route][method]["tags"] = [tag.get("name") for tag in svc_tags]
-                                if health_tag and "/health" in paths:
+                                if health_tag and f"/{namespace}/health" in paths:
                                     svc_tags.append(health_tag)  # will deduplicate later
-                                    for method in paths["/health"]:
-                                        if "tags" in paths["/health"][method]:
-                                            paths["/health"][method]["tags"].append("health")
+                                    for method in paths[f"/{namespace}/health"]:
+                                        if "tags" in paths[f"/{namespace}/health"][method]:
+                                            paths[f"/{namespace}/health"][method]["tags"].append("health")
                                         else:
-                                            paths["/health"][method]["tags"] = ["health"]
+                                            paths[f"/{namespace}/health"][method]["tags"] = ["health"]
 
                         combined["paths"].update(paths)
                         combined["servers"].append(dict({k: svr[k] for k in svr if not k.startswith("x-")}))
@@ -191,7 +192,7 @@ async def combined_yaml():
     return json_schema
 
 
-@app.get("/health", response_model=HealthResponse, response_class=JSONResponse)
+@app.get("/schema/health", response_model=HealthResponse, response_class=JSONResponse)
 async def health_check():
     """Health check endpoint"""
 

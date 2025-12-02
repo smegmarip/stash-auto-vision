@@ -2,24 +2,31 @@ servers:
   - url: http://localhost:5010
     description: Vision API (Rollup/Orchestrator)
     x-container-url: http://vision-api:5010
+    x-namespace: vision
   - url: http://localhost:5001
     description: Frame Server Service
     x-container-url: http://frame-server:5001
+    x-namespace: frames
   - url: http://localhost:5002
     description: Scenes Service
     x-container-url: http://scenes-service:5002
+    x-namespace: scenes
   - url: http://localhost:5003
     description: Faces Service
     x-container-url: http://faces-service:5003
+    x-namespace: faces
   - url: http://localhost:5004
     description: Semantics Service
     x-container-url: http://semantics-service:5004
+    x-namespace: semantics
   - url: http://localhost:5005
     description: Objects Service
     x-container-url: http://objects-service:5005
+    x-namespace: objects
   - url: http://localhost:5020
     description: Jobs Viewer Service
     x-container-url: http://jobs-viewer:5020
+    x-namespace: viewer
 tags:
   - name: vision-api
     description: Orchestration and multi-module analysis
