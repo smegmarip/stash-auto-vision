@@ -43,7 +43,7 @@ class ScenesServerClient:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # First check job status
-                status_url = f"{self.base_url}/jobs/{job_id}/status"
+                status_url = f"{self.base_url}/scenes/jobs/{job_id}/status"
                 logger.info(f"Fetching scenes job status: {status_url}")
 
                 status_response = await client.get(status_url)
@@ -56,7 +56,7 @@ class ScenesServerClient:
                     )
 
                 # Fetch results
-                results_url = f"{self.base_url}/jobs/{job_id}/results"
+                results_url = f"{self.base_url}/scenes/jobs/{job_id}/results"
                 logger.info(f"Fetching scenes job results: {results_url}")
 
                 results_response = await client.get(results_url)
@@ -97,7 +97,7 @@ class ScenesServerClient:
         """
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/health")
+                response = await client.get(f"{self.base_url}/scenes/health")
                 return response.status_code == 200
         except Exception as e:
             logger.warning(f"Scenes service health check failed: {e}")

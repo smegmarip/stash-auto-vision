@@ -48,7 +48,7 @@ class FrameServerClient:
             Enhanced frame as bytes, or None if failed
         """
         try:
-            url = f"{self.base_url}/extract-frame"
+            url = f"{self.base_url}/frames/extract-frame"
             params = {
                 "video_path": video_path,
                 "timestamp": timestamp,

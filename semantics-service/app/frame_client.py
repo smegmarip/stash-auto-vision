@@ -50,7 +50,7 @@ class FrameServerClient:
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 # Submit frame extraction job
-                url = f"{self.base_url}/extract"
+                url = f"{self.base_url}/frames/extract"
                 payload = {
                     "video_path": video_path,
                     "sampling_interval": sampling_interval,
@@ -67,7 +67,7 @@ class FrameServerClient:
 
                 # Poll for completion
                 while True:
-                    status_url = f"{self.base_url}/jobs/{job_id}/status"
+                    status_url = f"{self.base_url}/frames/jobs/{job_id}/status"
                     status_response = await client.get(status_url)
                     status = status_response.json()
 
@@ -80,7 +80,7 @@ class FrameServerClient:
                     await asyncio.sleep(1)
 
                 # Get results
-                results_url = f"{self.base_url}/jobs/{job_id}/results"
+                results_url = f"{self.base_url}/frames/jobs/{job_id}/results"
                 results_response = await client.get(results_url)
                 results = results_response.json()
 
@@ -117,7 +117,7 @@ class FrameServerClient:
         """
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                url = f"{self.base_url}/extract-frame"
+                url = f"{self.base_url}/frames/extract-frame"
                 params = {
                     "video_path": video_path,
                     "timestamp": timestamp,
