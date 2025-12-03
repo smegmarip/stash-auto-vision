@@ -67,7 +67,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 │         ├─► frame-server   :5001 (Frame extraction)       │
 │         ├─► scenes-service :5002 (Scene boundaries)       │
 │         ├─► faces-service  :5003 (Face recognition)       │
-│         ├─► semantics-svc  :5004 (CLIP) [Phase 2]         │
+│         ├─► semantics-svc  :5004 (SigLIP) ✅              │
 │         └─► objects-svc    :5005 (YOLO-World) [Phase 3]   │
 │                                                             │
 │  ┌──────────────┐         ┌──────────────────────────┐    │
@@ -75,6 +75,16 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 │  │              │◄────────┤   - Result cache         │    │
 │  └──────────────┘         │   - Content-based keys   │    │
 │                           └──────────────────────────┘    │
+│                                                             │
+│  ┌──────────────┐         ┌──────────────────────────┐    │
+│  │ schema-svc   │ :5009   │   - OpenAPI aggregation  │    │
+│  │              │◄────────┤   - Combined Swagger UI  │    │
+│  └──────────────┘         └──────────────────────────┘    │
+│                                                             │
+│  ┌──────────────┐         ┌──────────────────────────┐    │
+│  │ jobs-viewer  │ :5020   │   - React monitoring UI  │    │
+│  │              │◄────────┤   - Job browsing/status  │    │
+│  └──────────────┘         └──────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,15 +121,16 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Optional face enhancement (CodeFormer/GFPGAN) for low-quality detections
 - Three-tier quality gate: detection confidence, quality trigger, minimum quality
 - Face clustering via cosine similarity (threshold 0.6)
-- Quality scoring: TOPIQ/CLIP-IQA sharpness + size/pose/occlusion components
+- Quality scoring: Laplacian variance sharpness + size/pose/occlusion components
 - Sprite sheet integration for ultra-fast processing
 - Optional demographics detection (age, gender)
 
-**semantics-service** (Stubbed - Phase 2)
+**semantics-service** (Phase 2 Complete ✅)
 
-- CLIP (ViT-B/32) scene classification
-- Zero-shot tagging and semantic search
-- Scene embedding generation for similarity matching
+- SigLIP (google/siglip-base-patch16-224) scene classification
+- Zero-shot tagging with custom prompts
+- 768-D multi-modal embeddings for similarity search
+- Scene-aware analysis with automatic per-scene summaries
 
 **objects-service** (Stubbed - Phase 3)
 
@@ -142,14 +153,14 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 - **InsightFace** (buffalo_l) - Face recognition, 99.86% LFW accuracy
 - **PySceneDetect** - Scene boundary detection, 300-800 FPS on GPU
-- **CLIP** (ViT-B/32) - Vision-language model [Phase 2]
+- **SigLIP** (siglip-base-patch16-224) - Vision-language model ✅
 - **YOLO-World** - Open-vocabulary object detection [Phase 3]
 
 ### Infrastructure
 
 - **FastAPI** - Async web framework with automatic OpenAPI docs
 - **Redis** - Job queue and result cache
-- **Docker Compose** - 6-service orchestration
+- **Docker Compose** - 10-service orchestration
 - **NVIDIA CUDA** - GPU acceleration (12.3.2)
 - **OpenCV** - CUDA-accelerated video processing
 - **PyAV** - FFmpeg Python bindings for robust frame extraction
@@ -166,7 +177,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 ### Phase 1 & 2: Complete ✅
 
-**Implemented Services (7/7):**
+**Implemented Services (9/10):**
 
 - [x] redis - Cache and job queue
 - [x] dependency-checker - Health orchestration
@@ -175,8 +186,10 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] faces-service - InsightFace recognition
 - [x] semantics-service - SigLIP semantic classification
 - [x] vision-api - Main orchestrator
+- [x] schema-service - OpenAPI aggregation
+- [x] jobs-viewer - React monitoring UI
 
-**Stubbed Services (1/2):**
+**Stubbed Services (1/10):**
 
 - [x] objects-service - Returns "not_implemented" status
 
@@ -570,6 +583,6 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 **Status:** Phase 1 & 2 Complete - Semantic Analysis Integrated
 **Version:** 2.1.0
-**Last Updated:** 2025-12-01
+**Last Updated:** 2025-12-02
 
-> **API Documentation:** OpenAPI schemas are auto-generated from FastAPI at runtime (`/openapi.json`). A documentation aggregation service is planned to combine all service schemas with frontend types.
+> **API Documentation:** OpenAPI schemas are auto-generated from FastAPI at runtime (`/openapi.json`). The schema-service at port 5009 aggregates all service schemas into a combined Swagger UI.

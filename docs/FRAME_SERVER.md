@@ -19,6 +19,8 @@ The Frame Server provides GPU-accelerated frame extraction from video files. It 
 - **Async Processing:** Background job processing with polling API
 - **Flexible Sampling:** Interval-based, timestamp-based, and scene-based sampling strategies
 - **TTL-Based Cleanup:** Automatic frame cleanup via cron job (2-hour TTL)
+- **Percentile Frame Selection:** 25%/50%/75% sampling for representative frames
+- **Memory Management:** 20GB container memory limit for stable operation
 
 ### Architecture
 
@@ -560,7 +562,17 @@ Extract representative frames per scene:
 }
 ```
 
-Extracts 3 frames per scene (start, middle, end).
+Extracts 3 frames per scene (25%, 50%, 75% percentile timestamps).
+
+#### Percentile Frame Selection
+
+When extracting representative frames (e.g., for scenes or thumbnails), the Frame Server uses percentile-based sampling:
+
+- **25% percentile:** Early-scene representative
+- **50% percentile:** Mid-scene representative
+- **75% percentile:** Late-scene representative
+
+This approach provides better coverage than fixed start/middle/end timestamps, especially for scenes with action concentrated in specific portions.
 
 ### Face Enhancement
 
@@ -814,6 +826,26 @@ CACHE_TTL=3600                  # Redis TTL (1 hour)
 LOG_LEVEL=INFO
 ```
 
+### Container Resource Limits
+
+The Frame Server container is configured with memory limits to ensure stable operation:
+
+```yaml
+# docker-compose.yml
+frame-server:
+  deploy:
+    resources:
+      limits:
+        memory: 20G
+```
+
+**Why 20GB?**
+
+- Large video files require significant memory during decoding
+- Multiple concurrent extraction jobs may run simultaneously
+- Face enhancement models consume ~2-3GB during inference
+- Buffer for spiky memory usage during batch operations
+
 ### Performance Characteristics
 
 | Method      | GPU Mode    | CPU Mode   | Use Case                   |
@@ -834,5 +866,6 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-21
-**Status:** Implemented and Tested (with PyAV fallback, Face Enhancement, and Enhanced Frame Caching)
+**Last Updated:** 2025-12-02
+**Version:** 2.0.0
+**Status:** Implemented and Tested

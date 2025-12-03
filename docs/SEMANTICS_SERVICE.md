@@ -37,398 +37,21 @@ The Semantics Service integrates into the Vision API's multi-module analysis wor
 
 ---
 
-## OpenAPI 3.0 Schema
+## OpenAPI Schema
 
-> **Note:** The OpenAPI schema below is outdated. Live schema is auto-generated from FastAPI at runtime via `/openapi.json`. A documentation aggregation service is planned to combine all service schemas.
+> **Note:** The live OpenAPI schema is auto-generated from FastAPI at runtime via `/semantics/openapi.json`. The schema-service at port 5009 aggregates all service schemas into a combined specification.
 
-```yaml
-openapi: 3.0.3
-info:
-  title: Semantics Service API
-  description: SigLIP-based scene understanding service - Fully Implemented
-  version: 2.0.0
-servers:
-  - url: http://semantics-service:5004
-    description: Internal Docker network
+**Access the live schema:**
 
-paths:
-  /semantics/analyze:
-    post:
-      summary: Analyze scene semantics (STUB)
-      description: |
-        Submit frames or video for semantic analysis using CLIP.
+```bash
+# Single service schema
+curl http://localhost:5004/openapi.json | jq .
 
-        **CURRENT STATUS:** Returns "not_implemented" response.
+# Combined schema (all services)
+curl http://localhost:5009/schema/openapi.json | jq .
 
-        **PLANNED IMPLEMENTATION:** Will process frames with CLIP to generate:
-        - Scene classifications (indoor/outdoor, setting types)
-        - Zero-shot tags based on custom prompts
-        - Multi-modal embeddings for similarity search
-        - Action/activity recognition
-      operationId: analyzeSemantics
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AnalyzeSemanticsRequest"
-      responses:
-        "202":
-          description: Request acknowledged (stub returns not_implemented)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SemanticsJobResponse"
-        "400":
-          description: Invalid request parameters
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /semantics/jobs/{job_id}/status:
-    get:
-      summary: Get analysis job status (STUB)
-      description: Poll semantic analysis job status
-      operationId: getJobStatus
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Job status (stub always returns not_implemented)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SemanticsJobStatus"
-
-  /semantics/jobs/{job_id}/results:
-    get:
-      summary: Get analysis results (STUB)
-      description: Retrieve semantic analysis results
-      operationId: getJobResults
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "501":
-          description: Not implemented
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-                        example: "Semantics analysis module is not yet implemented (Phase 2)"
-                      type:
-                        type: string
-                        example: "NotImplementedError"
-
-  /semantics/health:
-    get:
-      summary: Service health check
-      operationId: healthCheck
-      responses:
-        "200":
-          description: Service healthy (stub service)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-
-components:
-  schemas:
-    AnalyzeSemanticsRequest:
-      type: object
-      description: Request schema for semantic analysis
-      required:
-        - source
-        - source_id
-      properties:
-        source:
-          type: string
-          description: Absolute path to video file
-          example: "/media/videos/scene.mp4"
-        source_id:
-          type: string
-          description: Scene identifier for reference
-        job_id:
-          type: string
-          description: Parent job ID for tracking (optional)
-        frame_extraction_job_id:
-          type: string
-          description: Job ID from Frame Server (reuse extracted frames)
-        scenes_job_id:
-          type: string
-          description: Job ID from Scenes Service (fetch pre-computed scene boundaries)
-        parameters:
-          $ref: "#/components/schemas/SemanticsParameters"
-
-    SemanticsParameters:
-      type: object
-      description: Configuration parameters for semantic analysis
-      properties:
-        model:
-          type: string
-          default: google/siglip-base-patch16-224
-          description: SigLIP/CLIP model variant (HuggingFace model ID)
-          example: google/siglip-base-patch16-224
-        classification_tags:
-          type: array
-          items:
-            type: string
-          description: Predefined tags for zero-shot classification
-          example: ["indoor", "outdoor", "conversation", "action"]
-          example:
-            [
-              "indoor",
-              "outdoor",
-              "kitchen",
-              "bedroom",
-              "conversation",
-              "action",
-            ]
-        custom_prompts:
-          type: array
-          items:
-            type: string
-          description: Custom text prompts for zero-shot classification
-          example: ["two people talking", "intimate scene", "outdoor activity"]
-        generate_embeddings:
-          type: boolean
-          default: true
-          description: Generate multi-modal embeddings for similarity search
-        min_confidence:
-          type: number
-          format: float
-          minimum: 0.0
-          maximum: 1.0
-          default: 0.5
-          description: Minimum confidence threshold for tag assignment
-        top_k_tags:
-          type: integer
-          minimum: 1
-          maximum: 20
-          default: 5
-          description: Maximum number of tags to return per frame
-        batch_size:
-          type: integer
-          minimum: 1
-          maximum: 128
-          default: 32
-          description: Batch size for inference
-        sampling_interval:
-          type: number
-          format: float
-          minimum: 0.1
-          maximum: 10.0
-          default: 2.0
-          description: Frame sampling interval in seconds
-        scene_boundaries:
-          type: array
-          items:
-            type: object
-            properties:
-              start_timestamp:
-                type: number
-                format: float
-              end_timestamp:
-                type: number
-                format: float
-          description: Scene boundaries from scenes-service (start_timestamp, end_timestamp)
-
-    SemanticsJobResponse:
-      type: object
-      properties:
-        job_id:
-          type: string
-          description: Unique job identifier
-          example: "semantics-stub-1699459200"
-        status:
-          type: string
-          enum: [not_implemented, queued, processing, completed, failed]
-          description: Job status (stub always returns not_implemented)
-          example: "not_implemented"
-        message:
-          type: string
-          description: Status message
-          example: "Semantics analysis module is not yet implemented (Phase 2)"
-        created_at:
-          type: string
-          format: date-time
-          description: Job creation timestamp
-
-    SemanticsJobStatus:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-          enum: [not_implemented, queued, processing, completed, failed]
-          example: "not_implemented"
-        message:
-          type: string
-          example: "Semantics analysis module is not yet implemented (Phase 2)"
-        created_at:
-          type: string
-          format: date-time
-
-    SemanticsResults:
-      type: object
-      description: Semantic analysis results (PLANNED SCHEMA - not yet returned)
-      properties:
-        job_id:
-          type: string
-        source_id:
-          type: string
-        status:
-          type: string
-        frames:
-          type: array
-          items:
-            $ref: "#/components/schemas/FrameSemantics"
-        scene_summary:
-          $ref: "#/components/schemas/SceneSemanticSummary"
-        metadata:
-          $ref: "#/components/schemas/SemanticsMetadata"
-
-    FrameSemantics:
-      type: object
-      description: Per-frame semantic analysis (PLANNED)
-      properties:
-        frame_index:
-          type: integer
-        timestamp:
-          type: number
-          format: float
-        tags:
-          type: array
-          items:
-            $ref: "#/components/schemas/SemanticTag"
-        embedding:
-          type: array
-          items:
-            type: number
-            format: float
-          description: Multi-modal embedding (512-D for ViT-B/32)
-        scene_classification:
-          type: object
-          properties:
-            setting:
-              type: string
-              example: "indoor"
-            location:
-              type: string
-              example: "kitchen"
-            activity:
-              type: string
-              example: "conversation"
-
-    SemanticTag:
-      type: object
-      properties:
-        tag:
-          type: string
-          description: Tag label
-          example: "two people talking"
-        confidence:
-          type: number
-          format: float
-          minimum: 0.0
-          maximum: 1.0
-          description: Confidence score from CLIP
-        source:
-          type: string
-          enum: [predefined, custom_prompt, zero_shot]
-          description: Tag source type
-
-    SceneSemanticSummary:
-      type: object
-      description: Aggregated semantic summary across all frames (PLANNED)
-      properties:
-        dominant_tags:
-          type: array
-          items:
-            type: string
-          description: Most frequent tags across frames
-        scene_type:
-          type: string
-          description: Overall scene classification
-        primary_activities:
-          type: array
-          items:
-            type: string
-        setting_changes:
-          type: array
-          items:
-            type: object
-            properties:
-              timestamp:
-                type: number
-              old_setting:
-                type: string
-              new_setting:
-                type: string
-
-    SemanticsMetadata:
-      type: object
-      properties:
-        model:
-          type: string
-          example: "clip-vit-b-32"
-        frames_analyzed:
-          type: integer
-        processing_time_seconds:
-          type: number
-          format: float
-        gpu_used:
-          type: boolean
-        total_tags_generated:
-          type: integer
-
-    HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [healthy, unhealthy]
-          example: "healthy"
-        service:
-          type: string
-          example: "semantics-service"
-        version:
-          type: string
-          example: "1.0.0"
-        implemented:
-          type: boolean
-          example: false
-          description: Indicates if service is fully implemented
-        phase:
-          type: integer
-          example: 2
-          description: Implementation phase number
-        message:
-          type: string
-          example: "Stub service - awaiting CLIP integration"
-
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-        detail:
-          type: string
+# Swagger UI
+open http://localhost:5009/docs
 ```
 
 ---
@@ -582,11 +205,11 @@ similarity = 1 - cosine(embedding1, embedding2)
 
 **Use Case:** "Find scenes visually similar to this reference scene"
 
-#### Performance Targets (Planned)
+#### Performance
 
-**GPU Mode (NVIDIA RTX 3060):**
+**GPU Mode (NVIDIA RTX 3060+):**
 
-- **Inference Speed:** 50-100 FPS (ViT-B/32)
+- **Inference Speed:** 50-100 FPS (SigLIP base)
 - **Memory Usage:** ~2GB VRAM
 - **Batch Size:** 16-32 frames per batch
 
@@ -598,18 +221,17 @@ similarity = 1 - cosine(embedding1, embedding2)
 
 **Processing Time Example:**
 
-- 10-minute video @ 2 FPS sampling = 1200 frames
-- GPU processing: ~12-24 seconds
-- CPU processing: ~2-4 minutes
+- 10-minute video @ 2 FPS sampling = 300 frames
+- GPU processing: ~3-6 seconds
+- CPU processing: ~30-60 seconds
 
-#### Future Parameters
+#### Parameters
 
-When implemented, the service will accept these configuration parameters:
+The service accepts these configuration parameters:
 
-**model** (string): CLIP model variant
+**model** (string): Model variant
 
-- `clip-vit-b-32` (default) - 224px, 512-D embeddings
-- `clip-vit-l-14` - 224px, 768-D embeddings, higher accuracy
+- `google/siglip-base-patch16-224` (default) - 224px, 768-D embeddings
 
 **classification_tags** (array): Predefined tag list for classification
 
@@ -634,22 +256,22 @@ When implemented, the service will accept these configuration parameters:
 - Range: 1 - 20
 - Default: 5
 
-### Configuration (Planned)
+### Configuration
 
-Environment variables for Phase 2 implementation:
+Environment variables:
 
 ```bash
 # Model configuration
-CLIP_MODEL=clip-vit-b-32          # Model variant
-CLIP_DEVICE=cuda                  # cuda or cpu
+SIGLIP_MODEL=google/siglip-base-patch16-224  # Model variant
+SEMANTICS_DEVICE=cuda                         # cuda or cpu
 
 # Processing
-BATCH_SIZE=16                     # Frames per batch
-MIN_CONFIDENCE=0.5                # Tag confidence threshold
+SEMANTICS_BATCH_SIZE=32            # Frames per batch
+SEMANTICS_MIN_CONFIDENCE=0.5       # Tag confidence threshold
 
 # Storage
 REDIS_URL=redis://redis:6379/0
-CACHE_TTL=3600                    # Result cache TTL
+CACHE_TTL=3600                     # Result cache TTL
 
 # Logging
 LOG_LEVEL=INFO
@@ -738,7 +360,7 @@ curl -X POST http://localhost:5004/semantics/analyze \
   }'
 ```
 
-### Use Cases (Phase 2 Goals)
+### Use Cases
 
 **Auto-Tagging:**
 
@@ -766,5 +388,6 @@ curl -X POST http://localhost:5004/semantics/analyze \
 
 ---
 
-**Last Updated:** 2025-11-29
-**Status:** Phase 2 - Fully Implemented with Scene Integration
+**Last Updated:** 2025-12-02
+**Version:** 2.0.0
+**Status:** Phase 2 Complete - Fully Implemented with Scene Integration

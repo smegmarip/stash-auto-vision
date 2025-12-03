@@ -3,8 +3,8 @@
 **Service:** Vision API (Orchestrator)
 **Port:** 5010
 **Path:** `/vision`
-**Status:** Phase 1 - Implemented
-**Version:** 1.0.0
+**Status:** Phase 2 - Implemented
+**Version:** 2.0.0
 
 ---
 
@@ -14,7 +14,7 @@ The Vision API is the primary orchestrator and rollup service for the Stash Auto
 
 As an orchestrator, the Vision API does not perform video processing directly. Instead, it coordinates calls to specialized backend services, manages job state across multiple modules, aggregates results, and handles error scenarios. The service supports both sequential processing (default) for resource-efficient operation and parallel processing (future) for maximum throughput.
 
-The Vision API integrates with five backend services: frame-server (port 5001) for GPU-accelerated frame extraction, scenes-service (port 5002) for scene boundary detection, faces-service (port 5003) for face recognition, semantics-service (port 5004) for CLIP-based scene understanding (Phase 2), and objects-service (port 5005) for YOLO-World object detection (Phase 3). Health monitoring across all services ensures reliable operation.
+The Vision API integrates with seven backend services: frame-server (port 5001) for GPU-accelerated frame extraction, scenes-service (port 5002) for scene boundary detection, faces-service (port 5003) for face recognition, semantics-service (port 5004) for SigLIP-based scene understanding (implemented), objects-service (port 5005) for YOLO-World object detection (Phase 3), schema-service (port 5009) for OpenAPI aggregation, and jobs-viewer (port 5020) for React-based monitoring UI. Health monitoring across all services ensures reliable operation.
 
 In production testing, the Vision API successfully processed a 120-second video with both scenes and faces analysis in 13.97 seconds (sequential mode). The service provides comprehensive result aggregation, combining outputs from multiple backend services into a single unified response for easy client consumption.
 
@@ -434,7 +434,7 @@ components:
         semantics:
           type: object
           nullable: true
-          description: Semantics results or stub response
+          description: Semantics results (SigLIP scene classification)
         objects:
           type: object
           nullable: true
@@ -641,11 +641,16 @@ Each module can be individually enabled with custom parameters:
 }
 ```
 
-**Semantics Module (Phase 2):**
+**Semantics Module (Implemented):**
 
 ```json
 {
-  "enable_semantics": true
+  "enable_semantics": true,
+  "parameters": {
+    "classification_tags": ["indoor", "outdoor", "conversation", "action"],
+    "min_confidence": 0.5,
+    "sampling_interval": 2.0
+  }
 }
 ```
 
@@ -761,7 +766,14 @@ The Vision API combines results from all enabled services into a single unified 
     }
   },
   "semantics": {
-    "status": "not_implemented"
+    "status": "completed",
+    "frames": [...],
+    "scene_summaries": [...],
+    "metadata": {
+      "model": "google/siglip-base-patch16-224",
+      "frames_analyzed": 60,
+      "processing_time_seconds": 4.2
+    }
   },
   "objects": {
     "status": "not_implemented"
@@ -851,6 +863,26 @@ page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
 **Deduplication:**
 Jobs are deduplicated by `cache_key`. If the same video is processed through both vision-api and directly to faces-service, only the vision-level job is returned (as it contains more complete context).
 
+### Cross-Service Job Aggregation
+
+The Vision API aggregates jobs from multiple namespaces (vision, faces, scenes, semantics) into a unified view:
+
+**Multi-Namespace Lookup:**
+
+```python
+# Internal implementation for job lookup
+namespaces = ["vision", "faces", "scenes", "semantics"]
+for namespace in namespaces:
+    job_keys = redis.keys(f"{namespace}:job:*:status")
+    # Aggregate and deduplicate by cache_key
+```
+
+**TTL-Based Cleanup:**
+
+- Job metadata: 1 year retention (CACHE_TTL=31536000)
+- Extracted frames: 2 hours (FRAME_TTL_HOURS=2)
+- Download artifacts: Automatic cleanup after job completion
+
 ### Service Health Monitoring
 
 The Vision API monitors all downstream services and reports aggregated health:
@@ -878,8 +910,8 @@ response = requests.get("http://localhost:5010/vision/health")
     },
     "semantics": {
       "status": "healthy",
-      "implemented": false,
-      "phase": 2
+      "model": "google/siglip-base-patch16-224",
+      "embedding_dim": 768
     },
     "objects": {
       "status": "healthy",
@@ -932,5 +964,6 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-11-26
-**Status:** Implemented and Tested
+**Last Updated:** 2025-12-02
+**Version:** 2.0.0
+**Status:** Phase 2 Complete - Semantics Integrated

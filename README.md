@@ -102,20 +102,22 @@ curl "http://localhost:5003/faces/jobs/$JOB_ID/results" | jq .
        ├─► frame-server   :5001 (internal frame extraction)
        ├─► scenes-service :5002 (scene boundary detection)
        ├─► faces-service  :5003 (face recognition)
-       ├─► semantics-svc  :5004 (CLIP classification) [Phase 2]
-       └─► objects-svc    :5005 (YOLO detection) [Phase 2]
+       ├─► semantics-svc  :5004 (SigLIP classification) ✅
+       └─► objects-svc    :5005 (YOLO detection) [Phase 3]
 ```
 
-**8 Microservices:**
+**10 Microservices:**
 
 - **redis** - Cache and job queue
 - **dependency-checker** - Health orchestration
 - **frame-server** - GPU-accelerated frame extraction
 - **scenes-service** - Scene boundary detection
 - **faces-service** - Face recognition
-- **semantics-service** - Scene classification (stubbed)
+- **semantics-service** - SigLIP scene classification ✅
 - **objects-service** - Object detection (stubbed)
 - **vision-api** - Main orchestrator
+- **schema-service** - OpenAPI aggregation
+- **jobs-viewer** - React monitoring UI
 
 ---
 
@@ -397,7 +399,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 - [InsightFace](https://github.com/deepinsight/insightface) - Face recognition
 - [PySceneDetect](https://github.com/Breakthrough/PySceneDetect) - Scene detection
-- [OpenAI CLIP](https://github.com/openai/CLIP) - Vision-language model
+- [SigLIP](https://huggingface.co/google/siglip-base-patch16-224) - Vision-language model
 - [YOLO-World](https://github.com/AILab-CVC/YOLO-World) - Object detection
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 
@@ -408,6 +410,6 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 ---
 
-**Status:** Phase 1 Complete - Tested and Ready for Production
-**Version:** 1.0.0
-**Last Updated:** 2025-11-09
+**Status:** Phase 2 Complete - Semantic Analysis Integrated
+**Version:** 2.0.0
+**Last Updated:** 2025-12-02

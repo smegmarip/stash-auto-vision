@@ -2,9 +2,9 @@
 
 **Comprehensive testing strategy for all implemented and future services**
 
-**Version:** 1.0.0
-**Last Updated:** 2025-11-09
-**Status:** Phase 1 Complete - All Tests Passing
+**Version:** 2.0.0
+**Last Updated:** 2025-12-02
+**Status:** Phase 2 Complete - Semantics Implemented
 
 ---
 
@@ -565,8 +565,8 @@ curl http://localhost:5010/vision/health | jq .
     "semantics-service": "healthy",
     "objects-service": "healthy"
   },
-  "modules_available": ["scenes", "faces"],
-  "modules_stubbed": ["semantics", "objects"]
+  "modules_available": ["scenes", "faces", "semantics"],
+  "modules_stubbed": ["objects"]
 }
 ```
 
@@ -632,31 +632,90 @@ docker-compose logs vision-api | grep "Completed module"
 
 ---
 
-### 5. Stub Service Tests
+### 5. Semantics Service Tests
 
-#### Semantics Service (Phase 2)
+#### Health Check
 
 ```bash
 curl http://localhost:5004/semantics/health | jq .
-
-# Attempt analysis (should return not_implemented)
-curl -X POST http://localhost:5004/semantics/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source": "/media/videos/test.mp4",
-    "source_id": "test"
-  }' | jq .
 ```
 
 **Expected Response:**
 
 ```json
 {
-  "job_id": "semantics-stub-001",
-  "status": "not_implemented",
-  "message": "Semantics service is stubbed - awaiting Phase 2 implementation"
+  "status": "healthy",
+  "service": "semantics-service",
+  "version": "1.0.0",
+  "model": "google/siglip-base-patch16-224",
+  "embedding_dim": 768,
+  "device": "cpu",
+  "active_jobs": 0
 }
 ```
+
+#### Semantic Analysis
+
+```bash
+# Submit semantic analysis job
+curl -X POST http://localhost:5004/semantics/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
+    "source_id": "test_semantics_001",
+    "parameters": {
+      "min_confidence": 0.5,
+      "sampling_interval": 2.0,
+      "tags": ["indoor", "outdoor", "conversation", "action", "static"]
+    }
+  }' | jq .
+
+# Save job_id
+JOB_ID="test_semantics_001"
+
+# Poll status
+curl "http://localhost:5004/semantics/jobs/$JOB_ID/status" | jq .
+
+# Get results
+curl "http://localhost:5004/semantics/jobs/$JOB_ID/results" | jq '{
+  frames_analyzed: (.frames | length),
+  dominant_tags: [.frames[].tags[0].label] | group_by(.) | map({tag: .[0], count: length}) | sort_by(-.count)[:3],
+  embedding_dim: (.frames[0].embedding | length)
+}'
+```
+
+**Validation:**
+
+- ✅ Model loaded (SigLIP google/siglip-base-patch16-224)
+- ✅ Embeddings are 768 dimensions
+- ✅ Tags returned with confidence scores
+- ✅ Cache hit on duplicate request
+
+#### Scene-Aware Semantics (via Vision API)
+
+```bash
+# Use vision-api for orchestrated semantics with scene boundaries
+curl -X POST http://localhost:5010/vision/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
+    "source_id": "test_vision_semantics_001",
+    "modules": {
+      "scenes": {"enabled": true},
+      "semantics": {"enabled": true}
+    }
+  }' | jq .
+```
+
+**Validation:**
+
+- ✅ Scene boundaries detected first
+- ✅ Semantics processed per-scene
+- ✅ Scene-level tag aggregation in results
+
+---
+
+### 6. Stub Service Tests
 
 #### Objects Service (Phase 3)
 
@@ -681,6 +740,86 @@ curl -X POST http://localhost:5005/objects/analyze \
   "message": "Objects service is stubbed - awaiting Phase 3 implementation"
 }
 ```
+
+---
+
+### 7. Jobs Viewer Tests
+
+#### Health Check
+
+```bash
+curl http://localhost:5020/viewer/health | jq .
+```
+
+**Expected Response:**
+
+```json
+{
+  "status": "healthy",
+  "service": "jobs-viewer",
+  "version": "1.0.0"
+}
+```
+
+#### Web UI Access
+
+```bash
+# Access React UI
+open http://localhost:5020
+
+# Verify API endpoints work
+curl http://localhost:5020/api/frames/jobs | jq .
+curl http://localhost:5020/api/faces/jobs | jq .
+curl http://localhost:5020/api/semantics/jobs | jq .
+```
+
+**Validation:**
+
+- ✅ React UI loads in browser
+- ✅ Job list displays with filters
+- ✅ Job details show frame thumbnails
+- ✅ Proxy routes to backend services correctly
+
+---
+
+### 8. Schema Service Tests
+
+#### Health Check
+
+```bash
+curl http://localhost:5009/schema/health | jq .
+```
+
+**Expected Response:**
+
+```json
+{
+  "status": "healthy",
+  "service": "schema-service",
+  "version": "1.0.0",
+  "message": "Schema service active"
+}
+```
+
+#### OpenAPI Schema Aggregation
+
+```bash
+# Get combined JSON schema
+curl http://localhost:5009/schema/openapi.json | jq '.paths | keys | length'
+
+# Get combined YAML schema
+curl http://localhost:5009/schema/openapi.yaml | head -50
+
+# Access Swagger UI
+open http://localhost:5009/docs
+```
+
+**Validation:**
+
+- ✅ Schema combines all service endpoints
+- ✅ No duplicate/conflicting routes
+- ✅ Swagger UI shows all services
+- ✅ Tags properly grouped by service
 
 ---
 
@@ -1039,7 +1178,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 
 ## Results Summary
 
-### Test Status (2025-11-09)
+### Test Status (2025-12-02)
 
 **Environment:** macOS Development (CPU Mode)
 **Docker Compose:** All services deployed
@@ -1052,10 +1191,12 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 | frame-server      | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | scenes-service    | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | faces-service     | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
-| semantics-service | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 2 |
+| semantics-service | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | objects-service   | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 3 |
 | vision-api        | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
-| **Overall**       | **100%**     | **75%**       | **75%**     | **✅ Ready**        |
+| jobs-viewer       | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
+| schema-service    | ✅ Pass      | ✅ Pass       | N/A         | ✅ Operational      |
+| **Overall**       | **100%**     | **87.5%**     | **87.5%**   | **✅ Ready**        |
 
 ### Performance Results (CPU Mode)
 
@@ -1071,11 +1212,12 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 
 **Implemented Tests:**
 
-- [x] Service health checks (6/6 services)
+- [x] Service health checks (8/8 services)
 - [x] Frame extraction (OpenCV, FFmpeg)
 - [x] Scene detection (ContentDetector, ThresholdDetector)
 - [x] Face recognition and clustering
-- [x] Multi-service workflows (scenes → faces)
+- [x] Multi-service workflows (scenes → faces → semantics)
+- [x] Semantic analysis (SigLIP classification)
 - [x] Cache hit/miss behavior
 - [x] Performance benchmarking
 
@@ -1089,7 +1231,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 
 ### Success Criteria
 
-**Phase 1 Complete When:**
+**Phase 2 Complete When:**
 
 - [x] All services start successfully
 - [x] Health checks pass for all services
@@ -1097,13 +1239,14 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 - [x] Scene detection produces reasonable boundaries
 - [x] Face detection achieves >95% accuracy
 - [x] Face clustering correctly groups same person
+- [x] Semantic analysis returns valid tags and embeddings
 - [x] Cache hit/miss working as expected
 - [x] Orchestrator successfully chains services
 - [x] Performance meets CPU targets
 
-**Status:** ✅ Phase 1 Testing Complete - Ready for Production Validation
+**Status:** ✅ Phase 2 Testing Complete - Ready for Production Validation
 
 ---
 
-**Last Updated:** 2025-11-09
-**Version:** 1.0.0
+**Last Updated:** 2025-12-02
+**Version:** 2.0.0

@@ -18,7 +18,7 @@ The service integrates with the Frame Server for frame extraction and uses Retin
 - **High-Accuracy Detection:** InsightFace buffalo_l model with 99.86% LFW accuracy
 - **Multi-Size Detection:** Automatic det_size selection (320/640/1024) based on image dimensions
 - **512-D ArcFace Embeddings:** State-of-the-art face recognition vectors
-- **Quality Scoring:** TOPIQ/CLIP-IQA sharpness + size/pose/occlusion components
+- **Quality Scoring:** Laplacian variance sharpness + size/pose/occlusion components
 - **Face Enhancement:** Optional CodeFormer/GFPGAN enhancement for low-quality detections
 - **Three-Tier Quality System:** Detection confidence, quality trigger, minimum quality filtering
 - **Face Deduplication:** Cosine similarity clustering (default threshold: 0.6)
@@ -73,6 +73,20 @@ The service supports optional face enhancement for low-quality detections using 
 
 - Legacy option, may over-smooth details
 - Faster but lower quality than CodeFormer
+
+#### Image Processing Features
+
+**EXIF Orientation Normalization:**
+
+- Automatic detection and correction of EXIF orientation tags
+- Ensures consistent face detection regardless of image rotation metadata
+- Handles all 8 EXIF orientation cases (rotation + mirroring)
+
+**Maximum Enhancement Resolution:**
+
+- Enhanced frames are capped at 1080p (2,073,600 pixels) to prevent memory issues
+- Images larger than this limit are downscaled proportionally before enhancement
+- This prevents GPU memory exhaustion on very high-resolution source material
 
 #### Enhancement Parameters
 
@@ -341,7 +355,7 @@ components:
                     type: number,
                     minimum: 0,
                     maximum: 1,
-                    description: "TOPIQ/CLIP-IQA score",
+                    description: "Laplacian variance score",
                   }
         pose:
           type: string
@@ -450,11 +464,18 @@ components:
 
 - **Composite Score:** 35% size + 20% pose + 20% occlusion + 25% sharpness
 - **Size Component:** Min dimension (80px=0.25, 250px=1.0)
-- **Pose Component:** Yaw/pitch angles (0°=1.0, 45°=0.25)
+- **Pose Component:** Yaw/pitch angles (0°=1.0, 45°=0.25) with pose-based occlusion correction
 - **Occlusion Component:** ResNet18 classifier (non-occluded=1.0, occluded=0.25)
-- **Sharpness Component:** TOPIQ-NR (primary), CLIP-IQA (fallback), Sobel (last resort)
-- **IQA Method:** ONNX Runtime (IR v10), ~133ms/image
+- **Sharpness Component:** Laplacian variance (fast, reliable blur detection)
 - **Range:** 0.0 - 1.0
+
+**Pose-Based Occlusion Correction:**
+
+The occlusion classifier can have bias on non-frontal poses (e.g., profile views may be incorrectly flagged as occluded). To compensate:
+
+- For non-frontal poses (left, right, rotate variants), the occlusion score is adjusted
+- This prevents unfair penalization of valid profile faces
+- The correction maintains accuracy for genuinely occluded faces
 
 **Pose Estimation:**
 
@@ -851,5 +872,6 @@ The custom-trained model significantly outperforms pre-trained alternatives on h
 
 ---
 
-**Last Updated:** 2025-11-24
+**Last Updated:** 2025-12-02
+**Version:** 2.0.0
 **Status:** Implemented and Tested
