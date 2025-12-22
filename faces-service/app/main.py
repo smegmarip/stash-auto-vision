@@ -443,12 +443,14 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
                                     enhanced_image, face_min_confidence=request.parameters.face_min_confidence
                                 )
 
-                                # Find best detection by quality
+                                # Find enhanced detection matching original identity
                                 if enhanced_detections:
-                                    best_enhanced = max(enhanced_detections, key=lambda d: d["quality"]["composite"])
+                                    best_enhanced = face_recognizer.get_enhanced_face(
+                                        rep_detection["embedding"], enhanced_detections
+                                    )
 
-                                    # Only use enhanced if quality improved
-                                    if best_enhanced["quality"]["composite"] > quality:
+                                    # Only use enhanced if identity matches AND quality improved
+                                    if best_enhanced and best_enhanced["quality"]["composite"] > quality:
                                         logger.info(
                                             f"Enhancement successful for {face_id}: "
                                             f"quality {quality:.3f} → {best_enhanced['quality']['composite']:.3f}"
@@ -458,13 +460,15 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
                                         best_enhanced["frame_index"] = rep_detection["frame_index"]
                                         best_enhanced["timestamp"] = rep_detection["timestamp"]
                                         rep_detection = best_enhanced
-                                    else:
-                                        logger.info(
+                                    elif best_enhanced:
+                                        logger.debug(
                                             f"Enhancement did not improve quality for {face_id}: "
                                             f"{quality:.3f} → {best_enhanced['quality']['composite']:.3f}"
                                         )
+                                    else:
+                                        logger.debug(f"No identity match in enhanced frame for {face_id}")
                                 else:
-                                    logger.warning(f"No face detected in enhanced frame for {face_id}")
+                                    logger.debug(f"No face detected in enhanced frame for {face_id}")
                             else:
                                 logger.error(f"Failed to decode enhanced frame for {face_id}")
                         else:
@@ -586,9 +590,13 @@ async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: Backgrou
         cached_job_id = await cache_manager.get_cached_job_id(cache_key)
 
         if cached_job_id:
+            # If caller provided a job_id, create alias to cached job
+            if request.job_id and request.job_id != cached_job_id:
+                await cache_manager.create_job_alias(request.job_id, cached_job_id)
+
             metadata = await cache_manager.get_job_metadata(cached_job_id)
             return AnalyzeJobResponse(
-                job_id=cached_job_id,
+                job_id=request.job_id or cached_job_id,
                 status=JobStatus(metadata.get("status", "completed")),
                 created_at=metadata.get("created_at", ""),
             )

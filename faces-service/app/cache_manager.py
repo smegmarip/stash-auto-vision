@@ -187,12 +187,61 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Error caching results: {e}")
 
+    async def create_job_alias(self, alias_job_id: str, target_job_id: str, ttl: Optional[int] = None):
+        """
+        Create an alias from one job_id to another (for cache hit scenarios).
+
+        When vision-api orchestrates a job and provides a job_id but faces-service
+        has a cache hit, this creates an alias so the provided job_id can still
+        be used to look up the cached results.
+
+        Args:
+            alias_job_id: The job_id to create an alias for
+            target_job_id: The actual job_id that has the cached data
+            ttl: Time to live (seconds), uses default if None
+        """
+        if not self.redis:
+            await self.connect()
+
+        ttl = ttl or self.ttl
+
+        try:
+            alias_key = f"{self.module}:job:{alias_job_id}:alias"
+            await self.redis.setex(alias_key, ttl, target_job_id)
+            logger.debug(f"Created job alias: {alias_job_id} → {target_job_id}")
+        except Exception as e:
+            logger.error(f"Error creating job alias: {e}")
+
+    async def resolve_job_alias(self, job_id: str) -> str:
+        """
+        Resolve job alias to actual job_id, or return original if no alias.
+
+        Args:
+            job_id: Job identifier (may be an alias)
+
+        Returns:
+            The actual job_id (resolved if alias, original if not)
+        """
+        if not self.redis:
+            await self.connect()
+
+        try:
+            alias_key = f"{self.module}:job:{job_id}:alias"
+            target = await self.redis.get(alias_key)
+            if target:
+                logger.debug(f"Resolved job alias: {job_id} → {target}")
+                return target
+            return job_id
+        except Exception as e:
+            logger.error(f"Error resolving job alias: {e}")
+            return job_id
+
     async def get_job_metadata(self, job_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve job metadata by job ID
 
         Args:
-            job_id: Job identifier
+            job_id: Job identifier (may be an alias)
 
         Returns:
             Metadata dict if found, None otherwise
@@ -201,7 +250,9 @@ class CacheManager:
             await self.connect()
 
         try:
-            metadata_key = f"{self.module}:job:{job_id}:metadata"
+            # Resolve alias first
+            resolved_id = await self.resolve_job_alias(job_id)
+            metadata_key = f"{self.module}:job:{resolved_id}:metadata"
             metadata_json = await self.redis.get(metadata_key)
 
             if metadata_json:
@@ -216,7 +267,7 @@ class CacheManager:
         Retrieve job results by job ID
 
         Args:
-            job_id: Job identifier
+            job_id: Job identifier (may be an alias)
 
         Returns:
             Results dict if found, None otherwise
@@ -225,7 +276,9 @@ class CacheManager:
             await self.connect()
 
         try:
-            results_key = f"{self.module}:job:{job_id}:results"
+            # Resolve alias first
+            resolved_id = await self.resolve_job_alias(job_id)
+            results_key = f"{self.module}:job:{resolved_id}:results"
             results_json = await self.redis.get(results_key)
 
             if results_json:

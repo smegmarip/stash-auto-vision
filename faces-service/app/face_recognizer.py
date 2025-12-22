@@ -495,6 +495,46 @@ class FaceRecognizer:
 
         return best_idx
 
+    def get_enhanced_face(
+        self,
+        original_embedding: List[float],
+        enhanced_detections: List[Dict],
+        similarity_threshold: float = 0.6,
+    ) -> Optional[Dict]:
+        """
+        Find enhanced detection matching the original face's identity.
+
+        When a frame is enhanced and re-detected, multiple faces may be found.
+        This method finds the enhanced detection that matches the original face
+        by comparing embeddings (identity matching) rather than bounding box overlap.
+
+        Args:
+            original_embedding: Embedding of the original face
+            enhanced_detections: List of face detections from enhanced frame
+            similarity_threshold: Minimum similarity to consider a match
+
+        Returns:
+            Matching enhanced detection dict, or None if no match found
+        """
+        if not enhanced_detections:
+            return None
+
+        original_emb = np.array(original_embedding)
+        best_match = None
+        best_similarity = similarity_threshold
+
+        for enhanced_det in enhanced_detections:
+            enhanced_emb = np.array(enhanced_det["embedding"])
+            similarity = self._cosine_similarity(original_emb, enhanced_emb)
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = enhanced_det
+
+        if best_match:
+            logger.debug(f"Enhanced match found with similarity={best_similarity:.3f}")
+
+        return best_match
+
     async def download_frame(self, url: str, output_path: Path) -> bool:
         """
         Download frame from URL

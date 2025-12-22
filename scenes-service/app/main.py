@@ -246,11 +246,15 @@ async def detect_scenes(
         if cached_job_id:
             logger.info(f"Cache hit: returning existing job {cached_job_id}")
 
+            # If caller provided a job_id, create alias to cached job
+            if request.job_id and request.job_id != cached_job_id:
+                await cache_manager.create_job_alias(request.job_id, cached_job_id)
+
             # Return existing job
             metadata = await cache_manager.get_job_metadata(cached_job_id)
 
             return DetectJobResponse(
-                job_id=cached_job_id,
+                job_id=request.job_id or cached_job_id,
                 source_id=request.source_id,
                 status=JobStatus(metadata.get("status", "completed")),
                 created_at=metadata.get("created_at", ""),

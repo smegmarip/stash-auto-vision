@@ -33,11 +33,7 @@ class CacheManager:
     async def connect(self):
         """Establish Redis connection"""
         if not self.redis:
-            self.redis = await aioredis.from_url(
-                self.redis_url,
-                encoding="utf-8",
-                decode_responses=True
-            )
+            self.redis = await aioredis.from_url(self.redis_url, encoding="utf-8", decode_responses=True)
             logger.info(f"Connected to Redis: {self.redis_url}")
 
     async def disconnect(self):
@@ -107,6 +103,10 @@ class CacheManager:
             SHA-256 hash (hex string)
         """
         try:
+            if "timestamp" in params:
+                # If timestamp is negative, omit and treat as single image
+                if float(params["timestamp"]) < 0:
+                    params = {k: v for k, v in params.items() if k != "timestamp"}
             if not os.path.exists(video_path):
                 logger.warning(f"Video not found for cache key: {video_path}")
                 # Fallback to path-based key
@@ -167,11 +167,7 @@ class CacheManager:
             return None
 
     async def cache_job_metadata(
-        self,
-        job_id: str,
-        cache_key: str,
-        metadata: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, job_id: str, cache_key: str, metadata: Dict[str, Any], ttl: Optional[int] = None
     ):
         """
         Store job metadata
@@ -191,23 +187,13 @@ class CacheManager:
             metadata_key = f"{self.module}:job:{job_id}:metadata"
 
             # Store metadata
-            await self.redis.setex(
-                metadata_key,
-                ttl,
-                json.dumps(metadata)
-            )
+            await self.redis.setex(metadata_key, ttl, json.dumps(metadata))
 
             logger.debug(f"Cached metadata for job: {job_id}")
         except Exception as e:
             logger.error(f"Error caching metadata: {e}")
 
-    async def cache_job_results(
-        self,
-        job_id: str,
-        cache_key: str,
-        results: Dict[str, Any],
-        ttl: Optional[int] = None
-    ):
+    async def cache_job_results(self, job_id: str, cache_key: str, results: Dict[str, Any], ttl: Optional[int] = None):
         """
         Store job results with cache mapping
 
@@ -227,18 +213,10 @@ class CacheManager:
             mapping_key = f"{self.module}:cache:{cache_key}"
 
             # Store results
-            await self.redis.setex(
-                results_key,
-                ttl,
-                json.dumps(results)
-            )
+            await self.redis.setex(results_key, ttl, json.dumps(results))
 
             # Create cache mapping (bidirectional lookup)
-            await self.redis.setex(
-                mapping_key,
-                ttl,
-                job_id
-            )
+            await self.redis.setex(mapping_key, ttl, job_id)
 
             logger.info(f"Cached results for job: {job_id} (key: {cache_key[:16]}...)")
         except Exception as e:
@@ -299,7 +277,7 @@ class CacheManager:
         progress: float = 0.0,
         stage: Optional[str] = None,
         message: Optional[str] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
     ):
         """
         Update job status in cache
@@ -318,16 +296,16 @@ class CacheManager:
         try:
             metadata = await self.get_job_metadata(job_id)
             if metadata:
-                metadata['status'] = status
-                metadata['progress'] = progress
+                metadata["status"] = status
+                metadata["progress"] = progress
                 if stage:
-                    metadata['stage'] = stage
+                    metadata["stage"] = stage
                 if message:
-                    metadata['message'] = message
+                    metadata["message"] = message
                 if error:
-                    metadata['error'] = error
+                    metadata["error"] = error
 
-                await self.cache_job_metadata(job_id, metadata.get('cache_key', ''), metadata)
+                await self.cache_job_metadata(job_id, metadata.get("cache_key", ""), metadata)
                 logger.debug(f"Updated status for job {job_id}: {status} ({progress:.0%})")
         except Exception as e:
             logger.error(f"Error updating job status: {e}")

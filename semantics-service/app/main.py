@@ -474,8 +474,13 @@ async def analyze_semantics(request: AnalyzeSemanticsRequest, background_tasks: 
         cached_job_id = await cache_manager.get_cached_job_id(cache_key)
         if cached_job_id:
             logger.info(f"Cache hit for {request.source}: {cached_job_id}")
+
+            # If caller provided a job_id, create alias to cached job
+            if request.job_id and request.job_id != cached_job_id:
+                await cache_manager.create_job_alias(request.job_id, cached_job_id)
+
             return AnalyzeSemanticsResponse(
-                job_id=cached_job_id,
+                job_id=request.job_id or cached_job_id,
                 status=JobStatus.COMPLETED,
                 message="Results retrieved from cache",
                 created_at=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
