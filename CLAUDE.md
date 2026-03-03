@@ -41,11 +41,18 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Standalone mode with scenes_job_id parameter
 - Memory-optimized batch processing
 
+**Phase 3 (In Progress):**
+
+- JoyCaption VLM integration for video captioning
+- Resource manager for GPU orchestration
+- Tag alignment with Stash taxonomy
+- Multiple prompt types (booru-like, descriptive, etc.)
+
 **Future Phases:**
 
-- **Phase 3:** YOLO-World open-vocabulary object detection
-- **Phase 4:** Multi-modal search and advanced tagging
-- **Phase 5:** stash-compreface-plugin integration
+- **Phase 4:** YOLO-World open-vocabulary object detection
+- **Phase 5:** Multi-modal search and advanced tagging
+- **Phase 6:** stash-compreface-plugin integration
 
 ---
 
@@ -68,7 +75,14 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 │         ├─► scenes-service :5002 (Scene boundaries)       │
 │         ├─► faces-service  :5003 (Face recognition)       │
 │         ├─► semantics-svc  :5004 (SigLIP) ✅              │
-│         └─► objects-svc    :5005 (YOLO-World) [Phase 3]   │
+│         ├─► objects-svc    :5005 (YOLO-World) [Phase 4]   │
+│         └─► captioning-svc :5006 (JoyCaption) ✅          │
+│                                                             │
+│  ┌──────────────┐         ┌──────────────────────────┐    │
+│  │resource-mgr  │ :5007   │   - GPU orchestration    │    │
+│  │              │◄────────┤   - VRAM allocation      │    │
+│  └──────────────┘         │   - Lease management     │    │
+│                           └──────────────────────────┘    │
 │                                                             │
 │  ┌──────────────┐         ┌──────────────────────────┐    │
 │  │    redis     │ :6379   │   - Job metadata         │    │
@@ -132,11 +146,28 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - 768-D multi-modal embeddings for similarity search
 - Scene-aware analysis with automatic per-scene summaries
 
-**objects-service** (Stubbed - Phase 3)
+**objects-service** (Stubbed - Phase 4)
 
 - YOLO-World open-vocabulary object detection
 - Custom category support
 - Object tracking across frames
+
+**captioning-service** (Phase 3)
+
+- JoyCaption Alpha Two VLM (Llama 3.1 8B based)
+- 4-bit quantization for ~8GB VRAM usage
+- Multiple prompt types (booru-like, descriptive, straightforward)
+- Tag alignment with Stash taxonomy via fuzzy matching
+- Scene-aware captioning with frames_per_scene selection
+- Integration with resource-manager for GPU coordination
+
+**resource-manager**
+
+- GPU/VRAM orchestration across all services
+- Lease-based allocation with priority queue
+- Heartbeat-based timeout for abandoned resources
+- Fair scheduling (FIFO within priority levels)
+- Automatic detection of GPU hardware info
 
 **redis**
 
@@ -175,9 +206,9 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 ## Implementation Status
 
-### Phase 1 & 2: Complete ✅
+### Phase 1, 2 & 3: Complete ✅
 
-**Implemented Services (9/10):**
+**Implemented Services (11/12):**
 
 - [x] redis - Cache and job queue
 - [x] dependency-checker - Health orchestration
@@ -185,13 +216,15 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] scenes-service - PySceneDetect integration
 - [x] faces-service - InsightFace recognition
 - [x] semantics-service - SigLIP semantic classification
+- [x] captioning-service - JoyCaption VLM (Phase 3)
+- [x] resource-manager - GPU orchestration
 - [x] vision-api - Main orchestrator
 - [x] schema-service - OpenAPI aggregation
 - [x] jobs-viewer - React monitoring UI
 
-**Stubbed Services (1/10):**
+**Stubbed Services (1/12):**
 
-- [x] objects-service - Returns "not_implemented" status
+- [x] objects-service - Returns "not_implemented" status (Phase 4)
 
 **Core Features:**
 
@@ -235,8 +268,10 @@ See [Future Work](#future-work) section below.
 - **[Frame Server](docs/FRAME_SERVER.md)** - Frame extraction methods, sprite parsing, on-demand serving
 - **[Scenes Service](docs/SCENES_SERVICE.md)** - PySceneDetect algorithms, boundary detection
 - **[Faces Service](docs/FACES_SERVICE.md)** - InsightFace integration, clustering, embeddings
-- **[Semantics Service](docs/SEMANTICS_SERVICE.md)** - CLIP integration [Phase 2]
-- **[Objects Service](docs/OBJECTS_SERVICE.md)** - YOLO-World integration [Phase 3]
+- **[Semantics Service](docs/SEMANTICS_SERVICE.md)** - SigLIP integration (Phase 2)
+- **[Captioning Service](docs/CAPTIONING_SERVICE.md)** - JoyCaption VLM integration (Phase 3)
+- **[Resource Manager](docs/RESOURCE_MANAGER.md)** - GPU orchestration
+- **[Objects Service](docs/OBJECTS_SERVICE.md)** - YOLO-World integration (Phase 4)
 
 ### User Guides
 
