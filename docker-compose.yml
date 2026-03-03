@@ -44,7 +44,8 @@ services:
           curl -f http://frame-server:5001/frames/health &&
           curl -f http://scenes-service:5002/scenes/health &&
           curl -f http://faces-service:5003/faces/health &&
-          curl -f http://semantics-service:5004/semantics/health
+          curl -f http://semantics-service:5004/semantics/health &&
+          curl -f http://resource-manager:5007/resources/health
       interval: 5s
       timeout: 10s
       retries: 1
@@ -284,6 +285,87 @@ services:
         limits:
           memory: 16G
 
+  captioning-service:
+    build:
+      context: ./captioning-service
+      dockerfile: ${CAPTIONING_DOCKERFILE:-Dockerfile}
+    container_name: vision-captioning-service
+    hostname: vision-captioning-service
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${CAPTIONING_PORT:-5006}:5006"
+    environment:
+      - CAPTION_DEVICE=${CAPTION_DEVICE:-cuda}
+      - USE_QUANTIZATION=${USE_QUANTIZATION:-true}
+      - FRAME_SERVER_URL=http://frame-server:5001
+      - SCENES_SERVER_URL=http://scenes-service:5002
+      - RESOURCE_MANAGER_URL=http://resource-manager:5007
+      - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
+      - STASH_API_KEY=${STASH_API_KEY:-}
+      - REDIS_URL=redis://vision-redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - CAPTIONING_STUB_MODE=${CAPTIONING_STUB_MODE:-true}
+      - CAPTIONS_MIN_CONFIDENCE=${CAPTIONS_MIN_CONFIDENCE:-0.5}
+    volumes:
+      - ${TEST_MEDIA_PATH}:/media/videos:ro
+      - ${SERVER_MEDIA_PATH}:/data:ro
+      - ./captioning-service/app:/app/app
+      - frames_cache:/tmp/frames
+      - sprites_cache:/tmp/sprites
+      - downloads_cache:/tmp/downloads
+      - huggingface_cache:/root/.cache/huggingface
+    networks:
+      - vision_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      frame-server:
+        condition: service_started
+      resource-manager:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006/captions/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s # 5 minutes for model download
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+
+  resource-manager:
+    build:
+      context: ./resource-manager
+      dockerfile: ${RESOURCE_MANAGER_DOCKERFILE:-Dockerfile}
+    container_name: vision-resource-manager
+    hostname: vision-resource-manager
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    ports:
+      - "${RESOURCE_MANAGER_PORT:-5007}:5007"
+    environment:
+      - TOTAL_VRAM_MB=${TOTAL_VRAM_MB:-16384}
+      - LEASE_DURATION_SECONDS=${LEASE_DURATION_SECONDS:-600}
+      - HEARTBEAT_TIMEOUT_SECONDS=${HEARTBEAT_TIMEOUT_SECONDS:-60}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./resource-manager/app:/app/app
+    networks:
+      - vision_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5007/resources/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
   # ============================================
   # Main API / Orchestrator
   # ============================================
@@ -302,6 +384,8 @@ services:
       - FACES_SERVICE_URL=http://faces-service:5003
       - SEMANTICS_SERVICE_URL=http://semantics-service:5004
       - OBJECTS_SERVICE_URL=http://objects-service:5005
+      - CAPTIONING_SERVICE_URL=http://captioning-service:5006
+      - RESOURCE_MANAGER_URL=http://resource-manager:5007
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PROCESSING_MODE=${PROCESSING_MODE:-sequential}
@@ -309,6 +393,7 @@ services:
       - FACES_MIN_CONFIDENCE=${FACES_MIN_CONFIDENCE:-0.9}
       - SEMANTICS_MIN_CONFIDENCE=${SEMANTICS_MIN_CONFIDENCE:-0.5}
       - OBJECTS_MIN_CONFIDENCE=${OBJECTS_MIN_CONFIDENCE:-0.5}
+      - CAPTIONS_MIN_CONFIDENCE=${CAPTIONS_MIN_CONFIDENCE:-0.5}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -350,6 +435,8 @@ services:
       - FACES_SERVICE_URL=http://faces-service:5003
       - SEMANTICS_SERVICE_URL=http://semantics-service:5004
       - OBJECTS_SERVICE_URL=http://objects-service:5005
+      - CAPTIONING_SERVICE_URL=http://captioning-service:5006
+      - RESOURCE_MANAGER_URL=http://resource-manager:5007
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     networks:
@@ -400,6 +487,10 @@ services:
         condition: service_started
       objects-service:
         condition: service_started
+      captioning-service:
+        condition: service_started
+      resource-manager:
+        condition: service_started
       vision-api:
         condition: service_started
       jobs-viewer:
@@ -435,3 +526,4 @@ volumes:
   enhancement_models:
   codeformer_weights:
   insightface_models:
+  huggingface_cache:
