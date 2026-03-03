@@ -78,6 +78,7 @@ SCENES_SERVICE_URL = os.getenv("SCENES_SERVICE_URL", "http://scenes-service:5002
 FACES_SERVICE_URL = os.getenv("FACES_SERVICE_URL", "http://faces-service:5003")
 SEMANTICS_SERVICE_URL = os.getenv("SEMANTICS_SERVICE_URL", "http://semantics-service:5004")
 OBJECTS_SERVICE_URL = os.getenv("OBJECTS_SERVICE_URL", "http://objects-service:5005")
+CAPTIONING_SERVICE_URL = os.getenv("CAPTIONING_SERVICE_URL", "http://captioning-service:5006")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "31536000"))  # Default: 1 year
 
 redis_client: Optional[aioredis.Redis] = None
@@ -296,7 +297,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
         await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
 
-        results = {"scenes": None, "faces": None, "semantics": None, "objects": None}
+        results = {"scenes": None, "faces": None, "semantics": None, "objects": None, "captions": None}
 
         # Sequential processing (default)
         if request.processing_mode == "sequential":
@@ -307,6 +308,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                     request.modules.faces.enabled,
                     request.modules.semantics.enabled,
                     request.modules.objects.enabled,
+                    request.modules.captions.enabled,
                 ]
             )
             progress_per_service = 1.0 / enabled_count if enabled_count > 0 else 0.25
@@ -484,6 +486,44 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 # Update completion message only
                 await update_metadata(job_id, metadata, message="Object detection complete")
 
+            # Step 5: Captions (JoyCaption VLM)
+            if request.modules.captions.enabled:
+                logger.info("Running video captioning...")
+                await update_metadata(job_id, metadata, stage="captioning", message="Generating video captions")
+
+                captions_params = request.modules.captions.parameters or {}
+                captions_request = {
+                    "source": request.source,
+                    "source_id": request.source_id,
+                    "scenes_job_id": f"scenes-{job_id}" if results.get("scenes") else None,
+                    "parameters": {
+                        "prompt_type": captions_params.get("prompt_type", "booru_like"),
+                        "frame_selection": captions_params.get("frame_selection", "interval"),
+                        "sampling_interval": captions_params.get("sampling_interval", 5.0),
+                        "frames_per_scene": captions_params.get("frames_per_scene", 3),
+                        "min_confidence": captions_params.get("min_confidence", float(os.getenv("CAPTIONS_MIN_CONFIDENCE", "0.5"))),
+                        "max_tags_per_frame": captions_params.get("max_tags_per_frame", 30),
+                        "align_to_taxonomy": captions_params.get("align_to_taxonomy", False),
+                        "batch_size": captions_params.get("batch_size", 1),
+                        "use_quantization": captions_params.get("use_quantization", True),
+                    },
+                }
+
+                captions_result = await call_service(
+                    "captions",
+                    CAPTIONING_SERVICE_URL,
+                    captions_request,
+                    orchestrator_job_id=job_id,
+                    orchestrator_metadata=metadata,
+                    base_progress=progress,
+                    progress_weight=progress_per_service,
+                )
+                results["captions"] = captions_result
+                # Update local progress tracker
+                progress += progress_per_service
+                # Update completion message only
+                await update_metadata(job_id, metadata, message="Video captioning complete")
+
         # Parallel processing (future optimization)
         else:
             tasks = []
@@ -521,6 +561,8 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             result_summary["semantics"] = "completed"
         if results["objects"]:
             result_summary["objects"] = "completed"
+        if results["captions"]:
+            result_summary["captions"] = "completed"
 
         # Build final results
         final_results = {
@@ -536,6 +578,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                     "faces": request.modules.faces.enabled,
                     "semantics": request.modules.semantics.enabled,
                     "objects": request.modules.objects.enabled,
+                    "captions": request.modules.captions.enabled,
                 },
             },
         }
@@ -615,6 +658,7 @@ async def analyze_video(request: AnalyzeVideoRequest, background_tasks: Backgrou
                 "faces": request.modules.faces.enabled,
                 "semantics": request.modules.semantics.enabled,
                 "objects": request.modules.objects.enabled,
+                "captions": request.modules.captions.enabled,
             },
             processing_mode=request.processing_mode,
         )
@@ -636,7 +680,7 @@ async def get_job_status(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects", "captions"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
@@ -683,7 +727,7 @@ async def get_job_results(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects", "captions"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
@@ -796,7 +840,7 @@ async def list_jobs(
 @app.get("/vision/jobs/count")
 async def count_jobs(
     status: Optional[str] = Query(None, description="Filter by job status (queued, processing, completed, failed)"),
-    service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes, semantics, objects)"),
+    service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes, semantics, objects, captions)"),
     source_id: Optional[str] = Query(None, description="Filter by source_id (scene identifier)"),
     source: Optional[str] = Query(None, description="Filter by source video path"),
     start_date: Optional[str] = Query(None, description="Filter by start date (ISO 8601 format)"),
@@ -817,7 +861,8 @@ async def count_jobs(
                 "faces": 47,
                 "scenes": 45,
                 "semantics": 32,
-                "objects": 0
+                "objects": 0,
+                "captions": 12
             }
         }
     """
@@ -875,6 +920,7 @@ async def health_check():
                 ("faces", FACES_SERVICE_URL),
                 ("semantics", SEMANTICS_SERVICE_URL),
                 ("objects", OBJECTS_SERVICE_URL),
+                ("captions", CAPTIONING_SERVICE_URL),
             ]:
                 try:
                     response = await client.get(f"{url}/{name}/health")

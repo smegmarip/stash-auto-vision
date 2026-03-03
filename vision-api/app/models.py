@@ -21,6 +21,7 @@ class ModulesConfig(BaseModel):
     faces: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=True))
     semantics: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
     objects: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
+    captions: ModuleConfig = Field(default_factory=lambda: ModuleConfig(enabled=False))
 
 
 class AnalyzeVideoRequest(BaseModel):
@@ -79,6 +80,7 @@ class AnalyzeJobResults(BaseModel):
     - scenes: List of scene boundaries or Dict
     - semantics: Dict of semantic classifications
     - objects: List of detected objects or Dict
+    - captions: Dict of video captions from JoyCaption VLM
     """
 
     job_id: str
@@ -88,6 +90,7 @@ class AnalyzeJobResults(BaseModel):
     faces: Optional[Any] = None
     semantics: Optional[Any] = None
     objects: Optional[Any] = None
+    captions: Optional[Any] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
