@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { JobFilters } from '@/api/types'
 
-type ViewMode = 'rollup' | 'faces' | 'scenes' | 'semantics' | 'objects'
+type ViewMode = 'rollup' | 'faces' | 'scenes' | 'semantics' | 'objects' | 'captions'
 
 interface JobsState {
   // Filters

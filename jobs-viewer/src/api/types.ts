@@ -33,6 +33,7 @@ export interface JobCountResponse {
     scenes: number;
     semantics: number;
     objects?: number;
+    captions?: number;
   };
 }
 
@@ -52,7 +53,7 @@ export interface JobFilters {
 // Vision API Types
 // ============================================
 
-export type ServiceName = "vision" | "faces" | "scenes" | "semantics" | "objects";
+export type ServiceName = "vision" | "faces" | "scenes" | "semantics" | "objects" | "captions";
 
 export interface ServiceJobInfo {
   service: string;
@@ -86,6 +87,7 @@ export interface JobResults {
   faces?: FacesResult;
   semantics?: SemanticsResult;
   objects?: Record<string, unknown>;
+  captions?: CaptionsResult;
   metadata: JobMetadata;
 }
 
@@ -265,6 +267,62 @@ export interface SemanticsResult {
   frames: FrameSemantics[];
   scene_summaries?: SceneSemanticSummary[];
   metadata: SemanticsMetadata;
+}
+
+// ============================================
+// Captions Types
+// ============================================
+
+export interface CaptionTag {
+  tag: string;
+  confidence: number;
+  source: string;
+  category?: string;
+}
+
+export interface FrameCaption {
+  frame_index: number;
+  timestamp: number;
+  raw_caption: string;
+  tags: CaptionTag[];
+  scene_index?: number;
+  prompt_type_used: string;
+}
+
+export interface SceneCaptionSummary {
+  scene_index: number;
+  start_timestamp: number;
+  end_timestamp: number;
+  dominant_tags: string[];
+  frame_count: number;
+  avg_confidence: number;
+  combined_caption?: string;
+}
+
+export interface CaptionsMetadata {
+  source: string;
+  total_frames: number;
+  frames_captioned: number;
+  model: string;
+  model_variant: string;
+  quantization: string;
+  prompt_type: string;
+  processing_time_seconds: number;
+  device: string;
+  vram_peak_mb?: number;
+  gpu_wait_time_seconds?: number;
+}
+
+export interface CaptionsResult {
+  job_id: string;
+  source_id: string;
+  status: string;
+  captions: {
+    frames: FrameCaption[];
+    scene_summaries?: SceneCaptionSummary[];
+    metadata: CaptionsMetadata;
+  };
+  metadata: CaptionsMetadata;
 }
 
 // ============================================

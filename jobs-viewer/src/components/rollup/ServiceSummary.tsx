@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Users, Layers, Sparkles, Box, ChevronRight } from 'lucide-react'
+import { Users, Layers, Sparkles, Box, ChevronRight, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ServiceSummaryProps {
@@ -15,6 +15,7 @@ const serviceIcons: Record<string, React.ReactNode> = {
   scenes: <Layers className="h-5 w-5" />,
   semantics: <Sparkles className="h-5 w-5" />,
   objects: <Box className="h-5 w-5" />,
+  captions: <MessageSquare className="h-5 w-5" />,
 }
 
 const serviceColors: Record<string, string> = {
@@ -22,6 +23,7 @@ const serviceColors: Record<string, string> = {
   scenes: 'bg-green-500',
   semantics: 'bg-purple-500',
   objects: 'bg-orange-500',
+  captions: 'bg-pink-500',
 }
 
 export function ServiceSummary({ service, label, data, className }: ServiceSummaryProps) {
@@ -54,6 +56,16 @@ export function ServiceSummary({ service, label, data, className }: ServiceSumma
           <div className="flex gap-2 mt-2">
             <Badge variant="outline">
               {scenes.metadata?.total_scenes || scenes.scenes?.length || 0} scenes
+            </Badge>
+          </div>
+        )
+      }
+      case 'captions': {
+        const captions = data as { captions?: { frames?: unknown[] }; metadata?: { frames_captioned?: number } }
+        return (
+          <div className="flex gap-2 mt-2">
+            <Badge variant="outline">
+              {captions.metadata?.frames_captioned || captions.captions?.frames?.length || 0} frames
             </Badge>
           </div>
         )

@@ -47,6 +47,7 @@ export function JobFilters() {
           <SelectItem value="scenes">Scenes</SelectItem>
           <SelectItem value="semantics">Semantics</SelectItem>
           <SelectItem value="objects">Objects</SelectItem>
+          <SelectItem value="captions">Captions</SelectItem>
         </SelectContent>
       </Select>
 

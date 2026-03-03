@@ -32,6 +32,7 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
     { key: "faces", label: "Face Recognition" },
     { key: "semantics", label: "Semantic Analysis" },
     { key: "objects", label: "Object Detection" },
+    { key: "captions", label: "Video Captioning" },
   ];
 
   return (
