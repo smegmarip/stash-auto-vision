@@ -13,6 +13,87 @@ PROMPT_TEMPLATES: Dict[PromptType, str] = {
 Describe the visual elements, composition, and any notable details you observe.
 Focus on what is actually visible in the image.""",
 
+    PromptType.SCENE_SUMMARY: """Analyze this video frame comprehensively. Provide a detailed JSON scene summary.
+
+{
+  "locale": "indoor/outdoor with geographic type",
+  "setting": "specific environment (bedroom, office, beach, etc.)",
+  "location_details": "additional location specifics",
+
+  "persons": {
+    "count": 0,
+    "details": [
+      {
+        "gender": "male/female/unknown",
+        "age_range": "child/teen/young_adult/adult/middle_aged/elderly",
+        "ethnicity": "if apparent",
+        "body_type": "slim/average/athletic/heavy",
+        "hair": "color, length, style",
+        "expression": "emotional expression",
+        "pose": "standing/sitting/lying/kneeling/etc",
+        "position": "foreground/background/left/right/center"
+      }
+    ]
+  },
+  "attire": ["specific clothing items for each person"],
+  "interactions": "how people are interacting with each other",
+
+  "objects": ["notable props and items"],
+  "furniture": ["furniture visible"],
+  "background_elements": ["background details"],
+  "foreground_elements": ["foreground focus items"],
+  "text_visible": "any visible text or signage",
+
+  "activities": ["actions being performed"],
+  "action_intensity": "static/mild/moderate/intense",
+
+  "cinematography": {
+    "shot_type": "extreme_close_up/close_up/medium_close_up/medium/medium_wide/wide/extreme_wide",
+    "camera_angle": "eye_level/high_angle/low_angle/dutch_angle/birds_eye/worms_eye/over_shoulder/pov",
+    "camera_movement": "static/pan/tilt/tracking/dolly/crane/handheld/steadicam/zoom",
+    "focus": "shallow_dof/deep_dof/rack_focus/soft_focus/sharp",
+    "composition": "rule_of_thirds/centered/symmetrical/asymmetrical/diagonal/leading_lines",
+    "framing": "full_body/three_quarter/half_body/head_and_shoulders/face_only"
+  },
+
+  "visual_style": {
+    "color_palette": ["dominant colors"],
+    "color_grading": "warm/cool/neutral/desaturated/vibrant/monochrome",
+    "contrast": "high/low/normal",
+    "saturation": "saturated/desaturated/muted/vivid",
+    "film_grain": "none/light/heavy/digital_noise",
+    "quality": "4k/hd/sd/vintage/degraded",
+    "visual_style": "cinematic/documentary/amateur/professional/artistic",
+    "era_aesthetic": "modern/2010s/2000s/90s/80s/70s/vintage/retro"
+  },
+
+  "environment": {
+    "time_of_day": "morning/afternoon/evening/night/golden_hour/blue_hour",
+    "weather": "sunny/cloudy/rainy/snowy/foggy/stormy (if outdoor)",
+    "season": "spring/summer/fall/winter (if apparent)",
+    "atmosphere": "tense/relaxed/romantic/mysterious/energetic/somber",
+    "ambient_light": "bright/dim/dark/mixed"
+  },
+
+  "lighting": "detailed lighting description",
+  "lighting_type": "natural/artificial/mixed/practical/studio",
+
+  "mood": "emotional tone of the scene",
+  "tension_level": "none/low/medium/high",
+  "genre": "primary film genre",
+  "sub_genre": "specific genre classification",
+  "content_type": "narrative/documentary/music_video/interview/commercial/etc",
+
+  "narrative_context": "what seems to be happening story-wise",
+  "notable_features": ["anything unusual or distinctive"]
+}
+
+Rules:
+- Be precise and factual - only describe what is visible
+- Use the exact field names and value options provided
+- Leave fields as null if not determinable
+- For arrays, include all relevant items""",
+
     PromptType.DESCRIPTIVE_INFORMAL: """Write a descriptive caption for this image in a casual tone.
 Describe what you see as if explaining it to a friend.
 Focus on the main elements and overall vibe.""",
