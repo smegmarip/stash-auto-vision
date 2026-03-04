@@ -74,13 +74,13 @@ class ScenesServerClient:
             results_response.raise_for_status()
             results = results_response.json()
 
-            # Extract boundaries
-            scenes = results.get("scenes", {}).get("boundaries", [])
+            # Extract boundaries - scenes is an array directly
+            scenes = results.get("scenes", [])
 
             boundaries = []
             for scene in scenes:
                 boundaries.append({
-                    "scene_index": scene.get("scene_index", len(boundaries)),
+                    "scene_index": scene.get("scene_number", len(boundaries)),
                     "start_timestamp": scene.get("start_timestamp", 0.0),
                     "end_timestamp": scene.get("end_timestamp", 0.0),
                     "start_frame": scene.get("start_frame"),
@@ -92,6 +92,78 @@ class ScenesServerClient:
 
         except Exception as e:
             logger.error(f"Error getting scene boundaries: {e}")
+            raise
+
+    async def analyze_scenes(
+        self,
+        video_path: str,
+        threshold: float = 27.0,
+        poll_interval: float = 1.0,
+        timeout: float = 300.0
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        """
+        Trigger scene detection and wait for completion.
+
+        Args:
+            video_path: Path to video file
+            threshold: Scene detection threshold
+            poll_interval: Seconds between status polls
+            timeout: Maximum wait time in seconds
+
+        Returns:
+            Tuple of (job_id, scene_boundaries)
+        """
+        import asyncio
+        import time
+
+        client = await self._get_client()
+        start_time = time.time()
+
+        try:
+            # Submit scene detection job
+            response = await client.post(
+                f"{self.scenes_server_url}/scenes/detect",
+                json={
+                    "video_path": video_path,
+                    "scene_threshold": threshold
+                }
+            )
+            response.raise_for_status()
+            job_info = response.json()
+            job_id = job_info.get("job_id")
+
+            if not job_id:
+                raise RuntimeError("No job_id returned from scenes service")
+
+            logger.info(f"Scene detection job submitted: {job_id}")
+
+            # Check for cache hit
+            if job_info.get("status") == "completed" and job_info.get("cache_hit"):
+                logger.info(f"Scene detection cache hit: {job_id}")
+                boundaries = await self.get_scene_boundaries(job_id)
+                return job_id, boundaries
+
+            # Poll for completion
+            while time.time() - start_time < timeout:
+                status_response = await client.get(
+                    f"{self.scenes_server_url}/scenes/jobs/{job_id}/status"
+                )
+                status = status_response.json()
+
+                if status.get("status") == "completed":
+                    logger.info(f"Scene detection completed: {job_id}")
+                    boundaries = await self.get_scene_boundaries(job_id)
+                    return job_id, boundaries
+                elif status.get("status") == "failed":
+                    error_msg = status.get("error", "Unknown error")
+                    raise RuntimeError(f"Scene detection failed: {error_msg}")
+
+                await asyncio.sleep(poll_interval)
+
+            raise RuntimeError(f"Scene detection timed out after {timeout}s")
+
+        except Exception as e:
+            logger.error(f"Error during scene detection: {e}")
             raise
 
     async def health_check(self) -> bool:

@@ -28,7 +28,14 @@ from .models import (
     HealthResponse,
     JobStatus,
     PromptType,
-    TaxonomyResponse
+    FrameSelectionMethod,
+    TaxonomyResponse,
+    TagTaxonomyNode,
+    SceneSummaryData,
+    PersonDetail,
+    CinematographyInfo,
+    VisualStyle,
+    EnvironmentInfo
 )
 from .cache_manager import CacheManager
 from .joycaption import JoyCaptionProcessor
@@ -39,6 +46,7 @@ from .prompt_templates import (
     estimate_vram_usage
 )
 from .tag_aligner import TagAligner
+from .hierarchical_tagger import HierarchicalTagger, ScoredTag
 from .stash_client import StashClient
 from .frame_client import FrameServerClient
 from .scenes_client import ScenesServerClient
@@ -68,6 +76,7 @@ logger = logging.getLogger(__name__)
 cache_manager: Optional[CacheManager] = None
 joycaption: Optional[JoyCaptionProcessor] = None
 tag_aligner: Optional[TagAligner] = None
+hierarchical_tagger: Optional[HierarchicalTagger] = None
 stash_client: Optional[StashClient] = None
 frame_client: Optional[FrameServerClient] = None
 resource_client: Optional[ResourceManagerClient] = None
@@ -76,7 +85,8 @@ resource_client: Optional[ResourceManagerClient] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global cache_manager, joycaption, tag_aligner, stash_client, frame_client, resource_client
+    global cache_manager, joycaption, tag_aligner, hierarchical_tagger
+    global stash_client, frame_client, resource_client
 
     logger.info("Starting Captioning Service...")
 
@@ -111,13 +121,17 @@ async def lifespan(app: FastAPI):
         if await stash_client.health_check():
             taxonomy = await stash_client.get_all_tags()
             tag_aligner = TagAligner(taxonomy)
+            hierarchical_tagger = HierarchicalTagger(taxonomy)
             logger.info(f"Tag aligner initialized with {len(taxonomy)} tags")
+            logger.info(f"Hierarchical tagger stats: {hierarchical_tagger.get_hierarchy_stats()}")
         else:
             logger.warning("Stash not available, tag alignment disabled")
             tag_aligner = TagAligner([])
+            hierarchical_tagger = HierarchicalTagger([])
     except Exception as e:
         logger.warning(f"Failed to load taxonomy from Stash: {e}")
         tag_aligner = TagAligner([])
+        hierarchical_tagger = HierarchicalTagger([])
 
     yield
 
@@ -237,22 +251,55 @@ async def process_captioning_job(job_id: str, request: AnalyzeCaptionsRequest):
 
         # Step 3: Get scene boundaries if needed
         scene_boundaries = None
+        scenes_client = ScenesServerClient(SCENES_SERVER_URL)
 
-        if request.scenes_job_id:
-            await cache_manager.update_job_status(
-                job_id,
-                JobStatus.PROCESSING.value,
-                progress=0.15,
-                stage="fetching_scenes",
-                message="Fetching scene boundaries"
-            )
+        # Determine if we need scene boundaries
+        needs_scenes = (
+            request.parameters.frame_selection == FrameSelectionMethod.SCENE_BASED or
+            request.scenes_job_id
+        )
 
-            try:
-                scenes_client = ScenesServerClient(SCENES_SERVER_URL)
-                scene_boundaries = await scenes_client.get_scene_boundaries(request.scenes_job_id)
-                logger.info(f"Retrieved {len(scene_boundaries)} scene boundaries")
-            except Exception as e:
-                logger.warning(f"Failed to fetch scene boundaries: {e}")
+        if needs_scenes:
+            if request.scenes_job_id:
+                # Use provided scenes job
+                await cache_manager.update_job_status(
+                    job_id,
+                    JobStatus.PROCESSING.value,
+                    progress=0.15,
+                    stage="fetching_scenes",
+                    message="Fetching scene boundaries"
+                )
+
+                try:
+                    scene_boundaries = await scenes_client.get_scene_boundaries(request.scenes_job_id)
+                    logger.info(f"Retrieved {len(scene_boundaries)} scene boundaries from job {request.scenes_job_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch scene boundaries from {request.scenes_job_id}: {e}")
+                    # If scene_based but fetch failed, trigger detection
+                    if request.parameters.frame_selection == FrameSelectionMethod.SCENE_BASED:
+                        logger.info("Triggering automatic scene detection...")
+                        request.scenes_job_id = None  # Clear invalid job_id
+
+            # Auto-trigger scene detection if scene_based and no valid boundaries yet
+            if request.parameters.frame_selection == FrameSelectionMethod.SCENE_BASED and not scene_boundaries:
+                await cache_manager.update_job_status(
+                    job_id,
+                    JobStatus.PROCESSING.value,
+                    progress=0.12,
+                    stage="detecting_scenes",
+                    message="Running automatic scene detection"
+                )
+
+                try:
+                    scenes_job_id, scene_boundaries = await scenes_client.analyze_scenes(
+                        video_path=request.source,
+                        threshold=27.0,
+                        timeout=300.0
+                    )
+                    logger.info(f"Auto scene detection completed: {len(scene_boundaries)} scenes (job: {scenes_job_id})")
+                except Exception as e:
+                    logger.warning(f"Auto scene detection failed: {e}, falling back to interval extraction")
+                    scene_boundaries = None
 
         # Step 4: Extract frames
         await cache_manager.update_job_status(
@@ -263,12 +310,30 @@ async def process_captioning_job(job_id: str, request: AnalyzeCaptionsRequest):
             message="Extracting frames from video"
         )
 
-        frame_result = await frame_client.extract_frames(
-            video_path=request.source,
-            sampling_interval=request.parameters.sampling_interval,
-            scene_boundaries=scene_boundaries,
-            frames_per_scene=request.parameters.frames_per_scene
-        )
+        # Choose extraction method based on frame_selection parameter
+        if (request.parameters.frame_selection == FrameSelectionMethod.SPRITE_SHEET and
+            request.parameters.sprite_vtt_url and
+            request.parameters.sprite_image_url):
+            # Use sprite sheet extraction (ultra-fast, bypasses video decoding)
+            logger.info("Using sprite sheet extraction")
+            frame_result = await frame_client.extract_sprites(
+                video_path=request.source,
+                sprite_vtt_url=request.parameters.sprite_vtt_url,
+                sprite_image_url=request.parameters.sprite_image_url,
+                frames_per_scene=request.parameters.frames_per_scene,
+                scene_boundaries=scene_boundaries,
+                select_sharpest=request.parameters.select_sharpest
+            )
+        else:
+            # Use video-based extraction
+            frame_result = await frame_client.extract_frames(
+                video_path=request.source,
+                sampling_interval=request.parameters.sampling_interval,
+                scene_boundaries=scene_boundaries,
+                frames_per_scene=request.parameters.frames_per_scene,
+                select_sharpest=request.parameters.select_sharpest,
+                candidate_multiplier=request.parameters.sharpness_candidate_multiplier
+            )
 
         if not frame_result or not frame_result.get("frames"):
             raise RuntimeError("No frames extracted from video")
@@ -342,16 +407,56 @@ async def process_captioning_job(job_id: str, request: AnalyzeCaptionsRequest):
         )
 
         frame_results = []
+        is_scene_summary = request.parameters.prompt_type == PromptType.SCENE_SUMMARY
+
         for meta, caption in zip(valid_metadata, captions):
-            # Parse booru-style tags from caption
-            raw_tags = parse_booru_tags(caption)
+            # Parse summary data for SCENE_SUMMARY prompt type
+            summary_data = None
+            if is_scene_summary:
+                summary_data = parse_scene_summary_json(caption)
+                if summary_data:
+                    logger.debug(f"Parsed SCENE_SUMMARY for frame at {meta['timestamp']:.2f}s")
+
+            # Parse booru-style tags from caption (for non-JSON captions)
+            # For SCENE_SUMMARY, extract tags from parsed data instead
+            if is_scene_summary and summary_data:
+                # Extract tags from structured summary
+                raw_tags = []
+                if summary_data.setting:
+                    raw_tags.append(summary_data.setting.replace(" ", "_"))
+                if summary_data.locale:
+                    raw_tags.append(summary_data.locale.replace(" ", "_"))
+                raw_tags.extend([obj.replace(" ", "_") for obj in summary_data.objects])
+                raw_tags.extend([act.replace(" ", "_") for act in summary_data.activities])
+                raw_tags.extend([item.replace(" ", "_") for item in summary_data.attire])
+                if summary_data.mood:
+                    raw_tags.append(summary_data.mood.replace(" ", "_"))
+                if summary_data.genre:
+                    raw_tags.append(summary_data.genre.replace(" ", "_"))
+                if summary_data.cinematography and summary_data.cinematography.shot_type:
+                    raw_tags.append(summary_data.cinematography.shot_type)
+                if summary_data.environment and summary_data.environment.time_of_day:
+                    raw_tags.append(summary_data.environment.time_of_day)
+            else:
+                raw_tags = parse_booru_tags(caption)
 
             # Align to taxonomy if enabled
-            if request.parameters.align_to_taxonomy and tag_aligner:
-                aligned_tags = tag_aligner.align_tags(
-                    raw_tags,
-                    min_confidence=request.parameters.min_confidence
-                )
+            if request.parameters.align_to_taxonomy:
+                if request.parameters.use_hierarchical_scoring and hierarchical_tagger:
+                    # Use DFS hierarchical scoring
+                    scored_tags = hierarchical_tagger.score_text(caption)
+                    aligned_tags = hierarchical_tagger.convert_to_caption_tags(
+                        scored_tags[:request.parameters.max_tags_per_frame],
+                        source="hierarchical"
+                    )
+                elif tag_aligner:
+                    # Use fuzzy string matching
+                    aligned_tags = tag_aligner.align_tags(
+                        raw_tags,
+                        min_confidence=request.parameters.min_confidence
+                    )
+                else:
+                    aligned_tags = []
             else:
                 aligned_tags = [
                     CaptionTag(
@@ -377,6 +482,7 @@ async def process_captioning_job(job_id: str, request: AnalyzeCaptionsRequest):
                 timestamp=meta["timestamp"],
                 raw_caption=caption,
                 tags=aligned_tags,
+                summary=summary_data,
                 scene_index=scene_index,
                 prompt_type_used=request.parameters.prompt_type
             ))
@@ -465,6 +571,118 @@ async def process_captioning_job(job_id: str, request: AnalyzeCaptionsRequest):
         if 'frames' in locals():
             del frames
         gc.collect()
+
+
+def parse_scene_summary_json(caption: str) -> Optional[SceneSummaryData]:
+    """
+    Parse SCENE_SUMMARY JSON response from JoyCaption VLM.
+
+    The VLM may return JSON wrapped in markdown code blocks or with extra text.
+    This function extracts and parses the JSON content.
+
+    Args:
+        caption: Raw caption output from JoyCaption
+
+    Returns:
+        SceneSummaryData object if parsing successful, None otherwise
+    """
+    import json
+    import re
+
+    if not caption or not caption.strip():
+        return None
+
+    try:
+        # Try to extract JSON from markdown code blocks
+        json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', caption)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Try to find raw JSON object
+            json_match = re.search(r'(\{[\s\S]*\})', caption)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                logger.warning(f"No JSON found in caption: {caption[:100]}...")
+                return None
+
+        # Parse JSON
+        data = json.loads(json_str)
+
+        # Build nested objects
+        cinematography = None
+        if data.get("cinematography"):
+            cine = data["cinematography"]
+            cinematography = CinematographyInfo(
+                shot_type=cine.get("shot_type"),
+                camera_angle=cine.get("camera_angle"),
+                camera_movement=cine.get("camera_movement"),
+                focus=cine.get("focus"),
+                composition=cine.get("composition"),
+                framing=cine.get("framing")
+            )
+
+        visual_style = None
+        if data.get("visual_style"):
+            vs = data["visual_style"]
+            visual_style = VisualStyle(
+                color_palette=vs.get("color_palette", []),
+                color_grading=vs.get("color_grading"),
+                contrast=vs.get("contrast"),
+                saturation=vs.get("saturation"),
+                film_grain=vs.get("film_grain"),
+                quality=vs.get("quality"),
+                visual_style=vs.get("visual_style"),
+                era_aesthetic=vs.get("era_aesthetic")
+            )
+
+        environment = None
+        if data.get("environment"):
+            env = data["environment"]
+            environment = EnvironmentInfo(
+                time_of_day=env.get("time_of_day"),
+                weather=env.get("weather"),
+                season=env.get("season"),
+                atmosphere=env.get("atmosphere"),
+                ambient_light=env.get("ambient_light")
+            )
+
+        # Build SceneSummaryData
+        return SceneSummaryData(
+            locale=data.get("locale"),
+            setting=data.get("setting"),
+            location_details=data.get("location_details"),
+            persons=data.get("persons"),
+            attire=data.get("attire", []),
+            interactions=data.get("interactions"),
+            objects=data.get("objects", []),
+            furniture=data.get("furniture", []),
+            background_elements=data.get("background_elements", []),
+            foreground_elements=data.get("foreground_elements", []),
+            text_visible=data.get("text_visible"),
+            activities=data.get("activities", []),
+            action_intensity=data.get("action_intensity"),
+            cinematography=cinematography,
+            visual_style=visual_style,
+            environment=environment,
+            lighting=data.get("lighting"),
+            lighting_type=data.get("lighting_type"),
+            mood=data.get("mood"),
+            tension_level=data.get("tension_level"),
+            genre=data.get("genre"),
+            sub_genre=data.get("sub_genre"),
+            content_type=data.get("content_type"),
+            narrative_context=data.get("narrative_context"),
+            notable_features=data.get("notable_features", [])
+        )
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse SCENE_SUMMARY JSON: {e}")
+        logger.debug(f"Raw caption: {caption[:500]}")
+        return None
+    except Exception as e:
+        logger.warning(f"Error building SceneSummaryData: {e}")
+        return None
 
 
 def aggregate_scene_captions(
@@ -693,7 +911,7 @@ async def get_taxonomy():
 @app.post("/captions/taxonomy/sync")
 async def sync_taxonomy():
     """Sync taxonomy from Stash"""
-    global tag_aligner
+    global tag_aligner, hierarchical_tagger
 
     if STUB_MODE:
         return {"status": "stub_mode", "message": "Running in stub mode"}
@@ -704,10 +922,12 @@ async def sync_taxonomy():
 
         taxonomy = await stash_client.get_all_tags()
         tag_aligner = TagAligner(taxonomy)
+        hierarchical_tagger = HierarchicalTagger(taxonomy)
 
         return {
             "status": "synced",
             "tags_loaded": len(taxonomy),
+            "hierarchy_stats": hierarchical_tagger.get_hierarchy_stats(),
             "synced_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
         }
 
@@ -715,6 +935,46 @@ async def sync_taxonomy():
         raise
     except Exception as e:
         logger.error(f"Error syncing taxonomy: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/captions/taxonomy/upload")
+async def upload_taxonomy(tags: List[TagTaxonomyNode]):
+    """
+    Upload taxonomy directly via API request.
+
+    Use this endpoint when Stash is not available or for standalone operation.
+    The uploaded taxonomy will replace any existing taxonomy.
+
+    Example request body:
+    ```json
+    [
+        {"id": "1", "name": "Indoor", "aliases": ["indoors"], "parent_id": null, "children": ["2", "3"]},
+        {"id": "2", "name": "Bedroom", "aliases": [], "parent_id": "1", "children": []},
+        {"id": "3", "name": "Office", "aliases": ["workspace"], "parent_id": "1", "children": []}
+    ]
+    ```
+    """
+    global tag_aligner, hierarchical_tagger
+
+    if STUB_MODE:
+        return {"status": "stub_mode", "message": "Running in stub mode"}
+
+    try:
+        tag_aligner = TagAligner(tags)
+        hierarchical_tagger = HierarchicalTagger(tags)
+
+        logger.info(f"Taxonomy uploaded: {len(tags)} tags")
+
+        return {
+            "status": "uploaded",
+            "tags_loaded": len(tags),
+            "hierarchy_stats": hierarchical_tagger.get_hierarchy_stats(),
+            "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        }
+
+    except Exception as e:
+        logger.error(f"Error uploading taxonomy: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
