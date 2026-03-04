@@ -29,6 +29,7 @@ class PromptType(str, Enum):
     ART_CRITIC = "art_critic"
     TRAINING_PROMPT = "training_prompt"
     MLP_TAGS = "mlp_tags"
+    SCENE_SUMMARY = "scene_summary"  # Detailed JSON scene analysis
 
 
 class FrameSelectionMethod(str, Enum):
@@ -81,6 +82,10 @@ class CaptionParameters(BaseModel):
         default=True,
         description="Align VLM output to Stash tag taxonomy"
     )
+    use_hierarchical_scoring: bool = Field(
+        default=True,
+        description="Use DFS hierarchical scoring for tag matching"
+    )
     generate_embeddings: bool = Field(
         default=False,
         description="Generate text embeddings for captions"
@@ -95,9 +100,27 @@ class CaptionParameters(BaseModel):
         default=True,
         description="Use 4-bit quantization to reduce VRAM"
     )
+    select_sharpest: bool = Field(
+        default=True,
+        description="Select sharpest frames per scene using Laplacian variance"
+    )
+    sharpness_candidate_multiplier: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Extract N*frames_per_scene candidates for sharpness selection"
+    )
     custom_prompt: Optional[str] = Field(
         default=None,
         description="Custom prompt override (advanced)"
+    )
+    sprite_vtt_url: Optional[str] = Field(
+        default=None,
+        description="URL to sprite VTT file (for sprite_sheet frame selection)"
+    )
+    sprite_image_url: Optional[str] = Field(
+        default=None,
+        description="URL to sprite grid image (for sprite_sheet frame selection)"
     )
 
 
@@ -166,12 +189,102 @@ class CaptionTag(BaseModel):
     )
 
 
+class PersonDetail(BaseModel):
+    """Details about a person in the scene"""
+    gender: Optional[str] = None
+    age_range: Optional[str] = None  # child, teen, young_adult, adult, middle_aged, elderly
+    ethnicity: Optional[str] = None
+    body_type: Optional[str] = None
+    hair: Optional[str] = None  # color, length, style
+    expression: Optional[str] = None  # emotional expression
+    pose: Optional[str] = None  # standing, sitting, lying, etc.
+    position: Optional[str] = None  # foreground, background, left, right, center
+    description: Optional[str] = None
+
+
+class CinematographyInfo(BaseModel):
+    """Cinematography details"""
+    shot_type: Optional[str] = None  # extreme_close_up, close_up, medium_close_up, medium, medium_wide, wide, extreme_wide
+    camera_angle: Optional[str] = None  # eye_level, high_angle, low_angle, dutch_angle, birds_eye, worms_eye, over_shoulder, pov
+    camera_movement: Optional[str] = None  # static, pan, tilt, tracking, dolly, crane, handheld, steadicam, zoom
+    focus: Optional[str] = None  # shallow_dof, deep_dof, rack_focus, soft_focus, sharp
+    composition: Optional[str] = None  # rule_of_thirds, centered, symmetrical, asymmetrical, diagonal, leading_lines
+    framing: Optional[str] = None  # full_body, three_quarter, half_body, head_and_shoulders, face_only
+
+
+class VisualStyle(BaseModel):
+    """Visual style and quality information"""
+    color_palette: List[str] = Field(default_factory=list)  # dominant colors
+    color_grading: Optional[str] = None  # warm, cool, neutral, desaturated, vibrant, monochrome
+    contrast: Optional[str] = None  # high, low, normal
+    saturation: Optional[str] = None  # saturated, desaturated, muted, vivid
+    film_grain: Optional[str] = None  # none, light, heavy, digital_noise
+    quality: Optional[str] = None  # hd, sd, 4k, vintage, degraded
+    visual_style: Optional[str] = None  # cinematic, documentary, amateur, professional, artistic
+    era_aesthetic: Optional[str] = None  # modern, 90s, 80s, 70s, vintage, retro
+
+
+class EnvironmentInfo(BaseModel):
+    """Environment and atmosphere details"""
+    time_of_day: Optional[str] = None  # morning, afternoon, evening, night, golden_hour, blue_hour
+    weather: Optional[str] = None  # sunny, cloudy, rainy, snowy, foggy, stormy
+    season: Optional[str] = None  # spring, summer, fall, winter
+    atmosphere: Optional[str] = None  # tense, relaxed, romantic, mysterious, energetic, somber
+    ambient_light: Optional[str] = None  # bright, dim, dark, mixed
+
+
+class SceneSummaryData(BaseModel):
+    """Structured scene summary from VLM analysis"""
+    # Location
+    locale: Optional[str] = None  # indoor/outdoor + geographic type
+    setting: Optional[str] = None  # specific environment (bedroom, office, beach)
+    location_details: Optional[str] = None  # additional location specifics
+
+    # People
+    persons: Optional[Dict[str, Any]] = None  # {"count": int, "details": [PersonDetail]}
+    attire: List[str] = Field(default_factory=list)  # clothing items
+    interactions: Optional[str] = None  # how people are interacting
+
+    # Objects and scene elements
+    objects: List[str] = Field(default_factory=list)  # notable props/items
+    furniture: List[str] = Field(default_factory=list)  # furniture visible
+    background_elements: List[str] = Field(default_factory=list)
+    foreground_elements: List[str] = Field(default_factory=list)
+    text_visible: Optional[str] = None  # any visible text/signage
+
+    # Actions
+    activities: List[str] = Field(default_factory=list)  # actions being performed
+    action_intensity: Optional[str] = None  # static, mild, moderate, intense
+
+    # Technical
+    cinematography: Optional[CinematographyInfo] = None
+    visual_style: Optional[VisualStyle] = None
+    environment: Optional[EnvironmentInfo] = None
+    lighting: Optional[str] = None  # detailed lighting description
+    lighting_type: Optional[str] = None  # natural, artificial, mixed, practical, studio
+
+    # Mood and genre
+    mood: Optional[str] = None  # emotional tone
+    tension_level: Optional[str] = None  # none, low, medium, high
+    genre: Optional[str] = None  # primary film genre
+    sub_genre: Optional[str] = None  # specific genre classification
+    content_type: Optional[str] = None  # narrative, documentary, music_video, interview, etc.
+
+    # Additional context
+    narrative_context: Optional[str] = None  # what seems to be happening story-wise
+    notable_features: List[str] = Field(default_factory=list)  # anything unusual or distinctive
+
+
 class FrameCaption(BaseModel):
     """Caption results for a single frame"""
     frame_index: int
     timestamp: float
     raw_caption: str = Field(..., description="Raw JoyCaption output")
     tags: List[CaptionTag] = Field(default_factory=list)
+    summary: Optional[SceneSummaryData] = Field(
+        default=None,
+        description="Structured scene summary (when using SCENE_SUMMARY prompt)"
+    )
     embedding: Optional[List[float]] = None
     scene_index: Optional[int] = None
     prompt_type_used: PromptType
@@ -244,6 +357,10 @@ class TagTaxonomyNode(BaseModel):
     children: List[str] = Field(default_factory=list)
     aliases: List[str] = Field(default_factory=list)
     category: Optional[str] = None
+    description: Optional[str] = Field(
+        default=None,
+        description="Disambiguating description (e.g., 'tails' -> 'animal appendage, not coin flip')"
+    )
 
 
 class TaxonomyResponse(BaseModel):

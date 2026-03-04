@@ -18,6 +18,7 @@ query AllTags {
     allTags {
         id
         name
+        description
         aliases
         parent_count
         child_count
@@ -173,6 +174,7 @@ class StashClient:
             node = TagTaxonomyNode(
                 id=tag_data["id"],
                 name=tag_data["name"],
+                description=tag_data.get("description"),
                 aliases=tag_data.get("aliases", []) or [],
                 parent_id=tag_data["parents"][0]["id"] if tag_data.get("parents") else None,
                 children=[c["id"] for c in tag_data.get("children", [])],
