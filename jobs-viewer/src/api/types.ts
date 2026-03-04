@@ -277,7 +277,97 @@ export interface CaptionTag {
   tag: string;
   confidence: number;
   source: string;
+  stash_tag_id?: string;
   category?: string;
+}
+
+// Person details from scene summary
+export interface PersonDetail {
+  gender?: string;
+  age_range?: string;
+  ethnicity?: string;
+  body_type?: string;
+  hair?: string;
+  expression?: string;
+  pose?: string;
+  position?: string;
+  description?: string;
+}
+
+// Cinematography information
+export interface CinematographyInfo {
+  shot_type?: string;
+  camera_angle?: string;
+  camera_movement?: string;
+  focus?: string;
+  composition?: string;
+  framing?: string;
+}
+
+// Visual style information
+export interface VisualStyle {
+  color_palette?: string[];
+  color_grading?: string;
+  contrast?: string;
+  saturation?: string;
+  film_grain?: string;
+  quality?: string;
+  visual_style?: string;
+  era_aesthetic?: string;
+}
+
+// Environment information
+export interface EnvironmentInfo {
+  time_of_day?: string;
+  weather?: string;
+  season?: string;
+  atmosphere?: string;
+  ambient_light?: string;
+}
+
+// Structured scene summary from VLM analysis
+export interface SceneSummaryData {
+  // Location
+  locale?: string;
+  setting?: string;
+  location_details?: string;
+
+  // People
+  persons?: {
+    count: number;
+    details: PersonDetail[];
+  };
+  attire?: string[];
+  interactions?: string;
+
+  // Objects and scene elements
+  objects?: string[];
+  furniture?: string[];
+  background_elements?: string[];
+  foreground_elements?: string[];
+  text_visible?: string;
+
+  // Actions
+  activities?: string[];
+  action_intensity?: string;
+
+  // Technical
+  cinematography?: CinematographyInfo;
+  visual_style?: VisualStyle;
+  environment?: EnvironmentInfo;
+  lighting?: string;
+  lighting_type?: string;
+
+  // Mood and genre
+  mood?: string;
+  tension_level?: string;
+  genre?: string;
+  sub_genre?: string;
+  content_type?: string;
+
+  // Additional context
+  narrative_context?: string;
+  notable_features?: string[];
 }
 
 export interface FrameCaption {
@@ -285,8 +375,10 @@ export interface FrameCaption {
   timestamp: number;
   raw_caption: string;
   tags: CaptionTag[];
+  summary?: SceneSummaryData;
   scene_index?: number;
   prompt_type_used: string;
+  sharpness_score?: number;
 }
 
 export interface SceneCaptionSummary {
@@ -303,6 +395,7 @@ export interface CaptionsMetadata {
   source: string;
   total_frames: number;
   frames_captioned: number;
+  frames_analyzed?: number;
   model: string;
   model_variant: string;
   quantization: string;
@@ -311,6 +404,7 @@ export interface CaptionsMetadata {
   device: string;
   vram_peak_mb?: number;
   gpu_wait_time_seconds?: number;
+  sharpness_filtered?: boolean;
 }
 
 export interface CaptionsResult {

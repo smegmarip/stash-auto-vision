@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CaptionFrameCard } from "./CaptionFrameCard";
 import { formatDuration, formatNumber } from "@/lib/formatters";
-import { Film, Clock, Tags, Settings, MessageSquare } from "lucide-react";
+import { Film, Clock, Tags, Settings, MessageSquare, Sparkles, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CaptionsResult } from "@/api/types";
 
@@ -51,15 +51,26 @@ export function CaptionsDetailView({ jobId }: CaptionsDetailViewProps) {
   const promptType = metadata?.prompt_type ?? "unknown";
   const vramPeak = metadata?.vram_peak_mb;
   const videoPath = metadata?.source || "";
+  const framesAnalyzed = metadata?.frames_analyzed;
+  const sharpnessFiltered = metadata?.sharpness_filtered;
+  const gpuWaitTime = metadata?.gpu_wait_time_seconds;
 
   // Collect all unique tags across frames
   const allTags = new Set<string>();
   let totalTags = 0;
+  let framesWithSummary = 0;
+  let totalPersons = 0;
   frames.forEach((frame) => {
     frame.tags?.forEach((tag) => {
       allTags.add(tag.tag);
       totalTags++;
     });
+    if (frame.summary) {
+      framesWithSummary++;
+      if (frame.summary.persons?.count) {
+        totalPersons += frame.summary.persons.count;
+      }
+    }
   });
 
   return (
@@ -70,21 +81,33 @@ export function CaptionsDetailView({ jobId }: CaptionsDetailViewProps) {
           icon={<Film className="h-5 w-5" />}
           label="Frames Captioned"
           value={formatNumber(framesCaptioned)}
+          subtitle={framesAnalyzed && sharpnessFiltered ? `${framesAnalyzed} analyzed` : undefined}
         />
         <StatCard
           icon={<Tags className="h-5 w-5" />}
           label="Unique Tags"
           value={formatNumber(allTags.size)}
+          subtitle={`${formatNumber(totalTags)} total`}
         />
-        <StatCard
-          icon={<MessageSquare className="h-5 w-5" />}
-          label="Total Tags"
-          value={formatNumber(totalTags)}
-        />
+        {framesWithSummary > 0 && (
+          <StatCard
+            icon={<Sparkles className="h-5 w-5" />}
+            label="Scene Summaries"
+            value={formatNumber(framesWithSummary)}
+          />
+        )}
+        {totalPersons > 0 && (
+          <StatCard
+            icon={<Users className="h-5 w-5" />}
+            label="Persons Detected"
+            value={formatNumber(totalPersons)}
+          />
+        )}
         <StatCard
           icon={<Clock className="h-5 w-5" />}
           label="Processing Time"
           value={formatDuration(processingTime)}
+          subtitle={gpuWaitTime ? `+${formatDuration(gpuWaitTime)} GPU wait` : undefined}
         />
       </div>
 
@@ -101,11 +124,23 @@ export function CaptionsDetailView({ jobId }: CaptionsDetailViewProps) {
                 Device: {device.toUpperCase()} | Quantization: {quantization} |
                 Prompt: {promptType}
               </p>
-              {vramPeak && (
-                <p className="text-xs text-muted-foreground">
-                  Peak VRAM: {formatNumber(Math.round(vramPeak))} MB
-                </p>
-              )}
+              <div className="flex flex-wrap gap-2 mt-2">
+                {vramPeak && (
+                  <Badge variant="outline" className="text-xs">
+                    Peak VRAM: {formatNumber(Math.round(vramPeak))} MB
+                  </Badge>
+                )}
+                {sharpnessFiltered && (
+                  <Badge variant="secondary" className="text-xs">
+                    Sharpness Filtered
+                  </Badge>
+                )}
+                {promptType === "scene_summary" && (
+                  <Badge variant="secondary" className="text-xs">
+                    Structured Output
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -194,10 +229,12 @@ function StatCard({
   icon,
   label,
   value,
+  subtitle,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  subtitle?: string;
 }) {
   return (
     <Card>
@@ -209,6 +246,9 @@ function StatCard({
           <div>
             <p className="text-2xl font-bold">{value}</p>
             <p className="text-xs text-muted-foreground">{label}</p>
+            {subtitle && (
+              <p className="text-xs text-muted-foreground/70">{subtitle}</p>
+            )}
           </div>
         </div>
       </CardContent>

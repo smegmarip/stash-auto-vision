@@ -61,12 +61,40 @@ export function ServiceSummary({ service, label, data, className }: ServiceSumma
         )
       }
       case 'captions': {
-        const captions = data as { captions?: { frames?: unknown[] }; metadata?: { frames_captioned?: number } }
+        type CaptionFrame = { tags?: { tag: string }[]; summary?: Record<string, unknown> }
+        const captions = data as {
+          captions?: { frames?: CaptionFrame[] };
+          metadata?: {
+            frames_captioned?: number;
+            prompt_type?: string;
+            sharpness_filtered?: boolean;
+          }
+        }
+        const frames = captions.captions?.frames || []
+        const uniqueTags = new Set<string>()
+        let framesWithSummary = 0
+        frames.forEach((f: CaptionFrame) => {
+          f.tags?.forEach(t => uniqueTags.add(t.tag))
+          if (f.summary) framesWithSummary++
+        })
         return (
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-2">
             <Badge variant="outline">
-              {captions.metadata?.frames_captioned || captions.captions?.frames?.length || 0} frames
+              {captions.metadata?.frames_captioned || frames.length || 0} frames
             </Badge>
+            {uniqueTags.size > 0 && (
+              <Badge variant="outline">
+                {uniqueTags.size} tags
+              </Badge>
+            )}
+            {framesWithSummary > 0 && (
+              <Badge variant="secondary">
+                {framesWithSummary} summaries
+              </Badge>
+            )}
+            {captions.metadata?.prompt_type === 'scene_summary' && (
+              <Badge variant="secondary">Structured</Badge>
+            )}
           </div>
         )
       }
