@@ -299,6 +299,14 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
         results = {"scenes": None, "faces": None, "semantics": None, "objects": None, "captions": None}
 
+        # Auto-enable scenes if captions need scene-based frame selection
+        if request.modules.captions.enabled:
+            captions_params = request.modules.captions.parameters or {}
+            frame_selection = captions_params.get("frame_selection", "scene_based")
+            if frame_selection == "scene_based" and not request.modules.scenes.enabled:
+                logger.info("Auto-enabling scenes for scene_based caption frame selection")
+                request.modules.scenes.enabled = True
+
         # Sequential processing (default)
         if request.processing_mode == "sequential":
             # Calculate progress weights based on enabled services
@@ -491,21 +499,31 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 logger.info("Running video captioning...")
                 await update_metadata(job_id, metadata, stage="captioning", message="Generating video captions")
 
+                # Get actual scenes job_id from results (handles cache hits)
+                scenes_job_id = None
+                if results.get("scenes"):
+                    scenes_job_id = results["scenes"].get("job_id", f"scenes-{job_id}")
+
                 captions_params = request.modules.captions.parameters or {}
                 captions_request = {
                     "source": request.source,
                     "source_id": request.source_id,
-                    "scenes_job_id": f"scenes-{job_id}" if results.get("scenes") else None,
+                    "scenes_job_id": scenes_job_id,
                     "parameters": {
-                        "prompt_type": captions_params.get("prompt_type", "booru_like"),
-                        "frame_selection": captions_params.get("frame_selection", "interval"),
+                        "prompt_type": captions_params.get("prompt_type", "scene_summary"),
+                        "frame_selection": captions_params.get("frame_selection", "scene_based"),
                         "sampling_interval": captions_params.get("sampling_interval", 5.0),
                         "frames_per_scene": captions_params.get("frames_per_scene", 3),
                         "min_confidence": captions_params.get("min_confidence", float(os.getenv("CAPTIONS_MIN_CONFIDENCE", "0.5"))),
                         "max_tags_per_frame": captions_params.get("max_tags_per_frame", 30),
-                        "align_to_taxonomy": captions_params.get("align_to_taxonomy", False),
+                        "align_to_taxonomy": captions_params.get("align_to_taxonomy", True),
+                        "use_hierarchical_scoring": captions_params.get("use_hierarchical_scoring", True),
+                        "select_sharpest": captions_params.get("select_sharpest", True),
+                        "sharpness_candidate_multiplier": captions_params.get("sharpness_candidate_multiplier", 3),
                         "batch_size": captions_params.get("batch_size", 1),
                         "use_quantization": captions_params.get("use_quantization", True),
+                        "sprite_vtt_url": captions_params.get("sprite_vtt_url"),
+                        "sprite_image_url": captions_params.get("sprite_image_url"),
                     },
                 }
 
