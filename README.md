@@ -8,7 +8,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ## Features
 
-### Phase 1 & 2 (Complete)
+### Phase 1-3 (Complete)
 
 - ✅ **Face Recognition** - InsightFace (99.86% accuracy, 512-D embeddings)
 - ✅ **Face Enhancement** - Optional CodeFormer/GFPGAN for low-quality faces
@@ -16,14 +16,13 @@ A modular, high-performance video analysis platform providing face recognition, 
 - ✅ **Scene Detection** - GPU-accelerated PySceneDetect (300-800 FPS)
 - ✅ **Frame Server** - Multi-method extraction with PyAV fallback
 - ✅ **Smart Caching** - Content-based Redis caching with automatic invalidation
-- ✅ **Semantic Analysis** - SigLIP-based scene classification (768-D embeddings)
+- ✅ **Tag Classification** - Trained bi-encoder classifier (99.2% match rate)
 - ✅ **Jobs Viewer** - React-based UI for monitoring and browsing job results
 
-### Phase 3+ (Planned)
+### Phase 4+ (Planned)
 
 - 🔄 **Object Detection** - YOLO-World open-vocabulary detection
-- 🔄 **Multi-modal Search** - Find scenes by description
-- 🔄 **Advanced Tagging** - Automatic content categorization
+- 🔄 **Production Hardening** - Retry logic, metrics, comprehensive testing
 
 ---
 
@@ -102,8 +101,8 @@ curl "http://localhost:5003/faces/jobs/$JOB_ID/results" | jq .
        ├─► frame-server   :5001 (internal frame extraction)
        ├─► scenes-service :5002 (scene boundary detection)
        ├─► faces-service  :5003 (face recognition)
-       ├─► semantics-svc  :5004 (SigLIP classification) ✅
-       └─► objects-svc    :5005 (YOLO detection) [Phase 3]
+       ├─► semantics-svc  :5004 (Tag classifier) ✅
+       └─► objects-svc    :5005 (YOLO detection) [Phase 4]
 ```
 
 **10 Microservices:**
@@ -113,7 +112,7 @@ curl "http://localhost:5003/faces/jobs/$JOB_ID/results" | jq .
 - **frame-server** - GPU-accelerated frame extraction
 - **scenes-service** - Scene boundary detection
 - **faces-service** - Face recognition
-- **semantics-service** - SigLIP scene classification ✅
+- **semantics-service** - Tag classifier (captioning + classification) ✅
 - **objects-service** - Object detection (stubbed)
 - **vision-api** - Main orchestrator
 - **schema-service** - OpenAPI aggregation
@@ -215,8 +214,9 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 - InsightFace (buffalo_l) - Face recognition
 - PySceneDetect - Scene boundaries
-- CLIP (ViT-B/32) - Semantic analysis [Phase 2]
-- YOLO-World - Object detection [Phase 2]
+- Tag Classifier (bi-encoder) - Tag classification ✅
+- JoyCaption (beta-one) - Frame captioning ✅
+- YOLO-World - Object detection [Phase 4]
 
 **Infrastructure:**
 
@@ -255,8 +255,8 @@ Environment variables set default confidence thresholds, overridable per-request
 ```bash
 FACES_MIN_CONFIDENCE=0.9      # face_min_confidence parameter (0.7-0.8 for low quality)
 SCENES_THRESHOLD=27.0          # scene_threshold parameter (PySceneDetect scale)
-SEMANTICS_MIN_CONFIDENCE=0.5   # semantics_min_confidence parameter (Phase 2)
-OBJECTS_MIN_CONFIDENCE=0.5     # objects_min_confidence parameter (Phase 3)
+SEMANTICS_MIN_CONFIDENCE=0.75  # semantics_min_confidence parameter (Phase 3)
+OBJECTS_MIN_CONFIDENCE=0.5     # objects_min_confidence parameter (Phase 4)
 ```
 
 Request parameter names are service-prefixed to avoid collisions in the vision-api rollup endpoint.
@@ -352,28 +352,28 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 - [x] End-to-end testing
 - [x] Production-ready deployment
 
-### Phase 2: Semantic Analysis 🔄
+### Phase 2 & 3: Tag Classifier ✅ (Complete)
 
-- [ ] CLIP integration
-- [ ] Scene classification
-- [ ] Zero-shot tagging
-- [ ] Scene similarity search
+- [x] Frame captioning (JoyCaption beta-one)
+- [x] LLM narrative summary (Llama 3.1 8B)
+- [x] Trained bi-encoder tag classification (99.2% match rate)
+- [x] Taxonomy pre-loading from Stash
 
-### Phase 3: Object Detection 🔄
+### Phase 4: Object Detection 🔄
 
 - [ ] YOLO-World integration
 - [ ] Open-vocabulary detection
 - [ ] Custom object categories
 - [ ] Object tracking
 
-### Phase 4: Production Hardening 🔄
+### Phase 5: Production Hardening 🔄
 
 - [ ] Error handling & retry logic
 - [ ] Monitoring & metrics
 - [ ] Performance optimization
 - [ ] Comprehensive testing
 
-### Phase 5: Plugin Integration 🔄
+### Phase 6: Plugin Integration 🔄
 
 - [ ] stash-compreface-plugin update
 - [ ] Real-world validation
@@ -399,7 +399,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 - [InsightFace](https://github.com/deepinsight/insightface) - Face recognition
 - [PySceneDetect](https://github.com/Breakthrough/PySceneDetect) - Scene detection
-- [SigLIP](https://huggingface.co/google/siglip-base-patch16-224) - Vision-language model
+- [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-beta-one-hf-llava) - Frame captioning VLM
 - [YOLO-World](https://github.com/AILab-CVC/YOLO-World) - Object detection
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 
@@ -410,6 +410,6 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 ---
 
-**Status:** Phase 2 Complete - Semantic Analysis Integrated
-**Version:** 2.0.0
-**Last Updated:** 2025-12-02
+**Status:** Phase 1-3 Complete - Tag Classifier Pipeline
+**Version:** 3.0.0
+**Last Updated:** 2026-04-04

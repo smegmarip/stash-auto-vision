@@ -11,21 +11,21 @@ The Resource Manager coordinates GPU access across all vision services, ensuring
 ### Problem Solved
 
 With limited VRAM (16GB on RTX A4000), multiple services cannot run simultaneously:
-- faces-service: ~4GB VRAM
-- captioning-service: ~8GB VRAM (quantized)
-- semantics-service: ~2GB VRAM
 
-Total exceeds available VRAM. Resource Manager ensures only compatible services use GPU at once.
+- faces-service: ~4GB VRAM
+- semantics-service: ~8GB peak (JoyCaption VLM, loaded/unloaded per job) + ~1.4GB (tag classifier, kept resident)
+
+Resource Manager ensures only compatible services use GPU at once. The semantics service requests a GPU lease for the duration of JoyCaption captioning, then releases it after model unload. The tag classifier remains resident at ~1.4GB.
 
 ### Supported Compute Devices
 
-| Device Type | Platform | Detection |
-|------------|----------|-----------|
-| **CUDA** | NVIDIA GPUs | Auto-detected via PyTorch |
-| **MPS** | Apple Silicon | Auto-detected via PyTorch |
-| **ROCm** | AMD GPUs | Auto-detected via PyTorch HIP |
-| **CPU** | Any | Fallback with virtual memory budget |
-| **Virtual** | Testing | Simulated device for development |
+| Device Type | Platform      | Detection                           |
+| ----------- | ------------- | ----------------------------------- |
+| **CUDA**    | NVIDIA GPUs   | Auto-detected via PyTorch           |
+| **MPS**     | Apple Silicon | Auto-detected via PyTorch           |
+| **ROCm**    | AMD GPUs      | Auto-detected via PyTorch HIP       |
+| **CPU**     | Any           | Fallback with virtual memory budget |
+| **Virtual** | Testing       | Simulated device for development    |
 
 The service automatically detects the available compute device and manages resources accordingly. On Apple Silicon Macs, it estimates GPU memory based on unified memory (~75% of system RAM).
 
@@ -48,17 +48,19 @@ POST /resources/gpu/request
 ```
 
 **Request:**
+
 ```json
 {
-  "service_name": "captioning-service",
-  "vram_required_mb": 8500,
-  "priority": 5,
+  "service_name": "semantics-service",
+  "vram_required_mb": 8000,
+  "priority": 3,
   "timeout_seconds": 300,
-  "job_id": "captions-abc123"
+  "job_id": "semantics-abc123"
 }
 ```
 
 **Response (Granted):**
+
 ```json
 {
   "request_id": "req-550e8400...",
@@ -71,6 +73,7 @@ POST /resources/gpu/request
 ```
 
 **Response (Queued):**
+
 ```json
 {
   "request_id": "req-550e8400...",
@@ -89,6 +92,7 @@ GET /resources/gpu/request/{request_id}
 ```
 
 **Response:**
+
 ```json
 {
   "granted": false,
@@ -114,6 +118,7 @@ POST /resources/gpu/release
 ```
 
 **Request:**
+
 ```json
 {
   "lease_id": "lease-41d4a716..."
@@ -121,6 +126,7 @@ POST /resources/gpu/release
 ```
 
 **Response:**
+
 ```json
 {
   "released": true,
@@ -135,6 +141,7 @@ POST /resources/gpu/heartbeat
 ```
 
 **Request:**
+
 ```json
 {
   "lease_id": "lease-41d4a716..."
@@ -142,6 +149,7 @@ POST /resources/gpu/heartbeat
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -158,6 +166,7 @@ GET /resources/gpu/status
 ```
 
 **Response:**
+
 ```json
 {
   "status": "in_use",
@@ -167,8 +176,8 @@ GET /resources/gpu/status
   "active_leases": [
     {
       "lease_id": "lease-41d4a716...",
-      "service_name": "captioning-service",
-      "vram_allocated_mb": 8500,
+      "service_name": "semantics-service",
+      "vram_allocated_mb": 8000,
       "granted_at": "2025-12-02T12:34:56Z",
       "expires_at": "2025-12-02T12:44:56Z",
       "last_heartbeat": "2025-12-02T12:35:56Z"
@@ -199,11 +208,11 @@ GET /resources/health
 
 ### Priority Levels
 
-| Priority | Use Case |
-|----------|----------|
-| 1-3 | Critical/interactive requests |
-| 4-6 | Normal batch processing |
-| 7-10 | Background/low-priority jobs |
+| Priority | Use Case                      |
+| -------- | ----------------------------- |
+| 1-3      | Critical/interactive requests |
+| 4-6      | Normal batch processing       |
+| 7-10     | Background/low-priority jobs  |
 
 ### Lease Lifecycle
 
@@ -216,10 +225,10 @@ GET /resources/health
 
 ### Timeout Configuration
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `LEASE_DURATION_SECONDS` | 600 | Max lease duration |
-| `HEARTBEAT_TIMEOUT_SECONDS` | 60 | Time without heartbeat before expiry |
+| Parameter                   | Default | Description                          |
+| --------------------------- | ------- | ------------------------------------ |
+| `LEASE_DURATION_SECONDS`    | 600     | Max lease duration                   |
+| `HEARTBEAT_TIMEOUT_SECONDS` | 60      | Time without heartbeat before expiry |
 
 ---
 
@@ -293,13 +302,13 @@ async def gpu_work_with_heartbeat(client, work_func):
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TOTAL_VRAM_MB` | 16384 | Memory budget in MB (used for CPU/virtual mode, or as cap) |
-| `FORCE_DEVICE_TYPE` | (auto) | Force device type: `cuda`, `mps`, `cpu`, or `virtual` |
-| `LEASE_DURATION_SECONDS` | 600 | Default lease duration |
-| `HEARTBEAT_TIMEOUT_SECONDS` | 60 | Heartbeat timeout |
-| `LOG_LEVEL` | INFO | Log verbosity |
+| Variable                    | Default | Description                                                |
+| --------------------------- | ------- | ---------------------------------------------------------- |
+| `TOTAL_VRAM_MB`             | 16384   | Memory budget in MB (used for CPU/virtual mode, or as cap) |
+| `FORCE_DEVICE_TYPE`         | (auto)  | Force device type: `cuda`, `mps`, `cpu`, or `virtual`      |
+| `LEASE_DURATION_SECONDS`    | 600     | Default lease duration                                     |
+| `HEARTBEAT_TIMEOUT_SECONDS` | 60      | Heartbeat timeout                                          |
+| `LOG_LEVEL`                 | INFO    | Log verbosity                                              |
 
 ### Device Detection Order
 
@@ -324,18 +333,20 @@ Use `FORCE_DEVICE_TYPE=virtual` for testing without any GPU.
 
 ```
 Queue State:
-  [P5] captioning-service: 8000MB
+  [P3] semantics-service: 8000MB  (JoyCaption VLM captioning phase)
   [P5] faces-service: 4000MB
 
 Available: 16384MB
 
-→ Grant captioning-service (8000MB)
+→ Grant semantics-service (8000MB, higher priority)
 → Available: 8384MB
 → Grant faces-service (4000MB)
 → Available: 4384MB
 
-New request: semantics-service (2000MB)
-→ Grant immediately (4384MB available)
+After semantics captioning completes:
+→ semantics-service releases lease (VLM unloaded)
+→ Available: 12384MB
+→ Tag classifier remains resident (~1.4GB, no lease required)
 ```
 
 ---
@@ -381,6 +392,7 @@ If leases persist without heartbeats, they may be orphaned. Wait for timeout or 
 ### Memory Leak
 
 If allocated VRAM doesn't match active services:
+
 1. Check for orphaned leases
 2. Restart resource-manager
 3. Services will re-request GPU on next job
@@ -389,6 +401,6 @@ If allocated VRAM doesn't match active services:
 
 ## Related Documentation
 
-- [Captioning Service](CAPTIONING_SERVICE.md)
+- [Semantics Service](SEMANTICS_SERVICE.md)
 - [Faces Service](FACES_SERVICE.md)
 - [Docker Architecture](DOCKER_ARCHITECTURE.md)

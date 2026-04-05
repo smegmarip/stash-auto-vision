@@ -32,21 +32,15 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Content-based caching with SHA-256 keys
 - Asynchronous job processing with progress tracking
 
-**Phase 2 (Complete ✅):**
+**Phase 2 & 3 (Complete ✅):**
 
-- SigLIP model integration (google/siglip-base-patch16-224, 768-D embeddings)
-- Zero-shot scene classification with custom tags and prompts
-- Multi-modal embedding generation for similarity search
+- Trained multi-view bi-encoder tag classifier (99.2% match rate)
+- Pipeline: frame extraction, JoyCaption beta-one captioning, Llama 3.1 8B narrative summary, tag classification
+- Taxonomy pre-loading from Stash at startup via STASH_URL + SEMANTICS_TAG_ID
 - Scene-aware semantic analysis with vision-api orchestration
 - Standalone mode with scenes_job_id parameter
-- Memory-optimized batch processing
-
-**Phase 3 (In Progress):**
-
-- JoyCaption VLM integration for video captioning
 - Resource manager for GPU orchestration
-- Tag alignment with Stash taxonomy
-- Multiple prompt types (booru-like, descriptive, etc.)
+- Replaces previous SigLIP zero-shot and JoyCaption alpha-two captioning services
 
 **Future Phases:**
 
@@ -74,9 +68,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 │         ├─► frame-server   :5001 (Frame extraction)       │
 │         ├─► scenes-service :5002 (Scene boundaries)       │
 │         ├─► faces-service  :5003 (Face recognition)       │
-│         ├─► semantics-svc  :5004 (SigLIP) ✅              │
-│         ├─► objects-svc    :5005 (YOLO-World) [Phase 4]   │
-│         └─► captioning-svc :5006 (JoyCaption) ✅          │
+│         ├─► semantics-svc  :5004 (Tag Classifier) ✅      │
+│         └─► objects-svc    :5005 (YOLO-World) [Phase 4]   │
 │                                                             │
 │  ┌──────────────┐         ┌──────────────────────────┐    │
 │  │resource-mgr  │ :5007   │   - GPU orchestration    │    │
@@ -139,27 +132,20 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - Sprite sheet integration for ultra-fast processing
 - Optional demographics detection (age, gender)
 
-**semantics-service** (Phase 2 Complete ✅)
+**semantics-service** (Phase 3 Complete ✅)
 
-- SigLIP (google/siglip-base-patch16-224) scene classification
-- Zero-shot tagging with custom prompts
-- 768-D multi-modal embeddings for similarity search
-- Scene-aware analysis with automatic per-scene summaries
+- Trained multi-view bi-encoder tag classifier (99.2% match rate)
+- JoyCaption beta-one per-frame captioning (~8GB VRAM, loaded/unloaded per job)
+- Llama 3.1 8B narrative summary via external API
+- Tag classifier ~1.4GB VRAM (kept loaded)
+- Taxonomy pre-loaded from Stash at startup
+- Replaces previous SigLIP and JoyCaption alpha-two services
 
 **objects-service** (Stubbed - Phase 4)
 
 - YOLO-World open-vocabulary object detection
 - Custom category support
 - Object tracking across frames
-
-**captioning-service** (Phase 3)
-
-- JoyCaption Alpha Two VLM (Llama 3.1 8B based)
-- 4-bit quantization for ~8GB VRAM usage
-- Multiple prompt types (booru-like, descriptive, straightforward)
-- Tag alignment with Stash taxonomy via fuzzy matching
-- Scene-aware captioning with frames_per_scene selection
-- Integration with resource-manager for GPU coordination
 
 **resource-manager**
 
@@ -184,8 +170,9 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 - **InsightFace** (buffalo_l) - Face recognition, 99.86% LFW accuracy
 - **PySceneDetect** - Scene boundary detection, 300-800 FPS on GPU
-- **SigLIP** (siglip-base-patch16-224) - Vision-language model ✅
-- **YOLO-World** - Open-vocabulary object detection [Phase 3]
+- **Tag Classifier** - Trained multi-view bi-encoder (99.2% match rate) ✅
+- **JoyCaption** (beta-one) - Frame captioning VLM ✅
+- **YOLO-World** - Open-vocabulary object detection [Phase 4]
 
 ### Infrastructure
 
@@ -208,21 +195,20 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 ### Phase 1, 2 & 3: Complete ✅
 
-**Implemented Services (11/12):**
+**Implemented Services (10/11):**
 
 - [x] redis - Cache and job queue
 - [x] dependency-checker - Health orchestration
 - [x] frame-server - GPU-accelerated frame extraction
 - [x] scenes-service - PySceneDetect integration
 - [x] faces-service - InsightFace recognition
-- [x] semantics-service - SigLIP semantic classification
-- [x] captioning-service - JoyCaption VLM (Phase 3)
+- [x] semantics-service - Tag classifier pipeline (captioning merged in)
 - [x] resource-manager - GPU orchestration
 - [x] vision-api - Main orchestrator
 - [x] schema-service - OpenAPI aggregation
 - [x] jobs-viewer - React monitoring UI
 
-**Stubbed Services (1/12):**
+**Stubbed Services (1/11):**
 
 - [x] objects-service - Returns "not_implemented" status (Phase 4)
 
@@ -268,8 +254,7 @@ See [Future Work](#future-work) section below.
 - **[Frame Server](docs/FRAME_SERVER.md)** - Frame extraction methods, sprite parsing, on-demand serving
 - **[Scenes Service](docs/SCENES_SERVICE.md)** - PySceneDetect algorithms, boundary detection
 - **[Faces Service](docs/FACES_SERVICE.md)** - InsightFace integration, clustering, embeddings
-- **[Semantics Service](docs/SEMANTICS_SERVICE.md)** - SigLIP integration (Phase 2)
-- **[Captioning Service](docs/CAPTIONING_SERVICE.md)** - JoyCaption VLM integration (Phase 3)
+- **[Semantics Service](docs/SEMANTICS_SERVICE.md)** - Tag classifier pipeline (Phase 3)
 - **[Resource Manager](docs/RESOURCE_MANAGER.md)** - GPU orchestration
 - **[Objects Service](docs/OBJECTS_SERVICE.md)** - YOLO-World integration (Phase 4)
 
@@ -287,27 +272,27 @@ See [Future Work](#future-work) section below.
 
 ## Completed Work
 
-### Phase 2: Semantic Analysis (SigLIP Integration) ✅
+### Phase 2 & 3: Semantic Analysis (Tag Classifier) ✅
 
-**Status:** COMPLETE (2025-11-29)
+**Status:** COMPLETE (2026-04-04)
 
 **Implemented:**
 
-- SigLIP model integration (google/siglip-base-patch16-224, 768-D embeddings)
-- Scene classification with predefined tags and custom prompts
-- Zero-shot tagging with flexible text prompts
-- Scene embedding generation for similarity search
+- Trained multi-view bi-encoder tag classifier (99.2% match rate)
+- Pipeline: frame extraction, JoyCaption beta-one captioning, Llama 3.1 8B narrative summary, tag classification
+- Taxonomy pre-loading from Stash at startup via STASH_URL + SEMANTICS_TAG_ID
+- JoyCaption beta-one VLM (~8GB VRAM, loaded/unloaded per job)
+- Llama 3.1 8B narrative summary via external API
+- Tag classifier ~1.4GB VRAM (kept loaded)
 - Integration with scenes-service for boundary-aware processing
   - Vision-API orchestration (primary method)
   - Standalone scenes_job_id parameter (optional method)
-- Memory-optimized batch processing with explicit cleanup
 - Content-based caching via Redis
 
 **Achieved Use Cases:**
 
-- Auto-tag scenes by content type (indoor, outdoor, conversation, action, etc.)
-- Semantic search capability with multi-modal embeddings
-- Per-scene semantic summaries with dominant tags
+- Auto-tag scenes against Stash taxonomy with high accuracy (99.2% match rate)
+- Per-scene narrative summaries from frame captions
 - Scene-aware frame sampling and aggregation
 
 ---
@@ -400,7 +385,7 @@ See [Future Work](#future-work) section below.
 | Faces     | `face_min_quality`          | `FACES_MIN_QUALITY`                 | 0.0     | 0.0-1.0   | Minimum quality to keep (0.0 = no filtering) |
 | Faces     | N/A (nested in enhancement) | `FACES_ENHANCEMENT_QUALITY_TRIGGER` | 0.5     | 0.0-1.0   | Trigger enhancement if quality below this    |
 | Scenes    | `scene_threshold`           | `SCENES_THRESHOLD`                  | 27.0    | 0.0-100.0 | PySceneDetect ContentDetector scale          |
-| Semantics | `semantics_min_confidence`  | `SEMANTICS_MIN_CONFIDENCE`          | 0.5     | 0.0-1.0   | CLIP classification (Phase 2)                |
+| Semantics | `semantics_min_confidence`  | `SEMANTICS_MIN_CONFIDENCE`          | 0.75    | 0.0-1.0   | Tag classifier (Phase 3)                     |
 | Objects   | `objects_min_confidence`    | `OBJECTS_MIN_CONFIDENCE`            | 0.5     | 0.0-1.0   | YOLO detection (Phase 3)                     |
 
 Example: Set `FACES_MIN_CONFIDENCE=0.7` in `.env` for lower quality videos, or override per-request with `face_min_confidence` parameter.
@@ -616,8 +601,8 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
 
 ---
 
-**Status:** Phase 1 & 2 Complete - Semantic Analysis Integrated
-**Version:** 2.1.0
-**Last Updated:** 2025-12-02
+**Status:** Phase 1-3 Complete - Tag Classifier Pipeline
+**Version:** 3.0.0
+**Last Updated:** 2026-04-04
 
 > **API Documentation:** OpenAPI schemas are auto-generated from FastAPI at runtime (`/openapi.json`). The schema-service at port 5009 aggregates all service schemas into a combined Swagger UI.

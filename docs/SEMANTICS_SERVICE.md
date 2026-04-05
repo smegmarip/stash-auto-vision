@@ -3,45 +3,275 @@
 **Service:** Semantics Service
 **Port:** 5004
 **Path:** `/semantics/analyze`
-**Status:** Phase 2 - IMPLEMENTED
-**Version:** 1.0.0
+**Status:** Phase 3 - Tag Classifier
+**Version:** 3.0.0
 
 ---
 
 ## Summary
 
-The Semantics Service provides SigLIP-based scene understanding, semantic tagging, and zero-shot classification capabilities for video content. This service uses Google's SigLIP (Sigmoid Loss for Language-Image Pre-Training) model for high-quality vision-language understanding.
+The Semantics Service provides automated tag classification for video content using a trained multi-view bi-encoder classifier. The service replaces the previous SigLIP zero-shot and JoyCaption captioning pipelines with a unified pipeline that achieves 99.2% match rate on labeled tags.
 
-### Implemented Features
+### Pipeline
 
-- **SigLIP Integration:** Google's siglip-base-patch16-224 model (768-D embeddings)
-- **Zero-Shot Classification:** Custom text prompts for flexible scene classification
-- **Scene Embeddings:** Multi-modal embeddings for similarity-based search
-- **Custom Tag Lists:** User-defined classification categories
-- **Batch Processing:** Configurable batch sizes for efficient GPU/CPU inference
+The service runs a three-stage pipeline for each video:
+
+1. **Frame Extraction** -- Extract representative frames from the video (scene-based or interval sampling, with optional sharpest-frame selection)
+2. **JoyCaption Beta-One Captioning** -- Generate per-frame natural language captions using the JoyCaption beta-one VLM
+3. **Llama 3.1 8B Narrative Summary** -- Aggregate frame captions into a single narrative summary via an external LLM API
+4. **Tag Classification** -- Run the multi-view bi-encoder classifier against the Stash taxonomy to produce scored tags
+
+### Key Features
+
+- **Trained Bi-Encoder Classifier:** Multi-view architecture trained on labeled data, 99.2% match rate
+- **Taxonomy Pre-Loading:** Loads full tag taxonomy from Stash at startup via `STASH_URL` + `SEMANTICS_TAG_ID`
+- **JoyCaption Beta-One:** Upgraded VLM for frame captioning (~8GB VRAM, loaded/unloaded per job)
+- **LLM Narrative Summary:** Llama 3.1 8B via external API for scene-level summarization
+- **Lightweight Classifier:** ~1.4GB VRAM, kept loaded between jobs
 - **Scene-Aware Analysis:** Integration with scenes-service for scene boundary detection
+- **Sharpest Frame Selection:** Laplacian variance-based quality filtering
+- **Sprite Sheet Support:** Fast frame extraction from pre-generated sprites
+- **Asynchronous Job Processing:** Submit, poll, retrieve pattern with progress tracking
 - **Content-Based Caching:** Redis-based caching with SHA-256 keys
-- **Memory Management:** Explicit cleanup to prevent GPU memory crashes
 
-### Scene Integration
+### VRAM Budget
 
-The Semantics Service supports two methods for scene-aware analysis:
-
-1. **Vision-API Orchestration (Primary):** When both `scenes` and `semantics` modules are enabled in vision-api, scene boundaries are automatically passed from scenes-service to semantics-service. This enables per-scene semantic summaries without duplicate scene detection.
-
-2. **Standalone with scenes_job_id (Optional):** The service can be called directly with a `scenes_job_id` parameter to fetch pre-computed scene boundaries from scenes-service. This allows re-running semantics with different parameters without re-detecting scenes.
-
-### Integration with Vision API
-
-The Semantics Service integrates into the Vision API's multi-module analysis workflow. Clients can enable semantic analysis by setting `modules.semantics.enabled: true` in the `/vision/analyze` request. The service processes frames extracted by the Frame Server and returns semantic tags, scene classifications, and embeddings for each frame. When scenes are detected, the service automatically generates per-scene semantic summaries with dominant tags.
+| Component | VRAM | Lifecycle |
+|-----------|------|-----------|
+| JoyCaption beta-one | ~8GB | Loaded/unloaded per job |
+| Llama 3.1 8B | External API | No local VRAM |
+| Tag classifier | ~1.4GB | Kept loaded |
 
 ---
 
-## OpenAPI Schema
+## API Endpoints
 
-> **Note:** The live OpenAPI schema is auto-generated from FastAPI at runtime via `/semantics/openapi.json`. The schema-service at port 5009 aggregates all service schemas into a combined specification.
+### Submit Analysis Job
 
-**Access the live schema:**
+```
+POST /semantics/analyze
+```
+
+Submits an asynchronous tag classification job.
+
+**Request Body (`AnalyzeSemanticsRequest`):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | yes | Path to video file |
+| `source_id` | string | yes | Unique identifier (e.g., Stash scene ID) |
+| `job_id` | string | no | Custom job ID (auto-generated if omitted) |
+| `scenes_job_id` | string | no | Pre-computed scene boundaries job ID |
+| `frame_extraction_job_id` | string | no | Pre-computed frame extraction job ID |
+| `custom_taxonomy` | array/url | no | Override taxonomy (inline array or URL) |
+| `parameters` | SemanticsParameters | no | Processing parameters |
+
+**SemanticsParameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_variant` | string | - | Classifier model variant |
+| `min_confidence` | float | 0.75 | Minimum confidence for tag assignment |
+| `top_k_tags` | int | 30 | Maximum tags returned |
+| `generate_embeddings` | bool | false | Generate scene embeddings |
+| `use_hierarchical_decoding` | bool | false | Use hierarchical taxonomy decoding |
+| `frame_selection` | string | - | Frame selection method (scene_based, interval) |
+| `frames_per_scene` | int | 16 | Frames to extract per scene |
+| `sampling_interval` | float | - | Seconds between frames (interval mode) |
+| `select_sharpest` | bool | false | Filter by sharpness |
+| `sharpness_candidate_multiplier` | int | - | Candidates per final frame |
+| `min_frame_quality` | float | - | Minimum quality threshold (0-1) |
+| `use_quantization` | bool | false | Use quantized models |
+| `details` | bool | false | Include detailed output |
+| `sprite_vtt_url` | string | - | URL to sprite VTT file |
+| `sprite_image_url` | string | - | URL to sprite grid image |
+| `scene_boundaries` | array | - | Explicit scene boundaries |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:5004/semantics/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/scene_12345.mp4",
+    "source_id": "12345",
+    "parameters": {
+      "min_confidence": 0.75,
+      "top_k_tags": 30,
+      "frames_per_scene": 16,
+      "frame_selection": "scene_based"
+    }
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "job_id": "semantics-550e8400-e29b-41d4-a716-446655440000",
+  "status": "queued",
+  "message": "Semantics job queued",
+  "created_at": "2026-04-04T12:34:56.789Z",
+  "cache_hit": false
+}
+```
+
+### Get Job Status
+
+```
+GET /semantics/jobs/{job_id}/status
+```
+
+**Example:**
+
+```bash
+curl http://localhost:5004/semantics/jobs/semantics-550e8400.../status | jq .
+```
+
+**Response:**
+
+```json
+{
+  "job_id": "semantics-550e8400...",
+  "status": "processing",
+  "progress": 0.65,
+  "stage": "captioning",
+  "message": "Captioning frame 10/16"
+}
+```
+
+### Get Job Results
+
+```
+GET /semantics/jobs/{job_id}/results
+```
+
+**Example:**
+
+```bash
+curl http://localhost:5004/semantics/jobs/semantics-550e8400.../results | jq .
+```
+
+**Response:**
+
+```json
+{
+  "job_id": "semantics-550e8400...",
+  "source_id": "12345",
+  "status": "completed",
+  "tags": [
+    {
+      "tag_id": "123",
+      "tag_name": "Indoor",
+      "score": 0.95,
+      "path": "Setting/Indoor",
+      "decode_type": "hierarchical"
+    },
+    {
+      "tag_id": "456",
+      "tag_name": "Living Room",
+      "score": 0.88,
+      "path": "Setting/Indoor/Living Room",
+      "decode_type": "hierarchical"
+    }
+  ],
+  "frame_captions": [
+    {
+      "frame_index": 0,
+      "timestamp": 5.0,
+      "caption": "A woman sits on a beige couch in a warmly lit living room..."
+    }
+  ],
+  "scene_summary": "A woman relaxes in a warmly decorated living room, seated on a beige couch near a coffee table. The scene is shot at eye level with natural afternoon light...",
+  "scene_embedding": [0.012, -0.034, 0.078, "..."]
+}
+```
+
+### Health Check
+
+```
+GET /semantics/health
+```
+
+**Example:**
+
+```bash
+curl http://localhost:5004/semantics/health | jq .
+```
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "classifier_loaded": true,
+  "taxonomy_loaded": true,
+  "tag_count": 245
+}
+```
+
+---
+
+## Processing Pipeline
+
+```
+1. Taxonomy Pre-Load (Startup)
+   └── Fetch full tag tree from Stash via STASH_URL + SEMANTICS_TAG_ID
+       └── Build classifier label space from taxonomy
+
+2. Frame Extraction
+   ├── IF frame_extraction_job_id provided:
+   │   └── Retrieve frames from Frame Server results
+   ├── IF sprite_vtt_url + sprite_image_url provided:
+   │   └── Extract frames from sprite sheets (fastest)
+   └── ELSE:
+       └── Request frame extraction (scene_based or interval)
+           └── Optional: select_sharpest filtering
+
+3. JoyCaption Beta-One Captioning
+   ├── Load JoyCaption model (~8GB VRAM)
+   ├── Caption each extracted frame
+   └── Unload model to free VRAM
+
+4. Llama 3.1 8B Narrative Summary
+   ├── Send frame captions to external LLM API
+   └── Receive aggregated scene narrative
+
+5. Tag Classification
+   ├── Encode narrative + captions with bi-encoder
+   ├── Score against taxonomy embeddings
+   ├── Apply min_confidence threshold (default 0.75)
+   ├── Return top_k_tags (default 30)
+   └── Each tag includes: tag_id, tag_name, score, path, decode_type
+
+6. Return Results
+   ├── Store in Redis with content-based cache key
+   └── Return job_id for polling
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLASSIFIER_MODEL` | - | Path or name of trained bi-encoder model |
+| `CLASSIFIER_DEVICE` | `cuda` | Device for classifier (cuda/cpu) |
+| `STASH_URL` | `http://localhost:9999` | Stash instance URL |
+| `STASH_API_KEY` | - | Stash API key |
+| `SEMANTICS_TAG_ID` | - | Root tag ID for taxonomy tree |
+| `LLM_API_BASE` | - | External LLM API base URL |
+| `LLM_API_KEY` | - | External LLM API key |
+| `LLM_MODEL` | - | LLM model name (e.g., llama-3.1-8b) |
+| `SEMANTICS_MIN_CONFIDENCE` | `0.75` | Default minimum confidence |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+### OpenAPI Schema
+
+The live OpenAPI schema is auto-generated from FastAPI at runtime.
 
 ```bash
 # Single service schema
@@ -56,338 +286,120 @@ open http://localhost:5009/docs
 
 ---
 
-## Functional Details
+## Integration
 
-### Current Implementation: Fully Functional
-
-The Semantics Service is a fully implemented service with SigLIP integration. It provides:
-
-1. **Zero-shot classification** using Google's SigLIP model
-2. **Scene-aware analysis** with integration to scenes-service
-3. **Multi-modal embeddings** (768-D) for similarity search
-4. **Content-based caching** via Redis
-5. **Asynchronous job processing** with progress tracking
-
-**Active Endpoints:**
-
-```python
-# POST /semantics/analyze
-# Returns: {"job_id": "uuid", "status": "queued|processing|completed"}
-
-# GET /semantics/jobs/{job_id}/status
-# Returns: {"status": "...", "progress": 0.0-1.0, "stage": "..."}
-
-# GET /semantics/jobs/{job_id}/results
-# Returns: Full semantics results with frames, tags, embeddings, scene summaries
-
-# GET /semantics/health
-# Returns: {"status": "healthy", "implemented": true, "model": "google/siglip-base-patch16-224"}
-```
-
-### Implementation Details
-
-#### SigLIP Model Integration
-
-**Model:**
-
-- **Current:** Google SigLIP (siglip-base-patch16-224) - 224x224 input, 768-D embeddings
-- **Library:** `transformers` (Hugging Face)
-- **Advantages:** Better zero-shot performance than CLIP, sigmoid loss for improved calibration
-
-**GPU Acceleration:**
-
-```python
-import torch
-from transformers import AutoProcessor, AutoModel
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
-processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
-```
-
-#### Processing Pipeline
-
-```
-0. Fetch Scene Boundaries (Optional)
-   ├── IF scenes_job_id provided:
-   │   ├── Call scenes-service to get pre-computed boundaries
-   │   └── Use for scene-aware aggregation
-   └── ELSE IF scene_boundaries in parameters:
-       └── Use provided boundaries (from vision-api orchestration)
-
-1. Frame Extraction
-   ├── IF frame_extraction_job_id provided:
-   │   └── Retrieve frames from Frame Server results
-   └── ELSE:
-       └── Request frame extraction (sampling_interval default: 2.0s)
-
-2. Load Frame Images
-   └── Batch load frames from Frame Server
-
-3. SigLIP Classification (Batched)
-   ├── IF classification_tags or custom_prompts provided:
-   │   ├── Process frames in batches (default: 32)
-   │   ├── Generate image embeddings (768-D)
-   │   ├── Encode text prompts
-   │   ├── Calculate image-text similarity scores
-   │   └── Assign tags above min_confidence threshold (default: 0.5)
-   └── Return top_k tags per frame (default: 5)
-
-4. Generate Embeddings (Optional)
-   ├── IF generate_embeddings=true (default):
-   │   └── Extract 768-D embeddings for similarity search
-   └── Clean up tensors/PIL images to prevent memory leaks
-
-5. Aggregate Scene Summaries (Optional)
-   ├── IF scene_boundaries provided:
-   │   ├── Group frames by scene
-   │   ├── Calculate dominant tags per scene (frequency-based)
-   │   ├── Compute average confidence per scene
-   │   └── Return scene summaries with timestamps
-   └── ELSE:
-       └── Return frame-level results only
-
-6. Return Results
-   ├── Store in Redis with content-based cache key
-   ├── Return job_id
-   └── Clean up memory (gc.collect(), torch.cuda.empty_cache())
-```
-
-#### Zero-Shot Classification
-
-**Predefined Tags Example:**
-
-```python
-classification_tags = [
-    "indoor scene",
-    "outdoor scene",
-    "kitchen",
-    "bedroom",
-    "conversation between two people",
-    "action scene",
-    "intimate scene"
-]
-
-# CLIP generates embeddings for both image and text
-image_embedding = model.get_image_features(frame)
-text_embeddings = model.get_text_features(classification_tags)
-
-# Cosine similarity determines best matches
-similarities = cosine_similarity(image_embedding, text_embeddings)
-top_tags = [(tag, score) for tag, score in zip(classification_tags, similarities) if score > 0.5]
-```
-
-**Custom Prompts Example:**
-
-```python
-custom_prompts = [
-    "two people talking in a kitchen",
-    "romantic dinner scene",
-    "outdoor sports activity"
-]
-
-# Zero-shot inference with user-defined prompts
-```
-
-#### Scene Embeddings for Similarity Search
-
-CLIP generates multi-modal embeddings that can be used for semantic similarity:
-
-```python
-# Generate 512-D embedding for each frame
-frame_embedding = model.get_image_features(frame)
-
-# Store embeddings for similarity search
-# Later: Find similar scenes by embedding distance
-from scipy.spatial.distance import cosine
-similarity = 1 - cosine(embedding1, embedding2)
-```
-
-**Use Case:** "Find scenes visually similar to this reference scene"
-
-#### Performance
-
-**GPU Mode (NVIDIA RTX 3060+):**
-
-- **Inference Speed:** 50-100 FPS (SigLIP base)
-- **Memory Usage:** ~2GB VRAM
-- **Batch Size:** 16-32 frames per batch
-
-**CPU Mode (Development):**
-
-- **Inference Speed:** 5-10 FPS
-- **Memory Usage:** ~1GB RAM
-- **Not recommended for production**
-
-**Processing Time Example:**
-
-- 10-minute video @ 2 FPS sampling = 300 frames
-- GPU processing: ~3-6 seconds
-- CPU processing: ~30-60 seconds
-
-#### Parameters
-
-The service accepts these configuration parameters:
-
-**model** (string): Model variant
-
-- `google/siglip-base-patch16-224` (default) - 224px, 768-D embeddings
-
-**classification_tags** (array): Predefined tag list for classification
-
-- Example: `["indoor", "outdoor", "kitchen", "conversation"]`
-
-**custom_prompts** (array): User-defined text prompts for zero-shot
-
-- Example: `["two people talking", "intimate scene"]`
-
-**generate_embeddings** (boolean): Generate multi-modal embeddings
-
-- Default: `true`
-- Used for similarity search and clustering
-
-**min_confidence** (float): Minimum confidence for tag assignment
-
-- Range: 0.0 - 1.0
-- Default: 0.5
-
-**top_k_tags** (integer): Maximum tags per frame
-
-- Range: 1 - 20
-- Default: 5
-
-### Configuration
-
-Environment variables:
-
-```bash
-# Model configuration
-SIGLIP_MODEL=google/siglip-base-patch16-224  # Model variant
-SEMANTICS_DEVICE=cuda                         # cuda or cpu
-
-# Processing
-SEMANTICS_BATCH_SIZE=32            # Frames per batch
-SEMANTICS_MIN_CONFIDENCE=0.5       # Tag confidence threshold
-
-# Storage
-REDIS_URL=redis://redis:6379/0
-CACHE_TTL=3600                     # Result cache TTL
-
-# Logging
-LOG_LEVEL=INFO
-```
-
-### Integration with Vision API
+### With Vision API
 
 Enable semantic analysis in multi-module requests:
 
-**Example 1: Semantics Only**
-
-```json
-{
-  "source": "/media/videos/scene.mp4",
-  "source_id": "test_001",
-  "modules": {
-    "semantics": {
-      "enabled": true,
-      "parameters": {
-        "classification_tags": ["indoor", "outdoor", "kitchen", "conversation"],
-        "custom_prompts": ["two people talking"],
-        "min_confidence": 0.5,
-        "top_k_tags": 5
-      }
-    }
-  }
-}
-```
-
-**Example 2: Scenes + Semantics (Scene-Aware Analysis)**
-
-```json
-{
-  "source": "/media/videos/scene.mp4",
-  "source_id": "test_002",
-  "modules": {
-    "scenes": {
-      "enabled": true,
-      "parameters": {
-        "threshold": 27.0
-      }
-    },
-    "semantics": {
-      "enabled": true,
-      "parameters": {
-        "classification_tags": [
-          "indoor",
-          "outdoor",
-          "bedroom",
-          "kitchen",
-          "conversation",
-          "action"
-        ],
-        "min_confidence": 0.5
-      }
-    }
-  }
-}
-```
-
-Vision API will:
-
-1. Detect scene boundaries via Scenes Service
-2. Pass boundaries to Semantics Service
-3. Semantics generates per-scene semantic summaries
-4. Return combined results with scene-level dominant tags
-
-**Example 3: Standalone with scenes_job_id**
-
 ```bash
-# First, detect scenes
-curl -X POST http://localhost:5002/semantics/analyze \
-  -d '{"source": "/media/videos/scene.mp4", "source_id": "test_003"}'
-# Returns: {"job_id": "scenes-abc123"}
-
-# Then, run semantics with scene boundaries
-curl -X POST http://localhost:5004/semantics/analyze \
+curl -X POST http://localhost:5010/vision/analyze \
+  -H "Content-Type: application/json" \
   -d '{
-    "source": "/media/videos/scene.mp4",
-    "source_id": "test_003",
-    "scenes_job_id": "scenes-abc123",
-    "parameters": {
-      "classification_tags": ["bedroom", "kitchen", "office"],
-      "min_confidence": 0.6
+    "source": "/media/videos/scene_12345.mp4",
+    "source_id": "12345",
+    "modules": {
+      "scenes": {"enabled": true},
+      "semantics": {
+        "enabled": true,
+        "parameters": {
+          "min_confidence": 0.75,
+          "top_k_tags": 30,
+          "frames_per_scene": 16
+        }
+      }
     }
   }'
 ```
 
-### Use Cases
+### With Pre-Computed Scenes
 
-**Auto-Tagging:**
+```bash
+# First, detect scenes
+curl -X POST http://localhost:5002/scenes/detect \
+  -H "Content-Type: application/json" \
+  -d '{"source": "/media/videos/scene_12345.mp4", "source_id": "12345"}'
+# Returns: {"job_id": "scenes-abc123"}
 
-- Automatically classify scene settings (indoor/outdoor, location types)
-- Detect activities and actions (conversation, sports, intimate scenes)
-- Tag content types for organization
+# Then, run semantics with scene boundaries
+curl -X POST http://localhost:5004/semantics/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/scene_12345.mp4",
+    "source_id": "12345",
+    "scenes_job_id": "scenes-abc123",
+    "parameters": {
+      "min_confidence": 0.75,
+      "frames_per_scene": 16
+    }
+  }'
+```
 
-**Semantic Search:**
+### With Stash Taxonomy
 
-- Natural language queries: "find scenes with two people talking in a kitchen"
-- Multi-modal search combining text and visual similarity
-- Content-based recommendations
+The service pre-loads the tag taxonomy from Stash at startup. Configure `STASH_URL`, `STASH_API_KEY`, and `SEMANTICS_TAG_ID` in the environment. The taxonomy is used to build the classifier's label space -- tags are matched by ID so results map directly back to Stash.
 
-**Scene Similarity:**
-
-- Find visually/semantically similar scenes
-- Cluster scenes by content type
-- Detect scene changes based on semantic shift
-
-**Advanced Classification:**
-
-- Custom taxonomy definition via prompts
-- Zero-shot classification without training data
-- Extensible tagging system
+To override the taxonomy per-request, pass `custom_taxonomy` in the request body (either an inline array of tag objects or a URL to fetch taxonomy JSON).
 
 ---
 
-**Last Updated:** 2025-12-02
-**Version:** 2.0.0
-**Status:** Phase 2 Complete - Fully Implemented with Scene Integration
+## Performance
+
+### Estimated Processing Times (GPU)
+
+| Content | Frames | Approx. Time |
+|---------|--------|---------------|
+| 5 min video | 16 | ~30 seconds |
+| 10 min video | 16 | ~35 seconds |
+| 30 min video | 16 | ~40 seconds |
+
+Processing time is dominated by captioning (per-frame) and LLM summarization, not video length. More frames = more time.
+
+### Memory Usage
+
+| Component | VRAM |
+|-----------|------|
+| JoyCaption beta-one (per job) | ~8GB |
+| Tag classifier (persistent) | ~1.4GB |
+| Peak during captioning | ~9.4GB |
+
+---
+
+## Troubleshooting
+
+### Taxonomy Not Loading
+
+```bash
+# Check Stash connectivity
+curl $STASH_URL/graphql -H "ApiKey: $STASH_API_KEY" -d '{"query": "{ tags { count } }"}'
+
+# Check service logs
+docker logs vision-semantics-service
+```
+
+### Poor Tag Quality
+
+- Increase `frames_per_scene` for more visual coverage
+- Enable `select_sharpest` for better frame quality
+- Lower `min_confidence` if tags are being filtered too aggressively
+- Verify taxonomy has sufficient tag descriptions in Stash
+
+### High VRAM Usage
+
+- JoyCaption is loaded/unloaded per job -- peak is ~9.4GB during captioning
+- If OOM, ensure no other GPU services are running concurrently
+- Check `nvidia-smi` during processing
+
+---
+
+## Related Documentation
+
+- [Resource Manager](RESOURCE_MANAGER.md)
+- [Scenes Service](SCENES_SERVICE.md)
+- [Frame Server](FRAME_SERVER.md)
+
+---
+
+**Last Updated:** 2026-04-04
+**Version:** 3.0.0
+**Status:** Phase 3 Complete - Tag Classifier Pipeline

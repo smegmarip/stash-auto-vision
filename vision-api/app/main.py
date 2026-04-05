@@ -78,7 +78,6 @@ SCENES_SERVICE_URL = os.getenv("SCENES_SERVICE_URL", "http://scenes-service:5002
 FACES_SERVICE_URL = os.getenv("FACES_SERVICE_URL", "http://faces-service:5003")
 SEMANTICS_SERVICE_URL = os.getenv("SEMANTICS_SERVICE_URL", "http://semantics-service:5004")
 OBJECTS_SERVICE_URL = os.getenv("OBJECTS_SERVICE_URL", "http://objects-service:5005")
-CAPTIONING_SERVICE_URL = os.getenv("CAPTIONING_SERVICE_URL", "http://captioning-service:5006")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "31536000"))  # Default: 1 year
 
 redis_client: Optional[aioredis.Redis] = None
@@ -271,9 +270,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
         # Normalize image EXIF orientation if needed
         if is_image_file(request.source):
             normalized_path, was_normalized = normalize_image_if_needed(
-                request.source,
-                output_dir="/tmp/downloads",
-                job_id=job_id
+                request.source, output_dir="/tmp/downloads", job_id=job_id
             )
             if was_normalized:
                 logger.info(f"Using EXIF-normalized image: {normalized_path}")
@@ -297,14 +294,14 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
         await redis_client.setex(f"vision:job:{job_id}:metadata", CACHE_TTL, json.dumps(metadata))
 
-        results = {"scenes": None, "faces": None, "semantics": None, "objects": None, "captions": None}
+        results = {"scenes": None, "faces": None, "semantics": None, "objects": None}
 
-        # Auto-enable scenes if captions need scene-based frame selection
-        if request.modules.captions.enabled:
-            captions_params = request.modules.captions.parameters or {}
-            frame_selection = captions_params.get("frame_selection", "scene_based")
+        # Auto-enable scenes if semantics needs scene-based frame selection
+        if request.modules.semantics.enabled:
+            semantics_params = request.modules.semantics.parameters or {}
+            frame_selection = semantics_params.get("frame_selection", "scene_based")
             if frame_selection == "scene_based" and not request.modules.scenes.enabled:
-                logger.info("Auto-enabling scenes for scene_based caption frame selection")
+                logger.info("Auto-enabling scenes for scene_based semantics frame selection")
                 request.modules.scenes.enabled = True
 
         # Sequential processing (default)
@@ -316,7 +313,6 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                     request.modules.faces.enabled,
                     request.modules.semantics.enabled,
                     request.modules.objects.enabled,
-                    request.modules.captions.enabled,
                 ]
             )
             progress_per_service = 1.0 / enabled_count if enabled_count > 0 else 0.25
@@ -436,18 +432,30 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 semantics_request = {
                     "source": request.source,
                     "source_id": request.source_id,
+                    "scenes_job_id": results.get("scenes", {}).get("job_id", f"scenes-{job_id}") if results.get("scenes") else None,
                     "parameters": {
-                        "model": semantics_params.get("model", os.getenv("CLIP_MODEL", "google/siglip-base-patch16-224")),
-                        "classification_tags": semantics_params.get("classification_tags", None),
-                        "custom_prompts": semantics_params.get("custom_prompts", None),
-                        "generate_embeddings": semantics_params.get("generate_embeddings", True),
-                        "min_confidence": semantics_params.get("min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5"))),
-                        "top_k_tags": semantics_params.get("top_k_tags", 5),
-                        "batch_size": semantics_params.get("batch_size", int(os.getenv("SEMANTICS_BATCH_SIZE", "32"))),
+                        "model_variant": semantics_params.get("model_variant", os.getenv("CLASSIFIER_MODEL", "text-only")),
+                        "min_confidence": semantics_params.get(
+                            "min_confidence", float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.75"))
+                        ),
+                        "top_k_tags": semantics_params.get("top_k_tags", 30),
+                        "generate_embeddings": semantics_params.get("generate_embeddings", False),
+                        "use_hierarchical_decoding": semantics_params.get("use_hierarchical_decoding", True),
+                        "frame_selection": semantics_params.get("frame_selection", "scene_based"),
+                        "frames_per_scene": semantics_params.get("frames_per_scene", 16),
                         "sampling_interval": semantics_params.get("sampling_interval", 2.0),
-                        "scene_boundaries": scene_boundaries if scene_boundaries else None
+                        "select_sharpest": semantics_params.get("select_sharpest", True),
+                        "sharpness_candidate_multiplier": semantics_params.get("sharpness_candidate_multiplier", 3),
+                        "min_frame_quality": semantics_params.get("min_frame_quality", 0.05),
+                        "use_quantization": semantics_params.get("use_quantization", True),
+                        "details": semantics_params.get("details"),
+                        "sprite_vtt_url": semantics_params.get("sprite_vtt_url"),
+                        "sprite_image_url": semantics_params.get("sprite_image_url"),
+                        "scene_boundaries": scene_boundaries if scene_boundaries else None,
                     },
                 }
+                if semantics_params.get("custom_taxonomy"):
+                    semantics_request["custom_taxonomy"] = semantics_params["custom_taxonomy"]
 
                 semantics_result = await call_service(
                     "semantics",
@@ -494,54 +502,6 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 # Update completion message only
                 await update_metadata(job_id, metadata, message="Object detection complete")
 
-            # Step 5: Captions (JoyCaption VLM)
-            if request.modules.captions.enabled:
-                logger.info("Running video captioning...")
-                await update_metadata(job_id, metadata, stage="captioning", message="Generating video captions")
-
-                # Get actual scenes job_id from results (handles cache hits)
-                scenes_job_id = None
-                if results.get("scenes"):
-                    scenes_job_id = results["scenes"].get("job_id", f"scenes-{job_id}")
-
-                captions_params = request.modules.captions.parameters or {}
-                captions_request = {
-                    "source": request.source,
-                    "source_id": request.source_id,
-                    "scenes_job_id": scenes_job_id,
-                    "parameters": {
-                        "prompt_type": captions_params.get("prompt_type", "scene_summary"),
-                        "frame_selection": captions_params.get("frame_selection", "scene_based"),
-                        "sampling_interval": captions_params.get("sampling_interval", 5.0),
-                        "frames_per_scene": captions_params.get("frames_per_scene", 3),
-                        "min_confidence": captions_params.get("min_confidence", float(os.getenv("CAPTIONS_MIN_CONFIDENCE", "0.5"))),
-                        "max_tags_per_frame": captions_params.get("max_tags_per_frame", 30),
-                        "align_to_taxonomy": captions_params.get("align_to_taxonomy", True),
-                        "use_hierarchical_scoring": captions_params.get("use_hierarchical_scoring", True),
-                        "select_sharpest": captions_params.get("select_sharpest", True),
-                        "sharpness_candidate_multiplier": captions_params.get("sharpness_candidate_multiplier", 3),
-                        "batch_size": captions_params.get("batch_size", 1),
-                        "use_quantization": captions_params.get("use_quantization", True),
-                        "sprite_vtt_url": captions_params.get("sprite_vtt_url"),
-                        "sprite_image_url": captions_params.get("sprite_image_url"),
-                    },
-                }
-
-                captions_result = await call_service(
-                    "captions",
-                    CAPTIONING_SERVICE_URL,
-                    captions_request,
-                    orchestrator_job_id=job_id,
-                    orchestrator_metadata=metadata,
-                    base_progress=progress,
-                    progress_weight=progress_per_service,
-                )
-                results["captions"] = captions_result
-                # Update local progress tracker
-                progress += progress_per_service
-                # Update completion message only
-                await update_metadata(job_id, metadata, message="Video captioning complete")
-
         # Parallel processing (future optimization)
         else:
             tasks = []
@@ -551,7 +511,12 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 tasks.append(call_service("scenes", SCENES_SERVICE_URL, scenes_request))
 
             if request.modules.faces.enabled:
-                faces_request = {"source": request.source, "original_source": original_source, "source_id": request.source_id, "job_id": f"faces-{job_id}"}
+                faces_request = {
+                    "source": request.source,
+                    "original_source": original_source,
+                    "source_id": request.source_id,
+                    "job_id": f"faces-{job_id}",
+                }
                 tasks.append(call_service("faces", FACES_SERVICE_URL, faces_request))
 
             # Wait for all tasks
@@ -579,8 +544,6 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
             result_summary["semantics"] = "completed"
         if results["objects"]:
             result_summary["objects"] = "completed"
-        if results["captions"]:
-            result_summary["captions"] = "completed"
 
         # Build final results
         final_results = {
@@ -596,7 +559,6 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                     "faces": request.modules.faces.enabled,
                     "semantics": request.modules.semantics.enabled,
                     "objects": request.modules.objects.enabled,
-                    "captions": request.modules.captions.enabled,
                 },
             },
         }
@@ -676,7 +638,6 @@ async def analyze_video(request: AnalyzeVideoRequest, background_tasks: Backgrou
                 "faces": request.modules.faces.enabled,
                 "semantics": request.modules.semantics.enabled,
                 "objects": request.modules.objects.enabled,
-                "captions": request.modules.captions.enabled,
             },
             processing_mode=request.processing_mode,
         )
@@ -698,7 +659,7 @@ async def get_job_status(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes", "semantics", "objects", "captions"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
@@ -745,7 +706,7 @@ async def get_job_results(job_id: str):
         # Try all service namespaces to find the job
         metadata_str = None
         found_service = None
-        for service_ns in ["vision", "faces", "scenes", "semantics", "objects", "captions"]:
+        for service_ns in ["vision", "faces", "scenes", "semantics", "objects"]:
             metadata_str = await redis_client.get(f"{service_ns}:job:{job_id}:metadata")
             if metadata_str:
                 found_service = service_ns
@@ -858,7 +819,9 @@ async def list_jobs(
 @app.get("/vision/jobs/count")
 async def count_jobs(
     status: Optional[str] = Query(None, description="Filter by job status (queued, processing, completed, failed)"),
-    service: Optional[str] = Query(None, description="Filter by service (vision, faces, scenes, semantics, objects, captions)"),
+    service: Optional[str] = Query(
+        None, description="Filter by service (vision, faces, scenes, semantics, objects)"
+    ),
     source_id: Optional[str] = Query(None, description="Filter by source_id (scene identifier)"),
     source: Optional[str] = Query(None, description="Filter by source video path"),
     start_date: Optional[str] = Query(None, description="Filter by start date (ISO 8601 format)"),
@@ -880,7 +843,6 @@ async def count_jobs(
                 "scenes": 45,
                 "semantics": 32,
                 "objects": 0,
-                "captions": 12
             }
         }
     """
@@ -892,6 +854,7 @@ async def count_jobs(
         if start_date:
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
                 start_ts = dt.timestamp()
             except Exception as e:
@@ -900,6 +863,7 @@ async def count_jobs(
         if end_date:
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                 end_ts = dt.timestamp()
             except Exception as e:
@@ -915,10 +879,7 @@ async def count_jobs(
             end_date=end_ts,
         )
 
-        return {
-            "total": total,
-            "by_service": by_service
-        }
+        return {"total": total, "by_service": by_service}
 
     except Exception as e:
         logger.error(f"Error counting jobs: {e}", exc_info=True)
@@ -938,7 +899,6 @@ async def health_check():
                 ("faces", FACES_SERVICE_URL),
                 ("semantics", SEMANTICS_SERVICE_URL),
                 ("objects", OBJECTS_SERVICE_URL),
-                ("captions", CAPTIONING_SERVICE_URL),
             ]:
                 try:
                     response = await client.get(f"{url}/{name}/health")
