@@ -52,3 +52,4 @@ redis_data/
 tests/data/*
 !tests/data/DATASETS.md
 .history
+/payload.json

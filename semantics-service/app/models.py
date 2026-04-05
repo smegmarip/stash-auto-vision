@@ -76,6 +76,7 @@ class SemanticsParameters(BaseModel):
 
     Covers frame extraction, captioning, summarization, and classification.
     """
+    model_config = {"protected_namespaces": ()}
 
     # --- Classifier parameters ---
     model_variant: str = Field(

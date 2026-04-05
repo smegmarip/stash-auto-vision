@@ -204,6 +204,11 @@ services:
     environment:
       - CLASSIFIER_MODEL=${CLASSIFIER_MODEL:-text-only}
       - CLASSIFIER_DEVICE=${CLASSIFIER_DEVICE:-cuda}
+      - SEMANTICS_HF_REPO=${SEMANTICS_HF_REPO:-smegmarip/tag-classifier}
+      - SEMANTICS_HF_VISION_MODEL=${SEMANTICS_HF_VISION_MODEL:-vision/best_model.pt}
+      - SEMANTICS_HF_TEXT_MODEL=${SEMANTICS_HF_TEXT_MODEL:-text-only/best_model.pt}
+      - SEMANTICS_HF_VISION_TAG_MAPPING=${SEMANTICS_HF_VISION_TAG_MAPPING:-vision/tag_mapping.json}
+      - SEMANTICS_HF_TEXT_TAG_MAPPING=${SEMANTICS_HF_TEXT_TAG_MAPPING:-text-only/tag_mapping.json}
       - SCENES_SERVICE_URL=http://scenes-service:5002
       - FRAME_SERVER_URL=http://frame-server:5001
       - RESOURCE_MANAGER_URL=http://resource-manager:5007

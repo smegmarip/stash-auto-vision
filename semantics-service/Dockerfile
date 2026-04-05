@@ -19,6 +19,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+# Copy train module (model architecture for inference)
+COPY train/ ./train/
+
 # Expose port
 EXPOSE 5004
 

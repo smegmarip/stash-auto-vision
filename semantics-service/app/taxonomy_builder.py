@@ -100,9 +100,7 @@ class TaxonomyBuilder:
 
         if root_tag_id is not None:
             raw_tags = TaxonomyBuilder._filter_descendants(raw_tags, root_tag_id)
-            logger.info(
-                "Filtered to %d tags under root %s", len(raw_tags), root_tag_id
-            )
+            logger.info("Filtered to %d tags under root %s", len(raw_tags), root_tag_id)
 
         return TaxonomyBuilder.build_from_tags(raw_tags, root_tag_id=root_tag_id)
 
@@ -141,9 +139,7 @@ class TaxonomyBuilder:
             if tag_id == root_tag_id:
                 continue
 
-            entry = TaxonomyBuilder._enrich_tag(
-                tag, tags_by_id, children_map, root_tag_id, root_name
-            )
+            entry = TaxonomyBuilder._enrich_tag(tag, tags_by_id, children_map, root_tag_id, root_name)
             enriched.append(entry)
 
         # Sort by depth (ascending), then name for deterministic output
@@ -216,15 +212,11 @@ class TaxonomyBuilder:
 
                 body = resp.json()
                 if "errors" in body and body["errors"]:
-                    raise RuntimeError(
-                        f"Stash GraphQL errors: {body['errors']}"
-                    )
+                    raise RuntimeError(f"Stash GraphQL errors: {body['errors']}")
 
                 find_tags = body.get("data", {}).get("findTags")
                 if find_tags is None:
-                    raise RuntimeError(
-                        "Unexpected GraphQL response: missing data.findTags"
-                    )
+                    raise RuntimeError("Unexpected GraphQL response: missing data.findTags")
 
                 page_tags = find_tags.get("tags", [])
                 total_count = find_tags.get("count", 0)
@@ -232,7 +224,10 @@ class TaxonomyBuilder:
 
                 logger.debug(
                     "Fetched page %d: %d tags (total so far: %d / %d)",
-                    page, len(page_tags), len(all_tags), total_count,
+                    page,
+                    len(page_tags),
+                    len(all_tags),
+                    total_count,
                 )
 
                 if len(all_tags) >= total_count or len(page_tags) < _PAGE_SIZE:
@@ -339,7 +334,8 @@ class TaxonomyBuilder:
         if len(parentless) == 1:
             logger.info(
                 "Auto-detected root tag: %s (%s)",
-                parentless[0], tags_by_id[parentless[0]]["name"],
+                parentless[0],
+                tags_by_id[parentless[0]]["name"],
             )
             return parentless[0]
 
@@ -361,7 +357,9 @@ class TaxonomyBuilder:
         best = max(parentless, key=_count_descendants)
         logger.info(
             "Multiple parentless tags found (%d); selected %s (%s) as root",
-            len(parentless), best, tags_by_id[best]["name"],
+            len(parentless),
+            best,
+            tags_by_id[best]["name"],
         )
         return best
 
@@ -380,9 +378,7 @@ class TaxonomyBuilder:
         """Compute all derived fields for a single tag."""
         tag_id = str(tag["id"])
 
-        all_paths = TaxonomyBuilder._compute_all_paths(
-            tag, tags_by_id, root_tag_id, root_name
-        )
+        all_paths = TaxonomyBuilder._compute_all_paths(tag, tags_by_id, root_tag_id, root_name)
 
         # Primary path is the shortest one (closest to root)
         all_paths.sort(key=len)
@@ -472,9 +468,7 @@ class TaxonomyBuilder:
         all_paths: list[list[str]] = []
 
         for parent in direct_parents:
-            chains = TaxonomyBuilder._walk_parent_chain(
-                parent, root_tag_id, root_name
-            )
+            chains = TaxonomyBuilder._walk_parent_chain(parent, root_tag_id, root_name)
             all_paths.extend(chains)
 
         # Deduplicate (same path reached via different nesting)
@@ -525,9 +519,7 @@ class TaxonomyBuilder:
 
         result: list[list[str]] = []
         for gp in grandparents:
-            ancestor_paths = TaxonomyBuilder._walk_parent_chain(
-                gp, root_tag_id, root_name
-            )
+            ancestor_paths = TaxonomyBuilder._walk_parent_chain(gp, root_tag_id, root_name)
             for ancestor_path in ancestor_paths:
                 result.append(ancestor_path + [parent_name])
 

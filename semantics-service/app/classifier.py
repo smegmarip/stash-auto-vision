@@ -1,12 +1,10 @@
 """
 Tag classifier service wrapper.
 
-Wraps the trained MultiViewClassifier from the tag-classification project
-for use as a service component. Downloads the model from HuggingFace on
-first use and caches it locally.
+Wraps the trained MultiViewClassifier for use as a service component.
+Downloads model weights from HuggingFace on first use and caches locally.
 
 Model source: https://huggingface.co/smegmarip/tag-classifier
-Training code: train/ package (must be on PYTHONPATH or at TRAIN_MODULE_PATH)
 """
 from __future__ import annotations
 
@@ -22,14 +20,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-# ---------------------------------------------------------------------------
-# Ensure the train package is importable.  In the service container the
-# train/ tree is copied or mounted at TRAIN_MODULE_PATH (default /app/train).
-# We add its *parent* so that ``from train.model import ...`` works.
-# ---------------------------------------------------------------------------
-TRAIN_MODULE_PATH = os.getenv("TRAIN_MODULE_PATH", "/app/train")
-if Path(TRAIN_MODULE_PATH).exists():
-    sys.path.insert(0, str(Path(TRAIN_MODULE_PATH).parent))
+# The train package is bundled at semantics-service/train/
+# Add the service root so ``from train.model import ...`` resolves.
+_SERVICE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_SERVICE_ROOT))
 
 from train.config import TrainConfig
 from train.model import MultiViewClassifier
@@ -40,10 +34,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # HuggingFace download constants
 # ---------------------------------------------------------------------------
-HF_REPO = "smegmarip/tag-classifier"
-MODEL_VARIANTS: Dict[str, str] = {
-    "vision": "vision/best_model.pt",
-    "text-only": "text-only/best_model.pt",
+HF_REPO = os.getenv("SEMANTICS_HF_REPO", "smegmarip/tag-classifier")
+MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
+    "vision": {
+        "model": os.getenv("SEMANTICS_HF_VISION_MODEL", "vision/best_model.pt"),
+        "mapping": os.getenv("SEMANTICS_HF_VISION_TAG_MAPPING", "vision/tag_mapping.json"),
+    },
+    "text-only": {
+        "model": os.getenv("SEMANTICS_HF_TEXT_MODEL", "text-only/best_model.pt"),
+        "mapping": os.getenv("SEMANTICS_HF_TEXT_TAG_MAPPING", "text-only/tag_mapping.json"),
+    },
 }
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "models")
 
@@ -231,8 +231,9 @@ def resolve_checkpoint(model_name: str, cache_dir: str = MODEL_CACHE_DIR) -> str
             f"{', '.join(MODEL_VARIANTS)}"
         )
 
+    variant = MODEL_VARIANTS[model_name]
     local_dir = Path(cache_dir) / model_name.replace("-", "_")
-    local_path = local_dir / "best_model.pt"
+    local_path = local_dir / Path(variant["model"]).name
     if local_path.exists():
         return str(local_path)
 
@@ -243,16 +244,14 @@ def resolve_checkpoint(model_name: str, cache_dir: str = MODEL_CACHE_DIR) -> str
     local_dir.mkdir(parents=True, exist_ok=True)
     hf_hub_download(
         repo_id=HF_REPO,
-        filename=MODEL_VARIANTS[model_name],
+        filename=variant["model"],
         local_dir=local_dir,
         local_dir_use_symlinks=False,
     )
-    # Also grab the tag mapping sidecar
-    mapping_filename = MODEL_VARIANTS[model_name].replace("best_model.pt", "tag_mapping.json")
     try:
         hf_hub_download(
             repo_id=HF_REPO,
-            filename=mapping_filename,
+            filename=variant["mapping"],
             local_dir=local_dir,
             local_dir_use_symlinks=False,
         )
