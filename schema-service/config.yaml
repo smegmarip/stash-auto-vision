@@ -23,10 +23,6 @@ servers:
     description: Objects Service
     x-container-url: http://objects-service:5005
     x-namespace: objects
-  - url: http://localhost:5006
-    description: Captioning Service
-    x-container-url: http://captioning-service:5006
-    x-namespace: captions
   - url: http://localhost:5007
     description: Resource Manager Service
     x-container-url: http://resource-manager:5007
@@ -78,13 +74,6 @@ tags:
       url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
     x-server: objects-service
     x-port: 5005
-  - name: captions
-    description: Video captioning with JoyCaption VLM
-    externalDocs:
-      description: Learn more about Captioning Service
-      url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/CAPTIONING_SERVICE.md
-    x-server: captioning-service
-    x-port: 5006
   - name: resources
     description: GPU resource orchestration
     externalDocs:
