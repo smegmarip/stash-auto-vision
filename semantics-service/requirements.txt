@@ -5,11 +5,25 @@ redis==5.0.1
 pydantic==2.5.0
 httpx==0.25.2
 
-# Phase 2: CLIP/SigLIP implementation
-torch==2.1.1
-transformers==4.37.0  # Minimum version for SigLIP support
-sentencepiece==0.1.99  # Required for SigLIP tokenization
-protobuf==3.20.3  # Required for SigLIP tokenizer
-pillow==10.1.0
-numpy==1.24.3
-opencv-python==4.8.1.78
+# Tag classifier and JoyCaption VLM
+torch>=2.4.0
+transformers>=4.40.0
+accelerate>=0.28.0
+bitsandbytes>=0.42.0
+sentencepiece>=0.1.99
+protobuf>=3.20.3
+pillow>=10.1.0
+numpy>=1.24.3,<2.0
+opencv-python>=4.8.1.78
+
+# Sentence embeddings (BGE backbone)
+sentence-transformers>=2.6.0
+
+# HuggingFace model download
+huggingface_hub>=0.20.0
+
+# Multi-label stratification (tag families)
+iterative-stratification>=0.1.6
+
+# LLM summary generation
+openai>=1.0.0

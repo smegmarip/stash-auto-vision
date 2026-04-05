@@ -1,79 +1,166 @@
 """
 Semantics Service - Data Models
-Pydantic models for request/response validation
+Merged request/response models for tag classification pipeline.
+
+Replaces both the old SigLIP semantics service and JoyCaption captioning service
+with a unified interface backed by the trained multi-view tag classifier.
 """
 
 import os
-from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
 class JobStatus(str, Enum):
     """Job processing status"""
-
     QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     NOT_IMPLEMENTED = "not_implemented"
+    WAITING_FOR_GPU = "waiting_for_gpu"
 
+
+class FrameSelectionMethod(str, Enum):
+    """Frame selection strategies"""
+    SCENE_BASED = "scene_based"
+    INTERVAL = "interval"
+    SPRITE_SHEET = "sprite_sheet"
+
+
+# ---------------------------------------------------------------------------
+# Tag taxonomy models (from Stash GraphQL schema)
+# ---------------------------------------------------------------------------
+
+class TagRef(BaseModel):
+    """Reference to a tag (used in parents/children arrays in Stash API)"""
+    id: str
+    name: str
+
+
+class TagTaxonomyNode(BaseModel):
+    """
+    A node in the Stash tag taxonomy.
+    Matches Stash GraphQL Tag entity for custom_taxonomy compatibility.
+    """
+    id: str
+    name: str
+    description: Optional[str] = Field(default=None)
+    aliases: List[str] = Field(default_factory=list)
+    ignore_auto_tag: bool = Field(default=False)
+    parents: List[TagRef] = Field(default_factory=list)
+    children: List[TagRef] = Field(default_factory=list)
+
+    @property
+    def parent_id(self) -> Optional[str]:
+        return self.parents[0].id if self.parents else None
+
+    @property
+    def child_ids(self) -> List[str]:
+        return [c.id for c in self.children]
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
 
 class SemanticsParameters(BaseModel):
-    """Semantics analysis configuration"""
+    """
+    Unified parameters for the tag classification pipeline.
 
-    model: str = Field(
-        default=os.getenv("CLIP_MODEL", "google/siglip-base-patch16-224"),
-        description="CLIP/SigLIP model variant"
-    )
-    classification_tags: Optional[List[str]] = Field(
-        default=None,
-        description="Predefined tags for zero-shot classification"
-    )
-    custom_prompts: Optional[List[str]] = Field(
-        default=None,
-        description="Custom text prompts for zero-shot classification"
-    )
-    generate_embeddings: bool = Field(
-        default=True,
-        description="Generate multi-modal embeddings for similarity search"
+    Covers frame extraction, captioning, summarization, and classification.
+    """
+
+    # --- Classifier parameters ---
+    model_variant: str = Field(
+        default=os.getenv("CLASSIFIER_MODEL", "text-only"),
+        description="Classifier model variant: 'vision', 'text-only', or path to checkpoint"
     )
     min_confidence: float = Field(
-        default=float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.5")),
-        ge=0.0,
-        le=1.0,
-        description="Minimum confidence threshold for tag assignment"
+        default=float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.75")),
+        ge=0.0, le=1.0,
+        description="Minimum confidence threshold for tag predictions"
     )
     top_k_tags: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-        description="Maximum number of tags to return per frame"
+        default=30,
+        ge=1, le=100,
+        description="Maximum number of tags to return"
     )
-    batch_size: int = Field(
-        default=int(os.getenv("SEMANTICS_BATCH_SIZE", "32")),
-        ge=1,
-        le=128,
-        description="Batch size for inference"
+    generate_embeddings: bool = Field(
+        default=False,
+        description="Return 512-D scene embeddings from the classifier"
+    )
+    use_hierarchical_decoding: bool = Field(
+        default=True,
+        description="Apply taxonomy-consistent post-processing (parent thresholds, child competition)"
+    )
+
+    # --- Frame extraction parameters ---
+    frame_selection: FrameSelectionMethod = Field(
+        default=FrameSelectionMethod.SCENE_BASED,
+        description="How to select frames for captioning"
+    )
+    frames_per_scene: int = Field(
+        default=16,
+        ge=1, le=32,
+        description="Frames to extract per scene (classifier trained on 16)"
     )
     sampling_interval: float = Field(
         default=2.0,
-        ge=0.1,
-        le=10.0,
-        description="Frame sampling interval in seconds"
+        ge=0.1, le=60.0,
+        description="Frame sampling interval in seconds (interval mode)"
+    )
+    select_sharpest: bool = Field(
+        default=True,
+        description="Select sharpest frames per scene using Laplacian variance"
+    )
+    sharpness_candidate_multiplier: int = Field(
+        default=3,
+        ge=1, le=10,
+        description="Extract N * frames_per_scene candidates for sharpness selection"
+    )
+    min_frame_quality: float = Field(
+        default=0.05,
+        ge=0.0, le=1.0,
+        description="Minimum quality score to accept a frame (filters black/blank frames)"
+    )
+
+    # --- Captioning parameters ---
+    use_quantization: bool = Field(
+        default=True,
+        description="Use 4-bit quantization for JoyCaption VLM (reduces VRAM ~17GB to ~8GB)"
+    )
+
+    # --- Scene metadata overrides (optional, fetched from Stash if not provided) ---
+    details: Optional[str] = Field(
+        default=None,
+        description="Promotional/editorial scene description (promo_desc)"
+    )
+    sprite_vtt_url: Optional[str] = Field(
+        default=None,
+        description="URL to sprite VTT file for sprite_sheet frame selection"
+    )
+    sprite_image_url: Optional[str] = Field(
+        default=None,
+        description="URL to sprite grid image for sprite_sheet frame selection"
     )
     scene_boundaries: Optional[List[Dict[str, float]]] = Field(
         default=None,
-        description="Scene boundaries from scenes-service (start_timestamp, end_timestamp)"
+        description="Pre-computed scene boundaries [{start_timestamp, end_timestamp}, ...]"
     )
 
 
 class AnalyzeSemanticsRequest(BaseModel):
-    """Request to analyze scene semantics"""
+    """Request to analyze scene semantics via tag classification pipeline."""
 
     source: str = Field(..., description="Video path or URL")
-    source_id: str = Field(..., description="Scene identifier for reference")
+    source_id: str = Field(..., description="Scene identifier (required)")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     frame_extraction_job_id: Optional[str] = Field(
         default=None,
@@ -83,86 +170,29 @@ class AnalyzeSemanticsRequest(BaseModel):
         default=None,
         description="Job ID from Scenes Service (fetch pre-computed scene boundaries)"
     )
+    custom_taxonomy: Optional[Union[str, List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Custom taxonomy override: URL to fetch JSON, or inline array of Stash Tag objects "
+                    "(from findTags query). Overrides the taxonomy loaded at startup."
+    )
     parameters: SemanticsParameters = Field(default_factory=SemanticsParameters)
 
 
-class SemanticTag(BaseModel):
-    """Individual semantic tag with confidence"""
-
-    tag: str = Field(..., description="Tag label")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score from CLIP/SigLIP")
-    source: str = Field(
-        ...,
-        description="Tag source type: 'predefined', 'custom_prompt', or 'zero_shot'"
-    )
-
-
-class SceneClassification(BaseModel):
-    """Hierarchical scene classification"""
-
-    setting: Optional[str] = Field(None, description="Scene setting (indoor/outdoor)")
-    location: Optional[str] = Field(None, description="Location type (kitchen, bedroom, etc.)")
-    activity: Optional[str] = Field(None, description="Primary activity")
-
-
-class FrameSemantics(BaseModel):
-    """Per-frame semantic analysis results"""
-
-    frame_index: int
-    timestamp: float
-    tags: List[SemanticTag]
-    embedding: Optional[List[float]] = Field(
-        None,
-        description="Multi-modal embedding (512-D for SigLIP-B)"
-    )
-    scene_classification: Optional[SceneClassification] = None
-
-
-class SceneSemanticSummary(BaseModel):
-    """Aggregated semantic summary for a scene"""
-
-    start_timestamp: float
-    end_timestamp: float
-    dominant_tags: List[str] = Field(description="Most frequent tags across frames")
-    frame_count: int
-    avg_confidence: float = Field(ge=0.0, le=1.0)
-
-
-class SemanticsMetadata(BaseModel):
-    """Processing metadata"""
-
-    source: str
-    source_type: Optional[str] = Field(default="video", description="Source type: 'video', 'image', or 'url'")
-    total_frames: int
-    model: str
-    frames_analyzed: int
-    processing_time_seconds: float
-    device: str = Field(description="Device used: 'cuda' or 'cpu'")
-    batch_size: int
-    total_tags_generated: int
-
-
-class SceneSemanticsOutcome(BaseModel):
-    """Semantic analysis results for a scene"""
-
-    frames: List[FrameSemantics]
-    scene_summaries: Optional[List[SceneSemanticSummary]] = None
-    metadata: SemanticsMetadata
-
+# ---------------------------------------------------------------------------
+# Response models
+# ---------------------------------------------------------------------------
 
 class AnalyzeSemanticsResponse(BaseModel):
     """Response for semantics analysis job submission"""
-
     job_id: str
     status: JobStatus
     message: Optional[str] = None
     created_at: str
-    cache_hit: bool = Field(default=False, description="Whether results were retrieved from cache")
+    cache_hit: bool = Field(default=False)
 
 
 class JobStatusResponse(BaseModel):
     """Job status response"""
-
     job_id: str
     status: JobStatus
     progress: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -172,57 +202,115 @@ class JobStatusResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
+    gpu_wait_position: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# Result models
+# ---------------------------------------------------------------------------
+
+class ClassifierTag(BaseModel):
+    """A tag prediction from the trained classifier"""
+    tag_id: str = Field(..., description="Stash tag ID")
+    tag_name: str = Field(..., description="Tag name")
+    score: float = Field(..., ge=0.0, le=1.0, description="Classifier confidence score")
+    path: str = Field(default="", description="Taxonomy path (e.g., 'Semantics > Apparel > Accessories')")
+    decode_type: str = Field(
+        default="direct",
+        description="How this tag was selected: 'direct' (above threshold) or 'parent_only' (activated by child)"
+    )
+
+
+class FrameCaptionResult(BaseModel):
+    """Caption for a single frame"""
+    frame_index: int
+    timestamp: float
+    caption: str = Field(..., description="JoyCaption taxonomy-prompt output")
+
+
+class SemanticsOutcome(BaseModel):
+    """Complete tag classification results for a scene"""
+    tags: List[ClassifierTag] = Field(description="Predicted tags sorted by score (descending)")
+    frame_captions: List[FrameCaptionResult] = Field(description="Per-frame captions (16 frames)")
+    scene_summary: str = Field(description="LLM narrative summary of the scene")
+    scene_embedding: Optional[List[float]] = Field(
+        default=None,
+        description="512-D scene embedding from classifier (if generate_embeddings=True)"
+    )
+
+
+class SemanticsMetadata(BaseModel):
+    """Processing metadata"""
+    source: str
+    source_id: str
+    total_frames_extracted: int
+    frames_captioned: int
+    classifier_model: str
+    caption_model: str = "fancyfeast/llama-joycaption-beta-one-hf-llava"
+    summary_model: str = "meta-llama/Llama-3.1-8B-Instruct"
+    processing_time_seconds: float
+    device: str
+    taxonomy_size: int = Field(description="Number of active tags in taxonomy")
+    has_promo: bool = Field(description="Whether promotional description was available")
+
 
 class SemanticsResults(BaseModel):
     """Complete semantics analysis results"""
-
     job_id: str
     source_id: str
     status: JobStatus
-    semantics: SceneSemanticsOutcome
+    semantics: SemanticsOutcome
     metadata: SemanticsMetadata
+
+
+# ---------------------------------------------------------------------------
+# Health / utility models
+# ---------------------------------------------------------------------------
+
+class TaxonomyStatus(BaseModel):
+    """Taxonomy loading status"""
+    loaded: bool
+    tag_count: int = 0
+    source: str = "none"
+    last_loaded: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
     """Health check response"""
-
     status: str
-    service: str
-    version: str
-    implemented: bool
-    phase: int
+    service: str = "semantics-service"
+    version: str = "2.0.0"
+    implemented: bool = True
+    phase: int = 3
     message: Optional[str] = None
-    model: Optional[str] = None
+    classifier_model: Optional[str] = None
+    classifier_loaded: bool = False
     device: Optional[str] = None
-    default_min_confidence: float
+    taxonomy: TaxonomyStatus = Field(default_factory=TaxonomyStatus)
+    default_min_confidence: float = 0.75
 
 
 class Frame(BaseModel):
     """Extracted frame metadata"""
-
     index: int
     timestamp: float
     url: str
     width: int
     height: int
 
+
 class FrameMetadata(BaseModel):
     """Metadata for a single extracted frame"""
-
     video_path: str
     extraction_method: str
     total_frames: int
     video_duration_seconds: float
     video_fps: float
     processing_time_seconds: float
-    enhancement_enabled: bool = False
-    enhancement_model: Optional[str] = None
-    faces_enhanced: Optional[int] = None
-    
+
 
 class FramesExtractionResult(BaseModel):
     """Frame extraction result metadata"""
-
     job_id: str
     status: JobStatus
     cache_key: str
