@@ -33,7 +33,6 @@ export interface JobCountResponse {
     scenes: number;
     semantics: number;
     objects?: number;
-    captions?: number;
   };
 }
 
@@ -53,7 +52,7 @@ export interface JobFilters {
 // Vision API Types
 // ============================================
 
-export type ServiceName = "vision" | "faces" | "scenes" | "semantics" | "objects" | "captions";
+export type ServiceName = "vision" | "faces" | "scenes" | "semantics" | "objects";
 
 export interface ServiceJobInfo {
   service: string;
@@ -87,7 +86,6 @@ export interface JobResults {
   faces?: FacesResult;
   semantics?: SemanticsResult;
   objects?: Record<string, unknown>;
-  captions?: CaptionsResult;
   metadata: JobMetadata;
 }
 
@@ -217,206 +215,50 @@ export interface ScenesResult {
 }
 
 // ============================================
-// Semantics Types
+// Semantics Types (Tag Classifier)
 // ============================================
 
-export interface SemanticTag {
-  tag: string;
-  confidence: number;
-  source: "predefined" | "custom_prompt" | "zero_shot";
+export interface ClassifierTag {
+  tag_id: string;
+  tag_name: string;
+  score: number;
+  path: string;
+  decode_type: "direct" | "parent_only";
 }
 
-export interface SceneClassification {
-  setting?: string;
-  location?: string;
-  activity?: string;
-}
-
-export interface FrameSemantics {
+export interface FrameCaptionResult {
   frame_index: number;
   timestamp: number;
-  tags: SemanticTag[];
-  embedding?: number[];
-  scene_classification?: SceneClassification;
-}
-
-export interface SceneSemanticSummary {
-  start_timestamp: number;
-  end_timestamp: number;
-  dominant_tags: string[];
-  frame_count: number;
-  avg_confidence: number;
+  caption: string;
 }
 
 export interface SemanticsMetadata {
   source: string;
-  source_type: string;
-  total_frames: number;
-  model: string;
-  frames_analyzed: number;
+  source_id: string;
+  total_frames_extracted: number;
+  frames_captioned: number;
+  classifier_model: string;
+  caption_model: string;
+  summary_model: string;
   processing_time_seconds: number;
   device: string;
-  batch_size: number;
-  total_tags_generated: number;
+  taxonomy_size: number;
+  has_promo: boolean;
+}
+
+export interface SemanticsOutcome {
+  tags: ClassifierTag[];
+  frame_captions: FrameCaptionResult[];
+  scene_summary: string;
+  scene_embedding?: number[];
 }
 
 export interface SemanticsResult {
   job_id: string;
   source_id: string;
   status: string;
-  frames: FrameSemantics[];
-  scene_summaries?: SceneSemanticSummary[];
+  semantics: SemanticsOutcome;
   metadata: SemanticsMetadata;
-}
-
-// ============================================
-// Captions Types
-// ============================================
-
-export interface CaptionTag {
-  tag: string;
-  confidence: number;
-  source: string;
-  stash_tag_id?: string;
-  category?: string;
-}
-
-// Person details from scene summary
-export interface PersonDetail {
-  gender?: string;
-  age_range?: string;
-  ethnicity?: string;
-  body_type?: string;
-  hair?: string;
-  expression?: string;
-  pose?: string;
-  position?: string;
-  description?: string;
-}
-
-// Cinematography information
-export interface CinematographyInfo {
-  shot_type?: string;
-  camera_angle?: string;
-  camera_movement?: string;
-  focus?: string;
-  composition?: string;
-  framing?: string;
-}
-
-// Visual style information
-export interface VisualStyle {
-  color_palette?: string[];
-  color_grading?: string;
-  contrast?: string;
-  saturation?: string;
-  film_grain?: string;
-  quality?: string;
-  visual_style?: string;
-  era_aesthetic?: string;
-}
-
-// Environment information
-export interface EnvironmentInfo {
-  time_of_day?: string;
-  weather?: string;
-  season?: string;
-  atmosphere?: string;
-  ambient_light?: string;
-}
-
-// Structured scene summary from VLM analysis
-export interface SceneSummaryData {
-  // Location
-  locale?: string;
-  setting?: string;
-  location_details?: string;
-
-  // People
-  persons?: {
-    count: number;
-    details: PersonDetail[];
-  };
-  attire?: string[];
-  interactions?: string;
-
-  // Objects and scene elements
-  objects?: string[];
-  furniture?: string[];
-  background_elements?: string[];
-  foreground_elements?: string[];
-  text_visible?: string;
-
-  // Actions
-  activities?: string[];
-  action_intensity?: string;
-
-  // Technical
-  cinematography?: CinematographyInfo;
-  visual_style?: VisualStyle;
-  environment?: EnvironmentInfo;
-  lighting?: string;
-  lighting_type?: string;
-
-  // Mood and genre
-  mood?: string;
-  tension_level?: string;
-  genre?: string;
-  sub_genre?: string;
-  content_type?: string;
-
-  // Additional context
-  narrative_context?: string;
-  notable_features?: string[];
-}
-
-export interface FrameCaption {
-  frame_index: number;
-  timestamp: number;
-  raw_caption: string;
-  tags: CaptionTag[];
-  summary?: SceneSummaryData;
-  scene_index?: number;
-  prompt_type_used: string;
-  sharpness_score?: number;
-}
-
-export interface SceneCaptionSummary {
-  scene_index: number;
-  start_timestamp: number;
-  end_timestamp: number;
-  dominant_tags: string[];
-  frame_count: number;
-  avg_confidence: number;
-  combined_caption?: string;
-}
-
-export interface CaptionsMetadata {
-  source: string;
-  total_frames: number;
-  frames_captioned: number;
-  frames_analyzed?: number;
-  model: string;
-  model_variant: string;
-  quantization: string;
-  prompt_type: string;
-  processing_time_seconds: number;
-  device: string;
-  vram_peak_mb?: number;
-  gpu_wait_time_seconds?: number;
-  sharpness_filtered?: boolean;
-}
-
-export interface CaptionsResult {
-  job_id: string;
-  source_id: string;
-  status: string;
-  captions: {
-    frames: FrameCaption[];
-    scene_summaries?: SceneCaptionSummary[];
-    metadata: CaptionsMetadata;
-  };
-  metadata: CaptionsMetadata;
 }
 
 // ============================================

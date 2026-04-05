@@ -18,7 +18,6 @@ export function JobList() {
     scenes: useJobsInfinite({ service: 'scenes', ...filters }),
     semantics: useJobsInfinite({ service: 'semantics', ...filters }),
     objects: useJobsInfinite({ service: 'objects', ...filters }),
-    captions: useJobsInfinite({ service: 'captions', ...filters })
   }
 
   // Active query driven by viewMode
@@ -73,9 +72,6 @@ export function JobList() {
           </TabsTrigger>
           <TabsTrigger value="objects">
             Objects ({counts?.by_service.objects ?? 0})
-          </TabsTrigger>
-          <TabsTrigger value="captions">
-            Captions ({counts?.by_service.captions ?? 0})
           </TabsTrigger>
         </TabsList>
 
@@ -154,20 +150,6 @@ export function JobList() {
           )}
         </TabsContent>
 
-        {/* Captions view */}
-        <TabsContent value="captions" className="mt-4">
-          {isLoading ? (
-            <JobListSkeleton />
-          ) : jobs.length === 0 ? (
-            <EmptyState message="No captions jobs found" />
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {jobs.map((job) => (
-                <JobCard key={job.job_id} job={job} />
-              ))}
-            </div>
-          )}
-        </TabsContent>
       </Tabs>
 
       {/* Lazy loading */}

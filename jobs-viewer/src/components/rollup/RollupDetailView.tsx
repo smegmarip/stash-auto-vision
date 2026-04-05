@@ -30,9 +30,8 @@ export function RollupDetailView({ jobId }: RollupDetailViewProps) {
   const services = [
     { key: "scenes", label: "Scene Detection" },
     { key: "faces", label: "Face Recognition" },
-    { key: "semantics", label: "Semantic Analysis" },
+    { key: "semantics", label: "Tag Classification" },
     { key: "objects", label: "Object Detection" },
-    { key: "captions", label: "Video Captioning" },
   ];
 
   return (

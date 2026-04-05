@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Users, Layers, Sparkles, Box, ChevronRight, MessageSquare } from 'lucide-react'
+import { Users, Layers, Sparkles, Box, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ServiceSummaryProps {
@@ -15,7 +15,6 @@ const serviceIcons: Record<string, React.ReactNode> = {
   scenes: <Layers className="h-5 w-5" />,
   semantics: <Sparkles className="h-5 w-5" />,
   objects: <Box className="h-5 w-5" />,
-  captions: <MessageSquare className="h-5 w-5" />,
 }
 
 const serviceColors: Record<string, string> = {
@@ -23,14 +22,12 @@ const serviceColors: Record<string, string> = {
   scenes: 'bg-green-500',
   semantics: 'bg-purple-500',
   objects: 'bg-orange-500',
-  captions: 'bg-pink-500',
 }
 
 export function ServiceSummary({ service, label, data, className }: ServiceSummaryProps) {
   const hasData = data && Object.keys(data).length > 0
   const isNotImplemented = data && (data as { status?: string }).status === 'not_implemented'
 
-  // Extract summary metrics based on service type
   const getSummary = () => {
     if (!hasData || isNotImplemented) return null
 
@@ -60,40 +57,28 @@ export function ServiceSummary({ service, label, data, className }: ServiceSumma
           </div>
         )
       }
-      case 'captions': {
-        type CaptionFrame = { tags?: { tag: string }[]; summary?: Record<string, unknown> }
-        const captions = data as {
-          captions?: { frames?: CaptionFrame[] };
-          metadata?: {
-            frames_captioned?: number;
-            prompt_type?: string;
-            sharpness_filtered?: boolean;
-          }
+      case 'semantics': {
+        type TagItem = { tag_name: string; score: number; decode_type: string }
+        const sem = data as {
+          semantics?: { tags?: TagItem[] };
+          metadata?: { classifier_model?: string; processing_time_seconds?: number }
         }
-        const frames = captions.captions?.frames || []
-        const uniqueTags = new Set<string>()
-        let framesWithSummary = 0
-        frames.forEach((f: CaptionFrame) => {
-          f.tags?.forEach(t => uniqueTags.add(t.tag))
-          if (f.summary) framesWithSummary++
-        })
+        const tags = sem.semantics?.tags || []
+        const directCount = tags.filter((t: TagItem) => t.decode_type === 'direct').length
         return (
           <div className="flex flex-wrap gap-2 mt-2">
             <Badge variant="outline">
-              {captions.metadata?.frames_captioned || frames.length || 0} frames
+              {tags.length} tags
             </Badge>
-            {uniqueTags.size > 0 && (
-              <Badge variant="outline">
-                {uniqueTags.size} tags
-              </Badge>
-            )}
-            {framesWithSummary > 0 && (
+            {directCount > 0 && directCount !== tags.length && (
               <Badge variant="secondary">
-                {framesWithSummary} summaries
+                {directCount} direct
               </Badge>
             )}
-            {captions.metadata?.prompt_type === 'scene_summary' && (
-              <Badge variant="secondary">Structured</Badge>
+            {sem.metadata?.classifier_model && (
+              <Badge variant="secondary">
+                {sem.metadata.classifier_model}
+              </Badge>
             )}
           </div>
         )

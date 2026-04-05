@@ -5,7 +5,6 @@ import { RollupDetailView } from '@/components/rollup/RollupDetailView'
 import { FacesDetailView } from '@/components/faces/FacesDetailView'
 import { ScenesDetailView } from '@/components/scenes/ScenesDetailView'
 import { SemanticsDetailView } from '@/components/semantics/SemanticsDetailView'
-import { CaptionsDetailView } from '@/components/captions/CaptionsDetailView'
 
 export function JobDetailPage() {
   const { jobId, service } = useParams<{ jobId: string; service?: string }>()
@@ -21,11 +20,9 @@ export function JobDetailPage() {
       case 'scenes':
         return 'Scene Detection Results'
       case 'semantics':
-        return 'Semantic Analysis Results'
+        return 'Tag Classification Results'
       case 'objects':
         return 'Object Detection Results'
-      case 'captions':
-        return 'Video Captioning Results'
       default:
         return 'Job Details'
     }
@@ -45,8 +42,6 @@ export function JobDetailPage() {
             Objects service not yet implemented
           </div>
         )
-      case 'captions':
-        return <CaptionsDetailView jobId={jobId} />
       default:
         return <RollupDetailView jobId={jobId} />
     }
