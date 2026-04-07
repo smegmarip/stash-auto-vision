@@ -434,7 +434,7 @@ components:
         semantics:
           type: object
           nullable: true
-          description: Semantics results (SigLIP scene classification)
+          description: Semantics results (tag classification)
         objects:
           type: object
           nullable: true
@@ -767,12 +767,16 @@ The Vision API combines results from all enabled services into a single unified 
   },
   "semantics": {
     "status": "completed",
-    "frames": [...],
-    "scene_summaries": [...],
+    "semantics": {
+      "tags": [...],
+      "frame_captions": [...],
+      "scene_summary": "..."
+    },
     "metadata": {
-      "model": "google/siglip-base-patch16-224",
-      "frames_analyzed": 60,
-      "processing_time_seconds": 4.2
+      "classifier_model": "text-only",
+      "frames_captioned": 16,
+      "taxonomy_size": 492,
+      "processing_time_seconds": 45.2
     }
   },
   "objects": {
@@ -910,8 +914,10 @@ response = requests.get("http://localhost:5010/vision/health")
     },
     "semantics": {
       "status": "healthy",
-      "model": "google/siglip-base-patch16-224",
-      "embedding_dim": 768
+      "classifier_model": "text-only",
+      "classifier_loaded": true,
+      "device": "cuda",
+      "taxonomy": {"loaded": true, "tag_count": 492}
     },
     "objects": {
       "status": "healthy",

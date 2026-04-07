@@ -3,6 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { createServer } from 'http'
+import Redis from 'ioredis'
 import { setupWebSocket } from './websocket.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -12,6 +13,15 @@ const app = express()
 const PORT = process.env.PORT || 5020
 const VISION_API_URL = process.env.VISION_API_URL || 'http://vision-api:5010'
 const FRAME_SERVER_URL = process.env.FRAME_SERVER_URL || 'http://frame-server:5001'
+const STASH_URL = process.env.STASH_URL || ''
+const REDIS_URL = process.env.REDIS_URL || 'redis://vision-redis:6379/0'
+
+// Redis client for admin operations (cache clearing)
+const redis = new Redis(REDIS_URL, {
+  lazyConnect: true,
+  maxRetriesPerRequest: 3,
+})
+redis.on('error', (err) => console.error('[Redis Error]', err.message))
 
 // Logging middleware
 app.use((req, _res, next) => {
@@ -77,6 +87,50 @@ app.get('/api/proxy', async (req, res) => {
   } catch (err) {
     console.error('[Proxy Error]', err)
     res.status(500).json({ error: 'Failed to proxy resource' })
+  }
+})
+
+// Client config (exposes STASH_URL for screenshot/tag image URLs)
+app.get('/api/config', (_req, res) => {
+  res.json({ stashUrl: STASH_URL })
+})
+
+// Clear job-related Redis keys across all services.
+// Deletes job metadata, results, queue state, and caches for:
+// vision, semantics, faces, scenes, objects, frames
+app.post('/api/admin/clear-cache', async (_req, res) => {
+  try {
+    const patterns = [
+      'vision:*',
+      'semantics:*',
+      'faces:*',
+      'scenes:*',
+      'objects:*',
+      'frames:*',
+    ]
+    const deletedByPattern: Record<string, number> = {}
+    let total = 0
+
+    for (const pattern of patterns) {
+      let cursor = '0'
+      let patternCount = 0
+      do {
+        const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500)
+        cursor = next
+        if (keys.length > 0) {
+          const deleted = await redis.del(...keys)
+          patternCount += deleted
+          total += deleted
+        }
+      } while (cursor !== '0')
+      deletedByPattern[pattern] = patternCount
+    }
+
+    console.log(`[Cache Clear] Deleted ${total} keys:`, deletedByPattern)
+    res.json({ success: true, total, deleted: deletedByPattern })
+  } catch (err) {
+    console.error('[Cache Clear Error]', err)
+    res.status(500).json({ error: 'Failed to clear cache', message: (err as Error).message })
   }
 })
 

@@ -35,10 +35,10 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 **Phase 2 & 3 (Complete ✅):**
 
 - Trained multi-view bi-encoder tag classifier (99.2% match rate)
-- Pipeline: frame extraction, JoyCaption beta-one captioning, Llama 3.1 8B narrative summary, tag classification
+- Pipeline: scene resolution from Stash, sprite frame extraction, JoyCaption beta-one captioning, Llama 3.1 8B narrative summary, tag classification
 - Taxonomy pre-loading from Stash at startup via STASH_URL + SEMANTICS_TAG_ID
-- Scene-aware semantic analysis with vision-api orchestration
-- Standalone mode with scenes_job_id parameter
+- Scene data fetched from Stash via findScene(source_id) — sprites, details, performers
+- Sprite sheets as default frame source; scene-based/interval as fallback
 - Resource manager for GPU orchestration
 - Replaces previous SigLIP zero-shot and JoyCaption alpha-two captioning services
 
@@ -135,8 +135,10 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 **semantics-service** (Phase 3 Complete ✅)
 
 - Trained multi-view bi-encoder tag classifier (99.2% match rate)
+- Scene data resolved from Stash via `source_id` (sprites, details, performers)
+- Sprite sheets as default frame source (no video decoding required)
 - JoyCaption beta-one per-frame captioning (~8GB VRAM, loaded/unloaded per job)
-- Llama 3.1 8B narrative summary via external API
+- Llama 3.1 8B narrative summary via external API (with scene metadata)
 - Tag classifier ~1.4GB VRAM (kept loaded)
 - Taxonomy pre-loaded from Stash at startup
 - Replaces previous SigLIP and JoyCaption alpha-two services

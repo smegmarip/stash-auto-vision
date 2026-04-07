@@ -1,21 +1,26 @@
 """
-Scene summary generator via external OpenAI-compatible LLM API.
+Scene summary generator using local Llama 3.1 8B Instruct.
 
 Synthesizes frame-level captions and scene metadata into coherent narrative
 summaries. Uses the same prompt structure as the training pipeline's
 generate_scene_summaries.py to ensure consistency.
+
+Loads/unloads per job to share GPU memory with JoyCaption and the classifier.
 """
 
+import gc
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional
 
-import httpx
+import torch
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+DEFAULT_MODEL = "RedHatAI/Llama-3.1-8B-Instruct"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.3
 
@@ -63,14 +68,7 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def clean_frame_caption(caption: str) -> str:
-    """Clean a frame caption for scene summary context.
-
-    - Replaces "A photograph" / "This image" / etc. with "The frame"
-    - Removes sentences mentioning watermarks
-    - Removes sentences mentioning compression artifacts
-    - Removes sentences mentioning resolution
-    - Collapses extra whitespace
-    """
+    """Clean a frame caption for scene summary context."""
     caption = _CAPTION_MEDIUM_RE.sub("The frame", caption)
     caption = _WATERMARK_RE.sub("", caption)
     caption = _ARTIFACT_RE.sub("", caption)
@@ -99,29 +97,111 @@ def format_participants(count: int, genders: Optional[List[str]]) -> str:
 
 
 class SummaryGenerator:
-    """Generates narrative scene summaries via an external OpenAI-compatible LLM API.
+    """Generates narrative scene summaries using a local Llama model.
 
-    Designed for the semantics service pipeline. Uses httpx for async HTTP calls
-    to a vLLM, llama.cpp, or any OpenAI-compatible endpoint.
+    Follows the same load/unload pattern as CaptionGenerator to share
+    GPU memory. Call load() before generating, unload() after.
     """
 
     def __init__(
         self,
-        api_base: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        model_name: Optional[str] = None,
+        device: Optional[str] = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
-        timeout: float = 120.0,
+        cache_dir: Optional[str] = None,
     ):
-        self.api_base = (
-            api_base or os.getenv("LLM_API_BASE", "http://localhost:8000/v1")
-        )
-        self.api_key = api_key or os.getenv("LLM_API_KEY", "")
-        self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
+        self.model_name = model_name or os.getenv("SEMANTICS_LLM_MODEL", DEFAULT_MODEL)
+        self.device = device or os.getenv("SEMANTICS_LLM_DEVICE", "cuda")
         self.max_tokens = max_tokens
         self.temperature = temperature
-        self.timeout = timeout
+        self.cache_dir = cache_dir
+        self.model = None
+        self.tokenizer = None
+        self._loaded = False
+        self._vram_mb: Optional[float] = None
+
+    def load(self) -> None:
+        """Load model and tokenizer into memory.
+
+        On CUDA: uses 4-bit NF4 quantization to fit alongside the classifier
+        in 16GB VRAM (full bfloat16 would need ~16GB on its own).
+        On CPU: uses bfloat16 (native Llama precision).
+        """
+        if self._loaded:
+            return
+
+        logger.info("Loading summary model: %s (device=%s)", self.model_name, self.device)
+        start = time.time()
+
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+            model_kwargs: Dict[str, Any] = {"trust_remote_code": True}
+            if self.cache_dir:
+                model_kwargs["cache_dir"] = self.cache_dir
+
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, **model_kwargs)
+
+            if self.device == "cpu":
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.bfloat16,
+                    device_map="cpu",
+                    low_cpu_mem_usage=True,
+                    **model_kwargs,
+                )
+            else:
+                logger.info("Using 8-bit quantization for summary model")
+                quantization_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                )
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    quantization_config=quantization_config,
+                    device_map="auto",
+                    torch_dtype=torch.bfloat16,
+                    low_cpu_mem_usage=True,
+                    **model_kwargs,
+                )
+
+            self.model.eval()
+            self._loaded = True
+
+            if self.device == "cuda":
+                torch.cuda.synchronize()
+                self._vram_mb = torch.cuda.memory_allocated() / (1024 * 1024)
+
+            elapsed = time.time() - start
+            logger.info("Summary model loaded in %.1fs (device=%s, VRAM: %.0fMB)", elapsed, self.device, self._vram_mb or 0)
+
+        except Exception:
+            logger.exception("Failed to load summary model")
+            raise
+
+    def unload(self) -> None:
+        """Free GPU memory by unloading model and tokenizer."""
+        if not self._loaded:
+            return
+
+        logger.info("Unloading summary model")
+        del self.model
+        del self.tokenizer
+        self.model = None
+        self.tokenizer = None
+        self._loaded = False
+        self._vram_mb = None
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
+        logger.info("Summary model unloaded")
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
 
     def _build_prompt(
         self,
@@ -132,36 +212,18 @@ class SummaryGenerator:
         performer_genders: Optional[List[str]] = None,
         resolution: str = "Unknown",
     ) -> str:
-        """Build the summary prompt from frame captions and metadata.
-
-        Args:
-            frame_captions: List of dicts with keys frame_index, timestamp, caption.
-            promo_desc: Promotional description of the scene.
-            duration: Scene duration in seconds.
-            performer_count: Number of performers.
-            performer_genders: List of gender strings.
-            resolution: Resolution string like "1920x1080".
-
-        Returns:
-            Formatted prompt string ready for the LLM.
-        """
+        """Build the summary prompt from frame captions and metadata."""
         duration_str = format_duration(duration if duration else None)
         participants_str = format_participants(performer_count, performer_genders)
         promotional_summary = promo_desc or "Not available"
 
-        # Format frame descriptions with timestamps
         frame_lines: List[str] = []
         for frame in frame_captions:
             timestamp = frame.get("timestamp", 0)
             caption = clean_frame_caption(frame.get("caption", ""))
-
             mins = int(timestamp // 60)
             secs = int(timestamp % 60)
-            ts_str = f"{mins:02d}:{secs:02d}"
-
-            frame_lines.append(f"[{ts_str}] {caption}")
-
-        frame_descriptions = "\n".join(frame_lines)
+            frame_lines.append(f"[{mins:02d}:{secs:02d}] {caption}")
 
         return SUMMARY_PROMPT_TEMPLATE.format(
             duration_str=duration_str,
@@ -169,10 +231,10 @@ class SummaryGenerator:
             resolution=resolution,
             participants_str=participants_str,
             promotional_summary=promotional_summary,
-            frame_descriptions=frame_descriptions,
+            frame_descriptions="\n".join(frame_lines),
         )
 
-    async def generate_summary(
+    def generate_summary(
         self,
         frame_captions: List[Dict[str, Any]],
         promo_desc: str = "",
@@ -180,24 +242,26 @@ class SummaryGenerator:
         performer_count: int = 0,
         performer_genders: Optional[List[str]] = None,
         resolution: str = "Unknown",
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> str:
         """Generate a narrative summary from frame captions and metadata.
 
+        Uses streaming generation so progress can be reported token-by-token.
+        The model must be loaded via load() before calling this method.
+        Call via asyncio.to_thread() to avoid blocking the event loop.
+
         Args:
-            frame_captions: List of {frame_index, timestamp, caption} dicts.
-            promo_desc: Promotional description (optional).
-            duration: Scene duration in seconds.
-            performer_count: Number of performers.
-            performer_genders: List of gender strings.
-            resolution: Resolution string like "1920x1080".
+            progress_callback: Optional callable(tokens_generated, max_tokens)
+                invoked as tokens stream out. Runs in the calling thread.
 
         Returns:
             Narrative summary text (2-4 paragraphs).
-
-        Raises:
-            httpx.HTTPStatusError: On non-2xx response from LLM API.
-            httpx.ConnectError: If LLM API is unreachable.
         """
+        if not self._loaded:
+            raise RuntimeError("Summary model not loaded. Call load() first.")
+
+        from transformers import TextIteratorStreamer
+
         prompt = self._build_prompt(
             frame_captions=frame_captions,
             promo_desc=promo_desc,
@@ -207,58 +271,70 @@ class SummaryGenerator:
             resolution=resolution,
         )
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-        }
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
 
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        inputs = self.tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True)
+        if hasattr(inputs, "input_ids"):
+            input_ids = inputs["input_ids"].to(self.model.device)
+        elif isinstance(inputs, torch.Tensor):
+            input_ids = inputs.to(self.model.device)
+        else:
+            input_ids = torch.tensor(inputs, dtype=torch.long).to(self.model.device)
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
 
-        url = f"{self.api_base.rstrip('/')}/chat/completions"
+        input_len = input_ids.shape[-1]
+        logger.debug("Generating summary (%d input tokens)", input_len)
 
-        logger.debug(
-            "Requesting summary from %s (model=%s, frames=%d)",
-            url,
-            self.model,
-            len(frame_captions),
+        # Run generate() in a background thread so we can iterate over the
+        # streamer in the current thread and fire progress callbacks.
+        streamer = TextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True, timeout=None
+        )
+        generation_kwargs = dict(
+            inputs=input_ids,
+            streamer=streamer,
+            max_new_tokens=self.max_tokens,
+            temperature=self.temperature,
+            do_sample=self.temperature > 0,
+            top_p=0.9,
+            pad_token_id=self.tokenizer.eos_token_id,
         )
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+        def _run_generate():
+            with torch.no_grad():
+                self.model.generate(**generation_kwargs)
 
-        data = response.json()
+        gen_thread = threading.Thread(target=_run_generate, daemon=True)
+        gen_thread.start()
 
-        try:
-            summary = data["choices"][0]["message"]["content"].strip()
-        except (KeyError, IndexError) as exc:
-            logger.error("Unexpected API response structure: %s", data)
-            raise ValueError("LLM API returned unexpected response format") from exc
+        chunks: List[str] = []
+        tokens_generated = 0
+        for text_chunk in streamer:
+            chunks.append(text_chunk)
+            # Approximate token count from whitespace split — close enough
+            # for progress reporting, avoids re-tokenizing each chunk.
+            tokens_generated += max(1, len(text_chunk.split()))
+            if progress_callback is not None:
+                try:
+                    progress_callback(tokens_generated, self.max_tokens)
+                except Exception:
+                    logger.debug("progress_callback raised", exc_info=True)
 
-        logger.debug("Generated summary (%d chars)", len(summary))
+        gen_thread.join()
+        summary = "".join(chunks).strip()
+
+        logger.debug("Generated summary (%d chars, ~%d tokens)", len(summary), tokens_generated)
         return summary
 
     async def is_available(self) -> bool:
-        """Check if the LLM API is reachable.
-
-        Returns:
-            True if the /models endpoint responds successfully, False otherwise.
-        """
-        url = f"{self.api_base.rstrip('/')}/models"
+        """Check if the summary model can be loaded."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url)
-            return response.status_code == 200
-        except httpx.HTTPError:
-            logger.debug("LLM API not reachable at %s", url)
-            return False
+            from transformers import AutoTokenizer
+            AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
+            return True
         except Exception:
-            logger.debug("Unexpected error checking LLM API availability", exc_info=True)
             return False

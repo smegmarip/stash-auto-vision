@@ -5,7 +5,7 @@ info:
     and object detection capabilities.\n\nArchitecture: Microservices (6 services) coordinated via Vision API rollup endpoint.\n\
     \nServices:\n- Frame Server (port 5001) - Frame extraction and caching\n- Scenes Service (port 5002) - Scene boundary
     detection\n- Faces Service (port 5003) - Face detection, recognition, and quality assessment\n- Semantics Service (port
-    5004) - SigLIP/CLIP-based scene understanding (Phase 2 implemented)\n- Objects Service (port 5005) - YOLO-World object
+    5004) - Tag classification with trained multi-view bi-encoder (Phase 3)\n- Objects Service (port 5005) - YOLO-World object
     detection (stub - Phase 3)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010)
     - Orchestration and rollup endpoint\n\nFor detailed service documentation, see:\n- docs/FRAME_SERVER.md\n- docs/SCENES_SERVICE.md\n\
     - docs/FACES_SERVICE.md\n- docs/SEMANTICS_SERVICE.md\n- docs/OBJECTS_SERVICE.md\n- docs/VISION_API.md\n"
@@ -216,7 +216,7 @@ paths:
         for pagination and tab displays.\nIt uses the same filtering logic as /vision/jobs but only counts jobs\nwithout fetching
         full metadata or results.\n\nReturns:\n    {\n        \"total\": 147,\n        \"by_service\": {\n            \"vision\"\
         : 23,\n            \"faces\": 47,\n            \"scenes\": 45,\n            \"semantics\": 32,\n            \"objects\"\
-        : 0\n        }\n    }"
+        : 0,\n        }\n    }"
       operationId: count_jobs_vision_jobs_count_get
       parameters:
       - name: status
@@ -716,7 +716,7 @@ paths:
   /semantics/analyze:
     post:
       summary: Analyze Semantics
-      description: Submit semantics analysis job
+      description: Submit tag classification analysis job.
       operationId: analyze_semantics_semantics_analyze_post
       requestBody:
         content:
@@ -742,7 +742,7 @@ paths:
   /semantics/jobs/{job_id}/status:
     get:
       summary: Get Job Status
-      description: Get job status
+      description: Get job status.
       operationId: get_job_status_semantics_jobs__job_id__status_get
       parameters:
       - name: job_id
@@ -769,7 +769,7 @@ paths:
   /semantics/jobs/{job_id}/results:
     get:
       summary: Get Job Results
-      description: Get job results
+      description: Get job results.
       operationId: get_job_results_semantics_jobs__job_id__results_get
       parameters:
       - name: job_id
@@ -783,8 +783,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/SemanticsResults'
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -796,7 +795,7 @@ paths:
   /semantics/health:
     get:
       summary: Health Check
-      description: Health check endpoint
+      description: Health check endpoint.
       operationId: health_check_semantics_health_get
       responses:
         '200':
@@ -900,6 +899,166 @@ paths:
               schema: {}
       tags:
       - objects
+      - health
+  /resources/gpu/request:
+    post:
+      summary: Request Gpu
+      description: "Request GPU access\n\nServices call this to request exclusive GPU access.\nIf GPU is available and has
+        enough VRAM, access is granted immediately.\nOtherwise, the request is queued based on priority."
+      operationId: request_gpu_resources_gpu_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPURequestInput'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GPURequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
+  /resources/gpu/request/{request_id}:
+    get:
+      summary: Get Request Status
+      description: "Get status of a GPU request\n\nPoll this endpoint to check if a queued request has been granted."
+      operationId: get_request_status_resources_gpu_request__request_id__get
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
+  /resources/gpu/wait/{request_id}:
+    post:
+      summary: Wait For Gpu
+      description: "Wait for GPU access to be granted\n\nBlocks until the request is granted or times out."
+      operationId: wait_for_gpu_resources_gpu_wait__request_id__post
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
+  /resources/gpu/release:
+    post:
+      summary: Release Gpu
+      description: "Release GPU access\n\nServices must call this when done with GPU to allow other services to use it."
+      operationId: release_gpu_resources_gpu_release_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPUReleaseInput'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GPUReleaseResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
+  /resources/gpu/heartbeat:
+    post:
+      summary: Heartbeat
+      description: "Send heartbeat to keep lease alive\n\nServices must send periodic heartbeats to prevent lease expiration."
+      operationId: heartbeat_resources_gpu_heartbeat_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPUHeartbeatInput'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GPUHeartbeatResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
+  /resources/gpu/status:
+    get:
+      summary: Get Gpu Status
+      description: "Get current GPU resource status\n\nReturns information about active leases, available VRAM, and queue."
+      operationId: get_gpu_status_resources_gpu_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GPUStatusResponse'
+      tags:
+      - resources
+  /resources/health:
+    get:
+      summary: Health Check
+      description: Health check endpoint
+      operationId: health_check_resources_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      tags:
+      - resources
       - health
   /viewer/health:
     get:
@@ -2227,11 +2386,12 @@ components:
         source:
           type: string
           title: Source
-          description: Video path or URL
+          description: Video path or URL (resolved from Stash if empty)
+          default: ''
         source_id:
           type: string
           title: Source Id
-          description: Scene identifier for reference
+          description: Scene identifier (required)
         job_id:
           anyOf:
           - type: string
@@ -2250,14 +2410,23 @@ components:
           - type: 'null'
           title: Scenes Job Id
           description: Job ID from Scenes Service (fetch pre-computed scene boundaries)
+        custom_taxonomy:
+          anyOf:
+          - type: string
+          - items:
+              type: object
+            type: array
+          - type: 'null'
+          title: Custom Taxonomy
+          description: 'Custom taxonomy override: URL to fetch JSON, or inline array of Stash Tag objects (from findTags query).
+            Overrides the taxonomy loaded at startup.'
         parameters:
           $ref: '#/components/schemas/SemanticsParameters'
       type: object
       required:
-      - source
       - source_id
       title: AnalyzeSemanticsRequest
-      description: Request to analyze scene semantics
+      description: Request to analyze scene semantics via tag classification pipeline.
     AnalyzeSemanticsResponse:
       properties:
         job_id:
@@ -2276,7 +2445,6 @@ components:
         cache_hit:
           type: boolean
           title: Cache Hit
-          description: Whether results were retrieved from cache
           default: false
       type: object
       required:
@@ -2285,23 +2453,14 @@ components:
       - created_at
       title: AnalyzeSemanticsResponse
       description: Response for semantics analysis job submission
-    FrameSemantics:
-      type: object
-      properties:
-        frame_index:
-          type: integer
-        timestamp:
-          type: number
-        tags:
-          type: array
-          items:
-            $ref: '#/components/schemas/SemanticTag'
-        embedding:
-          type: array
-          items:
-            type: number
-        scene_classification:
-          $ref: '#/components/schemas/SceneClassification'
+    FrameSelectionMethod:
+      type: string
+      enum:
+      - scene_based
+      - interval
+      - sprite_sheet
+      title: FrameSelectionMethod
+      description: Frame selection strategies
     JobStatusResponse:
       type: object
       properties:
@@ -2343,146 +2502,98 @@ components:
       - processing_mode
       - services
       - created_at
-    SceneClassification:
-      type: object
-      properties:
-        setting:
-          type: string
-        location:
-          type: string
-        activity:
-          type: string
-    SceneSemanticSummary:
-      type: object
-      properties:
-        start_timestamp:
-          type: number
-        end_timestamp:
-          type: number
-        dominant_tags:
-          type: array
-          items:
-            type: string
-        frame_count:
-          type: integer
-        avg_confidence:
-          type: number
-    SceneSemanticsOutcome:
-      properties:
-        frames:
-          items:
-            $ref: '#/components/schemas/FrameSemantics'
-          type: array
-          title: Frames
-        scene_summaries:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/SceneSemanticSummary'
-            type: array
-          - type: 'null'
-          title: Scene Summaries
-        metadata:
-          $ref: '#/components/schemas/SemanticsMetadata'
-      type: object
-      required:
-      - frames
-      - metadata
-      title: SceneSemanticsOutcome
-      description: Semantic analysis results for a scene
-    SemanticTag:
-      type: object
-      properties:
-        tag:
-          type: string
-        confidence:
-          type: number
-        source:
-          type: string
-          enum:
-          - predefined
-          - custom_prompt
-          - zero_shot
-      required:
-      - tag
-      - confidence
-      - source
-    SemanticsMetadata:
-      type: object
-      properties:
-        source:
-          type: string
-        source_type:
-          type: string
-        total_frames:
-          type: integer
-        model:
-          type: string
-        frames_analyzed:
-          type: integer
-        processing_time_seconds:
-          type: number
-        device:
-          type: string
-        batch_size:
-          type: integer
-        total_tags_generated:
-          type: integer
     SemanticsParameters:
       properties:
-        model:
+        model_variant:
           type: string
-          title: Model
-          description: CLIP/SigLIP model variant
-          default: google/siglip-base-patch16-224
-        classification_tags:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Classification Tags
-          description: Predefined tags for zero-shot classification
-        custom_prompts:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Custom Prompts
-          description: Custom text prompts for zero-shot classification
-        generate_embeddings:
-          type: boolean
-          title: Generate Embeddings
-          description: Generate multi-modal embeddings for similarity search
-          default: true
+          title: Model Variant
+          description: "Classifier model variant: 'vision', 'text-only', or path to checkpoint"
+          default: text-only
         min_confidence:
           type: number
           maximum: 1.0
           minimum: 0.0
           title: Min Confidence
-          description: Minimum confidence threshold for tag assignment
-          default: 0.5
+          description: Minimum confidence threshold for tag predictions
+          default: 0.75
         top_k_tags:
           type: integer
-          maximum: 20.0
+          maximum: 100.0
           minimum: 1.0
           title: Top K Tags
-          description: Maximum number of tags to return per frame
-          default: 5
-        batch_size:
+          description: Maximum number of tags to return
+          default: 30
+        generate_embeddings:
+          type: boolean
+          title: Generate Embeddings
+          description: Return 512-D scene embeddings from the classifier
+          default: false
+        use_hierarchical_decoding:
+          type: boolean
+          title: Use Hierarchical Decoding
+          description: Apply taxonomy-consistent post-processing (parent thresholds, child competition)
+          default: true
+        frame_selection:
+          allOf:
+          - $ref: '#/components/schemas/FrameSelectionMethod'
+          description: How to select frames for captioning
+          default: sprite_sheet
+        frames_per_scene:
           type: integer
-          maximum: 128.0
+          maximum: 32.0
           minimum: 1.0
-          title: Batch Size
-          description: Batch size for inference
-          default: 32
+          title: Frames Per Scene
+          description: Frames to extract per scene (classifier trained on 16)
+          default: 16
         sampling_interval:
           type: number
-          maximum: 10.0
+          maximum: 60.0
           minimum: 0.1
           title: Sampling Interval
-          description: Frame sampling interval in seconds
+          description: Frame sampling interval in seconds (interval mode)
           default: 2.0
+        select_sharpest:
+          type: boolean
+          title: Select Sharpest
+          description: Select sharpest frames per scene using Laplacian variance
+          default: true
+        sharpness_candidate_multiplier:
+          type: integer
+          maximum: 10.0
+          minimum: 1.0
+          title: Sharpness Candidate Multiplier
+          description: Extract N * frames_per_scene candidates for sharpness selection
+          default: 3
+        min_frame_quality:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Min Frame Quality
+          description: Minimum quality score to accept a frame (filters black/blank frames)
+          default: 0.05
+        use_quantization:
+          type: boolean
+          title: Use Quantization
+          description: Use 4-bit quantization for JoyCaption VLM (reduces VRAM ~17GB to ~8GB)
+          default: true
+        details:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Details
+          description: Promotional/editorial scene description (promo_desc)
+        sprite_vtt_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Vtt Url
+          description: URL to sprite VTT file for sprite_sheet frame selection
+        sprite_image_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sprite Image Url
+          description: URL to sprite grid image for sprite_sheet frame selection
         scene_boundaries:
           anyOf:
           - items:
@@ -2492,33 +2603,318 @@ components:
             type: array
           - type: 'null'
           title: Scene Boundaries
-          description: Scene boundaries from scenes-service (start_timestamp, end_timestamp)
+          description: Pre-computed scene boundaries [{start_timestamp, end_timestamp}, ...]
       type: object
       title: SemanticsParameters
-      description: Semantics analysis configuration
-    SemanticsResults:
+      description: "Unified parameters for the tag classification pipeline.\n\nCovers frame extraction, captioning, summarization,
+        and classification."
+    TaxonomyStatus:
       properties:
-        job_id:
+        loaded:
+          type: boolean
+          title: Loaded
+        tag_count:
+          type: integer
+          title: Tag Count
+          default: 0
+        source:
           type: string
-          title: Job Id
-        source_id:
-          type: string
-          title: Source Id
-        status:
-          $ref: '#/components/schemas/JobStatus'
-        semantics:
-          $ref: '#/components/schemas/SceneSemanticsOutcome'
-        metadata:
-          $ref: '#/components/schemas/SemanticsMetadata'
+          title: Source
+          default: none
+        last_loaded:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Loaded
       type: object
       required:
-      - job_id
-      - source_id
+      - loaded
+      title: TaxonomyStatus
+      description: Taxonomy loading status
+    DeviceType:
+      type: string
+      enum:
+      - cuda
+      - mps
+      - rocm
+      - cpu
+      - virtual
+      title: DeviceType
+      description: Compute device type
+    GPUHeartbeatInput:
+      properties:
+        lease_id:
+          type: string
+          title: Lease Id
+          description: Lease ID to refresh
+      type: object
+      required:
+      - lease_id
+      title: GPUHeartbeatInput
+      description: Heartbeat to keep lease alive
+    GPUHeartbeatResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+        lease_valid:
+          type: boolean
+          title: Lease Valid
+        expires_in_seconds:
+          type: number
+          title: Expires In Seconds
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - success
+      - lease_valid
+      - expires_in_seconds
+      - message
+      title: GPUHeartbeatResponse
+      description: Response to heartbeat
+    GPUInfo:
+      properties:
+        device_name:
+          type: string
+          title: Device Name
+        device_type:
+          $ref: '#/components/schemas/DeviceType'
+        device_index:
+          type: integer
+          title: Device Index
+          default: 0
+        total_memory_mb:
+          type: number
+          title: Total Memory Mb
+        driver_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Driver Version
+        compute_capability:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Compute Capability
+      type: object
+      required:
+      - device_name
+      - device_type
+      - total_memory_mb
+      title: GPUInfo
+      description: GPU/compute device hardware information
+    GPULease:
+      properties:
+        lease_id:
+          type: string
+          title: Lease Id
+        service_name:
+          type: string
+          title: Service Name
+        vram_allocated_mb:
+          type: number
+          title: Vram Allocated Mb
+        granted_at:
+          type: string
+          title: Granted At
+        expires_at:
+          type: string
+          title: Expires At
+        last_heartbeat:
+          type: string
+          title: Last Heartbeat
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+      type: object
+      required:
+      - lease_id
+      - service_name
+      - vram_allocated_mb
+      - granted_at
+      - expires_at
+      - last_heartbeat
+      title: GPULease
+      description: Active GPU lease
+    GPUQueueEntry:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        service_name:
+          type: string
+          title: Service Name
+        vram_required_mb:
+          type: number
+          title: Vram Required Mb
+        priority:
+          type: integer
+          title: Priority
+        requested_at:
+          type: string
+          title: Requested At
+        timeout_at:
+          type: string
+          title: Timeout At
+        position:
+          type: integer
+          title: Position
+      type: object
+      required:
+      - request_id
+      - service_name
+      - vram_required_mb
+      - priority
+      - requested_at
+      - timeout_at
+      - position
+      title: GPUQueueEntry
+      description: Entry in GPU request queue
+    GPUReleaseInput:
+      properties:
+        lease_id:
+          type: string
+          title: Lease Id
+          description: Lease ID to release
+      type: object
+      required:
+      - lease_id
+      title: GPUReleaseInput
+      description: Release GPU access
+    GPUReleaseResponse:
+      properties:
+        released:
+          type: boolean
+          title: Released
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - released
+      - message
+      title: GPUReleaseResponse
+      description: Response to GPU release
+    GPURequestInput:
+      properties:
+        service_name:
+          type: string
+          title: Service Name
+          description: Name of the requesting service
+        vram_required_mb:
+          type: number
+          minimum: 0.0
+          title: Vram Required Mb
+          description: VRAM required in MB
+        priority:
+          type: integer
+          maximum: 10.0
+          minimum: 1.0
+          title: Priority
+          description: Priority (1=highest, 10=lowest)
+          default: 5
+        timeout_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 1.0
+          title: Timeout Seconds
+          description: Maximum wait time in seconds
+          default: 300.0
+        job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job Id
+          description: Associated job ID for tracking
+      type: object
+      required:
+      - service_name
+      - vram_required_mb
+      title: GPURequestInput
+      description: Request for GPU access
+    GPURequestResponse:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        granted:
+          type: boolean
+          title: Granted
+        lease_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lease Id
+        queue_position:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Queue Position
+        estimated_wait_seconds:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Wait Seconds
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - request_id
+      - granted
+      - message
+      title: GPURequestResponse
+      description: Response to GPU request
+    GPUStatusResponse:
+      properties:
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+        total_vram_mb:
+          type: number
+          title: Total Vram Mb
+        available_vram_mb:
+          type: number
+          title: Available Vram Mb
+        allocated_vram_mb:
+          type: number
+          title: Allocated Vram Mb
+        active_leases:
+          items:
+            $ref: '#/components/schemas/GPULease'
+          type: array
+          title: Active Leases
+        queue_length:
+          type: integer
+          title: Queue Length
+        queue:
+          items:
+            $ref: '#/components/schemas/GPUQueueEntry'
+          type: array
+          title: Queue
+      type: object
+      required:
       - status
-      - semantics
-      - metadata
-      title: SemanticsResults
-      description: Complete semantics analysis results
+      - total_vram_mb
+      - available_vram_mb
+      - allocated_vram_mb
+      - active_leases
+      - queue_length
+      - queue
+      title: GPUStatusResponse
+      description: Current GPU resource status
+    ResourceStatus:
+      type: string
+      enum:
+      - available
+      - in_use
+      - requested
+      - releasing
+      title: ResourceStatus
+      description: Resource allocation status
     ServiceName:
       type: string
       enum:
@@ -2691,6 +3087,97 @@ components:
             $ref: '#/components/schemas/SceneSemanticSummary'
         metadata:
           $ref: '#/components/schemas/SemanticsMetadata'
+    FrameSemantics:
+      type: object
+      properties:
+        frame_index:
+          type: integer
+        timestamp:
+          type: number
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticTag'
+        embedding:
+          type: array
+          items:
+            type: number
+        scene_classification:
+          $ref: '#/components/schemas/SceneClassification'
+    SemanticTag:
+      type: object
+      properties:
+        tag:
+          type: string
+        confidence:
+          type: number
+        source:
+          type: string
+          enum:
+          - predefined
+          - custom_prompt
+          - zero_shot
+      required:
+      - tag
+      - confidence
+      - source
+    SceneClassification:
+      type: object
+      properties:
+        setting:
+          type: string
+        location:
+          type: string
+        activity:
+          type: string
+    SceneSemanticSummary:
+      type: object
+      properties:
+        start_timestamp:
+          type: number
+        end_timestamp:
+          type: number
+        dominant_tags:
+          type: array
+          items:
+            type: string
+        frame_count:
+          type: integer
+        avg_confidence:
+          type: number
+    SemanticsMetadata:
+      type: object
+      properties:
+        source:
+          type: string
+        source_id:
+          type: string
+        total_frames_extracted:
+          type: integer
+        frames_captioned:
+          type: integer
+        classifier_model:
+          type: string
+        caption_model:
+          type: string
+        summary_model:
+          type: string
+        processing_time_seconds:
+          type: number
+        device:
+          type: string
+        taxonomy_size:
+          type: integer
+        has_promo:
+          type: boolean
+        sprite_image_url:
+          type:
+          - string
+          - 'null'
+        sprite_vtt_url:
+          type:
+          - string
+          - 'null'
   securitySchemes: {}
 security: []
 tags:
@@ -2717,7 +3204,7 @@ tags:
     description: Learn more about Faces Service
     url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FACES_SERVICE.md
 - name: semantics
-  description: Semantic scene understanding with SigLIP/CLIP
+  description: Tag classification with trained multi-view bi-encoder
   externalDocs:
     description: Learn more about Semantics Service
     url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SEMANTICS_SERVICE.md
@@ -2726,6 +3213,11 @@ tags:
   externalDocs:
     description: Learn more about Objects Service
     url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/OBJECTS_SERVICE.md
+- name: resources
+  description: GPU resource orchestration
+  externalDocs:
+    description: Learn more about Resource Manager
+    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/RESOURCE_MANAGER.md
 - name: jobs-viewer
   description: Job management and monitoring
 servers:
@@ -2741,5 +3233,7 @@ servers:
   description: Semantics Service
 - url: http://localhost:5005
   description: Objects Service
+- url: http://localhost:5007
+  description: Resource Manager Service
 - url: http://localhost:5020
   description: Jobs Viewer Service

@@ -486,14 +486,18 @@
         "type": "object",
         "properties": {
           "source": { "type": "string" },
-          "source_type": { "type": "string" },
-          "total_frames": { "type": "integer" },
-          "model": { "type": "string" },
-          "frames_analyzed": { "type": "integer" },
+          "source_id": { "type": "string" },
+          "total_frames_extracted": { "type": "integer" },
+          "frames_captioned": { "type": "integer" },
+          "classifier_model": { "type": "string" },
+          "caption_model": { "type": "string" },
+          "summary_model": { "type": "string" },
           "processing_time_seconds": { "type": "number" },
           "device": { "type": "string" },
-          "batch_size": { "type": "integer" },
-          "total_tags_generated": { "type": "integer" }
+          "taxonomy_size": { "type": "integer" },
+          "has_promo": { "type": "boolean" },
+          "sprite_image_url": { "type": ["string", "null"] },
+          "sprite_vtt_url": { "type": ["string", "null"] }
         }
       }
     }

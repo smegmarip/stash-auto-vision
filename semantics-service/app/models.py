@@ -104,7 +104,7 @@ class SemanticsParameters(BaseModel):
 
     # --- Frame extraction parameters ---
     frame_selection: FrameSelectionMethod = Field(
-        default=FrameSelectionMethod.SCENE_BASED,
+        default=FrameSelectionMethod.SPRITE_SHEET,
         description="How to select frames for captioning"
     )
     frames_per_scene: int = Field(
@@ -157,10 +157,50 @@ class SemanticsParameters(BaseModel):
     )
 
 
+class SceneContext(BaseModel):
+    """Resolved scene data for the classification pipeline.
+
+    Built from findScene GraphQL response and optionally overridden by
+    request parameters.  This is the single source of truth for all
+    pipeline steps (frame extraction, captioning, summarisation,
+    classification).
+    """
+    scene_id: str
+    source: str = ""
+    title: Optional[str] = None
+    # Sprite sheet
+    sprite_image_url: Optional[str] = None
+    sprite_vtt_url: Optional[str] = None
+    # Promo / editorial description
+    details: Optional[str] = None
+    # Video metadata
+    duration: float = 0
+    frame_rate: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    # Performers
+    performer_count: int = 0
+    performer_genders: List[str] = Field(default_factory=list)
+
+    @property
+    def has_promo(self) -> bool:
+        return bool(self.details and self.details.strip())
+
+    @property
+    def promo_desc(self) -> str:
+        return self.details or ""
+
+    @property
+    def resolution(self) -> str:
+        if self.width and self.height:
+            return f"{self.width}x{self.height}"
+        return "Unknown"
+
+
 class AnalyzeSemanticsRequest(BaseModel):
     """Request to analyze scene semantics via tag classification pipeline."""
 
-    source: str = Field(..., description="Video path or URL")
+    source: str = Field(default="", description="Video path or URL (resolved from Stash if empty)")
     source_id: str = Field(..., description="Scene identifier (required)")
     job_id: Optional[str] = Field(default=None, description="Parent job ID for tracking")
     frame_extraction_job_id: Optional[str] = Field(
@@ -248,11 +288,27 @@ class SemanticsMetadata(BaseModel):
     frames_captioned: int
     classifier_model: str
     caption_model: str = "fancyfeast/llama-joycaption-beta-one-hf-llava"
-    summary_model: str = "meta-llama/Llama-3.1-8B-Instruct"
+    summary_model: str = "RedHatAI/Llama-3.1-8B-Instruct"
     processing_time_seconds: float
     device: str
     taxonomy_size: int = Field(description="Number of active tags in taxonomy")
     has_promo: bool = Field(description="Whether promotional description was available")
+    sprite_image_url: Optional[str] = Field(default=None, description="Sprite sheet URL for frame thumbnails")
+    sprite_vtt_url: Optional[str] = Field(default=None, description="Sprite VTT URL for frame coordinates")
+    # Taxonomy tag name → ID lookup (for ancestor tag images in the UI)
+    tag_name_to_id: Dict[str, str] = Field(default_factory=dict, description="Tag name to ID mapping from taxonomy")
+    # Scene metadata from Stash
+    scene: Optional["SceneMetadata"] = Field(default=None, description="Scene metadata from Stash")
+
+
+class SceneMetadata(BaseModel):
+    """Scene metadata resolved from Stash via findScene."""
+    title: Optional[str] = None
+    duration: Optional[float] = Field(default=None, description="Duration in seconds")
+    resolution: Optional[str] = Field(default=None, description="Video resolution (e.g. 1920x1080)")
+    frame_rate: Optional[float] = None
+    performer_count: int = 0
+    performer_genders: List[str] = Field(default_factory=list)
 
 
 class SemanticsResults(BaseModel):
@@ -289,6 +345,7 @@ class HealthResponse(BaseModel):
     device: Optional[str] = None
     taxonomy: TaxonomyStatus = Field(default_factory=TaxonomyStatus)
     default_min_confidence: float = 0.75
+    queue: Optional[Dict[str, Any]] = Field(default=None, description="Queue stats: pending count, active job, worker_id")
 
 
 class Frame(BaseModel):

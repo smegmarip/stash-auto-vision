@@ -75,6 +75,8 @@ services:
       - ENABLE_ENHANCEMENT=${ENABLE_ENHANCEMENT:-false}
       - ENHANCEMENT_MODEL=${ENHANCEMENT_MODEL:-gfpgan}
       - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
+      - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
+      - STASH_API_KEY=${STASH_API_KEY:-}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -87,6 +89,8 @@ services:
       - codeformer_weights:/usr/local/lib/python3.10/site-packages/codeformer/weights
     networks:
       - vision_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -215,9 +219,12 @@ services:
       - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
       - STASH_API_KEY=${STASH_API_KEY:-}
       - SEMANTICS_TAG_ID=${SEMANTICS_TAG_ID:-}
-      - LLM_API_BASE=${LLM_API_BASE:-http://host.docker.internal:8000/v1}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_MODEL=${LLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      - SEMANTICS_LLM_MODEL=${SEMANTICS_LLM_MODEL:-RedHatAI/Llama-3.1-8B-Instruct}
+      - SEMANTICS_LLM_DEVICE=${SEMANTICS_LLM_DEVICE:-cuda}
+      - HF_TOKEN=${SEMANTICS_HF_TOKEN:-}
+      - SEMANTICS_MODEL_IDLE_TIMEOUT=${SEMANTICS_MODEL_IDLE_TIMEOUT:-300}
+      - SEMANTICS_JOB_LOCK_TTL=${SEMANTICS_JOB_LOCK_TTL:-3600}
+      - SEMANTICS_WORKER_ID=${SEMANTICS_WORKER_ID:-}
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${CACHE_TTL:-3600}
@@ -255,7 +262,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 24G
+          memory: ${SEMANTICS_MEMORY_LIMIT:-40G}
 
   objects-service:
     build:
@@ -399,8 +406,11 @@ services:
       - SEMANTICS_SERVICE_URL=http://semantics-service:5004
       - OBJECTS_SERVICE_URL=http://objects-service:5005
       - RESOURCE_MANAGER_URL=http://resource-manager:5007
+      - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
       - REDIS_URL=redis://vision-redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - vision_network
     depends_on:

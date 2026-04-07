@@ -61,7 +61,7 @@ tags:
     x-server: faces-service
     x-port: 5003
   - name: semantics
-    description: Semantic scene understanding with SigLIP/CLIP
+    description: Tag classification with trained multi-view bi-encoder
     externalDocs:
       description: Learn more about Semantics Service
       url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SEMANTICS_SERVICE.md

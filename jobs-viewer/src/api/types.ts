@@ -223,13 +223,22 @@ export interface ClassifierTag {
   tag_name: string;
   score: number;
   path: string;
-  decode_type: "direct" | "parent_only";
+  decode_type: "direct" | "competition" | "parent_only";
 }
 
 export interface FrameCaptionResult {
   frame_index: number;
   timestamp: number;
   caption: string;
+}
+
+export interface SceneMetadata {
+  title?: string;
+  duration?: number;
+  resolution?: string;
+  frame_rate?: number;
+  performer_count: number;
+  performer_genders: string[];
 }
 
 export interface SemanticsMetadata {
@@ -244,6 +253,10 @@ export interface SemanticsMetadata {
   device: string;
   taxonomy_size: number;
   has_promo: boolean;
+  sprite_image_url?: string;
+  sprite_vtt_url?: string;
+  tag_name_to_id?: Record<string, string>;
+  scene?: SceneMetadata;
 }
 
 export interface SemanticsOutcome {

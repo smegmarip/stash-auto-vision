@@ -16,7 +16,7 @@ The Semantics Service provides automated tag classification for video content us
 
 The service runs a three-stage pipeline for each video:
 
-1. **Frame Extraction** -- Extract representative frames from the video (scene-based or interval sampling, with optional sharpest-frame selection)
+1. **Frame Extraction** -- Extract frames from sprite sheets (default), scene-based, or interval sampling
 2. **JoyCaption Beta-One Captioning** -- Generate per-frame natural language captions using the JoyCaption beta-one VLM
 3. **Llama 3.1 8B Narrative Summary** -- Aggregate frame captions into a single narrative summary via an external LLM API
 4. **Tag Classification** -- Run the multi-view bi-encoder classifier against the Stash taxonomy to produce scored tags
@@ -28,9 +28,10 @@ The service runs a three-stage pipeline for each video:
 - **JoyCaption Beta-One:** Upgraded VLM for frame captioning (~8GB VRAM, loaded/unloaded per job)
 - **LLM Narrative Summary:** Llama 3.1 8B via external API for scene-level summarization
 - **Lightweight Classifier:** ~1.4GB VRAM, kept loaded between jobs
-- **Scene-Aware Analysis:** Integration with scenes-service for scene boundary detection
-- **Sharpest Frame Selection:** Laplacian variance-based quality filtering
-- **Sprite Sheet Support:** Fast frame extraction from pre-generated sprites
+- **Stash Scene Resolution:** Fetches scene metadata (sprites, details, performers) from Stash via `source_id`
+- **Sprite Sheet Default:** Fast frame extraction from pre-generated sprites (default mode)
+- **Sharpest Frame Selection:** Laplacian variance-based quality filtering (video frame fallback)
+- **Scene-Aware Analysis:** Optional integration with scenes-service for scene boundary detection
 - **Asynchronous Job Processing:** Submit, poll, retrieve pattern with progress tracking
 - **Content-Based Caching:** Redis-based caching with SHA-256 keys
 
@@ -58,8 +59,8 @@ Submits an asynchronous tag classification job.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source` | string | yes | Path to video file |
-| `source_id` | string | yes | Unique identifier (e.g., Stash scene ID) |
+| `source` | string | no | Video path or URL (resolved from Stash if empty) |
+| `source_id` | string | yes | Stash scene ID. Used to fetch scene data (sprites, details, performers). |
 | `job_id` | string | no | Custom job ID (auto-generated if omitted) |
 | `scenes_job_id` | string | no | Pre-computed scene boundaries job ID |
 | `frame_extraction_job_id` | string | no | Pre-computed frame extraction job ID |
@@ -70,22 +71,22 @@ Submits an asynchronous tag classification job.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model_variant` | string | - | Classifier model variant |
+| `model_variant` | string | text-only | Classifier model variant (`vision`, `text-only`, or checkpoint path) |
 | `min_confidence` | float | 0.75 | Minimum confidence for tag assignment |
 | `top_k_tags` | int | 30 | Maximum tags returned |
-| `generate_embeddings` | bool | false | Generate scene embeddings |
-| `use_hierarchical_decoding` | bool | false | Use hierarchical taxonomy decoding |
-| `frame_selection` | string | - | Frame selection method (scene_based, interval) |
-| `frames_per_scene` | int | 16 | Frames to extract per scene |
-| `sampling_interval` | float | - | Seconds between frames (interval mode) |
-| `select_sharpest` | bool | false | Filter by sharpness |
-| `sharpness_candidate_multiplier` | int | - | Candidates per final frame |
-| `min_frame_quality` | float | - | Minimum quality threshold (0-1) |
-| `use_quantization` | bool | false | Use quantized models |
-| `details` | bool | false | Include detailed output |
-| `sprite_vtt_url` | string | - | URL to sprite VTT file |
-| `sprite_image_url` | string | - | URL to sprite grid image |
-| `scene_boundaries` | array | - | Explicit scene boundaries |
+| `generate_embeddings` | bool | false | Return 512-D scene embeddings |
+| `use_hierarchical_decoding` | bool | true | Apply taxonomy-consistent post-processing |
+| `frame_selection` | string | sprite_sheet | Frame selection method (`sprite_sheet`, `scene_based`, `interval`) |
+| `frames_per_scene` | int | 16 | Frames to extract (classifier trained on 16) |
+| `sampling_interval` | float | 2.0 | Seconds between frames (interval mode) |
+| `select_sharpest` | bool | true | Filter by sharpness (video frame modes) |
+| `sharpness_candidate_multiplier` | int | 3 | Extract N * frames_per_scene candidates for sharpness selection |
+| `min_frame_quality` | float | 0.05 | Minimum quality threshold (0-1) |
+| `use_quantization` | bool | true | Use 4-bit quantization for JoyCaption VLM |
+| `details` | string | - | Promotional/editorial description (overrides Stash data) |
+| `sprite_vtt_url` | string | - | URL to sprite VTT file (overrides Stash data) |
+| `sprite_image_url` | string | - | URL to sprite grid image (overrides Stash data) |
+| `scene_boundaries` | array | - | Pre-computed scene boundaries |
 
 **Example:**
 
@@ -93,16 +94,15 @@ Submits an asynchronous tag classification job.
 curl -X POST http://localhost:5004/semantics/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "source": "/media/videos/scene_12345.mp4",
     "source_id": "12345",
     "parameters": {
       "min_confidence": 0.75,
-      "top_k_tags": 30,
-      "frames_per_scene": 16,
-      "frame_selection": "scene_based"
+      "top_k_tags": 30
     }
   }'
 ```
+
+Scene metadata (sprite URLs, promotional description, performer info) is automatically fetched from Stash via `source_id`. Parameters override Stash data when explicitly provided.
 
 **Response:**
 
@@ -219,26 +219,31 @@ curl http://localhost:5004/semantics/health | jq .
    └── Fetch full tag tree from Stash via STASH_URL + SEMANTICS_TAG_ID
        └── Build classifier label space from taxonomy
 
-2. Frame Extraction
-   ├── IF frame_extraction_job_id provided:
-   │   └── Retrieve frames from Frame Server results
-   ├── IF sprite_vtt_url + sprite_image_url provided:
-   │   └── Extract frames from sprite sheets (fastest)
-   └── ELSE:
-       └── Request frame extraction (scene_based or interval)
-           └── Optional: select_sharpest filtering
+2. Scene Resolution
+   └── Fetch scene data from Stash via findScene(source_id)
+       ├── Sprite URLs (paths.sprite, paths.vtt)
+       ├── Promotional description (details)
+       ├── Performers (count, genders)
+       ├── Video metadata (duration, resolution)
+       └── Request parameters override Stash data
 
-3. JoyCaption Beta-One Captioning
+3. Frame Extraction
+   ├── DEFAULT (sprite_sheet): Extract from Stash sprite sheets
+   ├── IF scene_based: Request frame extraction via Frame Server
+   └── IF interval: Sample at fixed interval via Frame Server
+       └── Optional: select_sharpest filtering (video frame modes)
+
+4. JoyCaption Beta-One Captioning
    ├── Load JoyCaption model (~8GB VRAM)
    ├── Caption each extracted frame
    └── Unload model to free VRAM
 
-4. Llama 3.1 8B Narrative Summary
-   ├── Send frame captions to external LLM API
+5. Llama 3.1 8B Narrative Summary
+   ├── Send frame captions + scene metadata to external LLM API
    └── Receive aggregated scene narrative
 
-5. Tag Classification
-   ├── Encode narrative + captions with bi-encoder
+6. Tag Classification
+   ├── Encode captions + summary + promo with bi-encoder
    ├── Score against taxonomy embeddings
    ├── Apply min_confidence threshold (default 0.75)
    ├── Return top_k_tags (default 30)
@@ -257,16 +262,19 @@ curl http://localhost:5004/semantics/health | jq .
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLASSIFIER_MODEL` | - | Path or name of trained bi-encoder model |
+| `CLASSIFIER_MODEL` | `text-only` | Classifier variant (`text-only`, `vision`, or checkpoint path) |
 | `CLASSIFIER_DEVICE` | `cuda` | Device for classifier (cuda/cpu) |
-| `STASH_URL` | `http://localhost:9999` | Stash instance URL |
+| `STASH_URL` | `http://host.docker.internal:9999` | Stash instance URL |
 | `STASH_API_KEY` | - | Stash API key |
 | `SEMANTICS_TAG_ID` | - | Root tag ID for taxonomy tree |
-| `LLM_API_BASE` | - | External LLM API base URL |
-| `LLM_API_KEY` | - | External LLM API key |
-| `LLM_MODEL` | - | LLM model name (e.g., llama-3.1-8b) |
-| `SEMANTICS_MIN_CONFIDENCE` | `0.75` | Default minimum confidence |
-| `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL |
+| `SEMANTICS_LLM_MODEL` | `RedHatAI/Llama-3.1-8B-Instruct` | Local LLM for scene summary generation |
+| `SEMANTICS_LLM_DEVICE` | `cpu` | Device for the summary model (`cpu` to avoid VRAM contention) |
+| `SEMANTICS_HF_TOKEN` | - | HuggingFace token (mapped to `HF_TOKEN` inside the container) |
+| `SEMANTICS_MODEL_IDLE_TIMEOUT` | `300` | Seconds before idle models are unloaded from memory |
+| `SEMANTICS_JOB_LOCK_TTL` | `3600` | Maximum seconds a job can hold the active queue lock |
+| `SEMANTICS_WORKER_ID` | auto | Stable worker identifier (used for crash recovery) |
+| `SEMANTICS_MIN_CONFIDENCE` | `0.75` | Default minimum confidence threshold |
+| `REDIS_URL` | `redis://vision-redis:6379/0` | Redis connection URL |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ### OpenAPI Schema

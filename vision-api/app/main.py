@@ -296,10 +296,10 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
 
         results = {"scenes": None, "faces": None, "semantics": None, "objects": None}
 
-        # Auto-enable scenes if semantics needs scene-based frame selection
+        # Auto-enable scenes if semantics explicitly requests scene-based frame selection
         if request.modules.semantics.enabled:
             semantics_params = request.modules.semantics.parameters or {}
-            frame_selection = semantics_params.get("frame_selection", "scene_based")
+            frame_selection = semantics_params.get("frame_selection", "sprite_sheet")
             if frame_selection == "scene_based" and not request.modules.scenes.enabled:
                 logger.info("Auto-enabling scenes for scene_based semantics frame selection")
                 request.modules.scenes.enabled = True
@@ -441,7 +441,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                         "top_k_tags": semantics_params.get("top_k_tags", 30),
                         "generate_embeddings": semantics_params.get("generate_embeddings", False),
                         "use_hierarchical_decoding": semantics_params.get("use_hierarchical_decoding", True),
-                        "frame_selection": semantics_params.get("frame_selection", "scene_based"),
+                        "frame_selection": semantics_params.get("frame_selection", "sprite_sheet"),
                         "frames_per_scene": semantics_params.get("frames_per_scene", 16),
                         "sampling_interval": semantics_params.get("sampling_interval", 2.0),
                         "select_sharpest": semantics_params.get("select_sharpest", True),

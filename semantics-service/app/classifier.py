@@ -232,8 +232,7 @@ def resolve_checkpoint(model_name: str, cache_dir: str = MODEL_CACHE_DIR) -> str
         )
 
     variant = MODEL_VARIANTS[model_name]
-    local_dir = Path(cache_dir) / model_name.replace("-", "_")
-    local_path = local_dir / Path(variant["model"]).name
+    local_path = Path(cache_dir) / variant["model"]
     if local_path.exists():
         return str(local_path)
 
@@ -241,18 +240,17 @@ def resolve_checkpoint(model_name: str, cache_dir: str = MODEL_CACHE_DIR) -> str
     from huggingface_hub import hf_hub_download
 
     logger.info("Downloading %s model from %s ...", model_name, HF_REPO)
-    local_dir.mkdir(parents=True, exist_ok=True)
     hf_hub_download(
         repo_id=HF_REPO,
         filename=variant["model"],
-        local_dir=local_dir,
+        local_dir=cache_dir,
         local_dir_use_symlinks=False,
     )
     try:
         hf_hub_download(
             repo_id=HF_REPO,
             filename=variant["mapping"],
-            local_dir=local_dir,
+            local_dir=cache_dir,
             local_dir_use_symlinks=False,
         )
     except Exception:
@@ -269,7 +267,6 @@ def _load_model_from_checkpoint(
     device: torch.device,
 ) -> MultiViewClassifier:
     """Instantiate a :class:`MultiViewClassifier` and load weights."""
-    model = MultiViewClassifier(config, num_tags, num_families)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     if "config" in ckpt:
@@ -289,7 +286,16 @@ def _load_model_from_checkpoint(
             if key in saved:
                 setattr(config, key, saved[key])
 
-    model.load_state_dict(ckpt["model_state_dict"])
+    # Family bias is inert (zero-initialized, never trained — see RESEARCH.md
+    # §27.6) but its nn.Embedding(154, 512) must be present for state_dict
+    # compatibility. Hardcode to match the published checkpoint.
+    # Strip _tag_cache buffers — they are rebuilt by build_tag_cache() and
+    # their size depends on the runtime taxonomy, not the training set.
+    state_dict = ckpt["model_state_dict"]
+    state_dict.pop("_tag_cache", None)
+    state_dict.pop("_tag_cache_valid", None)
+    model = MultiViewClassifier(config, num_tags, 154)
+    model.load_state_dict(state_dict, strict=False)
     model.to(device)
     model.eval()
 
@@ -350,48 +356,40 @@ class TagClassifier:
     # ------------------------------------------------------------------ #
 
     def load_model(self) -> None:
-        """Download (if needed) and load the classifier checkpoint.
+        """Download (if needed) and prepare the classifier checkpoint.
 
-        Sets the model to eval mode with inference-mode optimisations
-        (gradient checkpointing disabled, ``torch.no_grad`` at predict
-        time).
+        The model is not fully instantiated until :meth:`load_taxonomy`
+        provides the tag set (which determines num_tags for the tag cache).
         """
         checkpoint_path = resolve_checkpoint(self.model_variant)
 
-        # Peek at the checkpoint to discover vision mode and tag count
+        # Peek at the checkpoint to discover vision mode
         ckpt_meta = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-        uses_vision = ckpt_meta.get("config", {}).get("use_vision", False)
+        uses_vision = ckpt_meta.get("config", {}).get("use_vision", False) or any(k.startswith("vision_encoder.") for k in ckpt_meta.get("model_state_dict", {}))
 
         config = TrainConfig()
         config.gradient_checkpointing = False
         config.use_vision = uses_vision
 
         self._config = config
-        logger.info(
-            "Loading model variant=%s  vision=%s  device=%s",
-            self.model_variant,
-            uses_vision,
-            self.device,
-        )
-
-        # We cannot fully instantiate the model until we know num_tags and
-        # num_families.  Store checkpoint path for deferred loading.
         self._checkpoint_path = checkpoint_path
+        logger.info("Checkpoint ready: variant=%s  vision=%s  device=%s", self.model_variant, uses_vision, self.device)
 
     # ------------------------------------------------------------------ #
     # Taxonomy loading
     # ------------------------------------------------------------------ #
 
     def load_taxonomy(self, taxonomy: Dict[str, Any]) -> None:
-        """Load the tag taxonomy and build all caches.
+        """Load the tag taxonomy and instantiate the model.
 
-        This must be called *after* :meth:`load_model` because it
-        instantiates the model (which needs ``num_tags`` / ``num_families``)
-        and builds the tag embedding cache.
+        The model can score any tag — the bi-encoder computes tag embeddings
+        from text at runtime.  We build a tag_id_to_idx mapping covering
+        the full taxonomy so every tag gets a score.  The checkpoint's
+        family_bias size is read from the saved weights directly, and
+        ``strict=False`` is used so the _tag_cache buffer (rebuilt here)
+        can differ in size from the training set.
 
-        Args:
-            taxonomy: The full taxonomy dict with keys ``tags``, ``by_id``,
-                ``by_name``, and ``metadata``.
+        Must be called *after* :meth:`load_model`.
         """
         if self._config is None:
             raise RuntimeError("Call load_model() before load_taxonomy()")
@@ -399,28 +397,26 @@ class TagClassifier:
         self.taxonomy = taxonomy
         tags = taxonomy.get("tags", [])
 
-        # Build tag <-> index mappings from all tag IDs in the taxonomy
+        # Build tag <-> index mappings from the full taxonomy
         all_tag_ids = sorted(str(t["id"]) for t in tags)
         self.tag_id_to_idx = {tid: i for i, tid in enumerate(all_tag_ids)}
         self.tag_idx_to_id = {i: tid for tid, i in self.tag_id_to_idx.items()}
         self._num_tags = len(all_tag_ids)
 
-        # Build families
-        self.families, self.tag_to_families = build_families(
-            taxonomy, self._config.family_depth
-        )
-        num_families = len(self.families)
+        # Family bias is inert (never trained) but nn.Embedding(154, 512)
+        # must match the checkpoint. Hardcode 154, pass empty families so
+        # build_tag_cache skips the family bias lookup entirely.
+        self.families, self.tag_to_families = [], {}
 
-        # Now instantiate (or re-instantiate) the model with the correct sizes
         self.model = _load_model_from_checkpoint(
             self._checkpoint_path,
             self._config,
             self._num_tags,
-            num_families,
+            154,
             self.device,
         )
 
-        # Build tag embedding cache
+        # Rebuild tag cache with the full taxonomy
         self.model.build_tag_cache(
             tags, self.tag_id_to_idx, self.tag_to_families, self.device
         )
@@ -429,9 +425,8 @@ class TagClassifier:
         self.decoder = HierarchicalDecoder(taxonomy)
 
         logger.info(
-            "Taxonomy loaded: %d tags, %d families, decoder ready",
+            "Taxonomy loaded: %d tags, decoder ready",
             self._num_tags,
-            num_families,
         )
 
     # ------------------------------------------------------------------ #
@@ -509,6 +504,11 @@ class TagClassifier:
     def is_loaded(self) -> bool:
         """True when the model and taxonomy are both ready for inference."""
         return self.model is not None
+
+    @property
+    def is_checkpoint_ready(self) -> bool:
+        """True when load_model() has been called (checkpoint downloaded, config peeked)."""
+        return self._config is not None
 
     @property
     def num_tags(self) -> int:

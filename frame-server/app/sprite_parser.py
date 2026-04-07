@@ -213,12 +213,12 @@ class SpriteParser:
             # Download VTT file
             vtt_path = job_dir / "sprites.vtt"
             if not await self.download_file(sprite_vtt_url, vtt_path):
-                raise ValueError("Failed to download VTT file")
+                raise ValueError(f"Failed to download VTT file: {sprite_vtt_url}")
 
             # Download sprite image
             sprite_image_path = job_dir / "sprite_grid.jpg"
             if not await self.download_file(sprite_image_url, sprite_image_path):
-                raise ValueError("Failed to download sprite image")
+                raise ValueError(f"Failed to download sprite image: {sprite_image_url}")
 
             # Parse VTT
             with open(vtt_path, 'r', encoding='utf-8') as f:

@@ -5,11 +5,35 @@ import { JobFilters } from './JobFilters'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Trash2 } from 'lucide-react'
 import { LazyLoader } from '@/components/shared/LazyLoader'
+import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 
 export function JobList() {
   const { filters, viewMode, setViewMode } = useJobsStore()
+  const queryClient = useQueryClient()
+  const [clearing, setClearing] = useState(false)
+
+  const handleClearCache = async () => {
+    if (!window.confirm('Clear all job metadata, results, and queue state from Redis?\n\nThis cannot be undone.')) {
+      return
+    }
+    setClearing(true)
+    try {
+      const res = await fetch('/api/admin/clear-cache', { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      console.log('Cache cleared:', data)
+      // Invalidate all React Query caches so the UI refetches
+      await queryClient.invalidateQueries()
+    } catch (err) {
+      console.error('Failed to clear cache:', err)
+      window.alert(`Failed to clear cache: ${(err as Error).message}`)
+    } finally {
+      setClearing(false)
+    }
+  }
 
   // Service orchestrator - one infinite query per service
   const serviceQueries = {
@@ -44,15 +68,27 @@ export function JobList() {
       {/* Filters and refresh */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <JobFilters />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearCache}
+            disabled={clearing}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className={`h-4 w-4 mr-2 ${clearing ? 'animate-pulse' : ''}`} />
+            {clearing ? 'Clearing...' : 'Clear Cache'}
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}

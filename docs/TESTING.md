@@ -646,11 +646,11 @@ curl http://localhost:5004/semantics/health | jq .
 {
   "status": "healthy",
   "service": "semantics-service",
-  "version": "1.0.0",
-  "model": "google/siglip-base-patch16-224",
-  "embedding_dim": 768,
-  "device": "cpu",
-  "active_jobs": 0
+  "version": "2.0.0",
+  "classifier_model": "text-only",
+  "classifier_loaded": true,
+  "device": "cuda",
+  "taxonomy": {"loaded": true, "tag_count": 492}
 }
 ```
 
@@ -661,12 +661,10 @@ curl http://localhost:5004/semantics/health | jq .
 curl -X POST http://localhost:5004/semantics/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "source": "/media/videos/compound/vision-api/complete_analysis.mp4",
-    "source_id": "test_semantics_001",
+    "source_id": "12345",
     "parameters": {
-      "min_confidence": 0.5,
-      "sampling_interval": 2.0,
-      "tags": ["indoor", "outdoor", "conversation", "action", "static"]
+      "min_confidence": 0.75,
+      "top_k_tags": 30
     }
   }' | jq .
 
@@ -678,17 +676,17 @@ curl "http://localhost:5004/semantics/jobs/$JOB_ID/status" | jq .
 
 # Get results
 curl "http://localhost:5004/semantics/jobs/$JOB_ID/results" | jq '{
-  frames_analyzed: (.frames | length),
-  dominant_tags: [.frames[].tags[0].label] | group_by(.) | map({tag: .[0], count: length}) | sort_by(-.count)[:3],
-  embedding_dim: (.frames[0].embedding | length)
+  tags: .semantics.tags[:5],
+  summary_length: (.semantics.scene_summary | length),
+  captions: (.semantics.frame_captions | length)
 }'
 ```
 
 **Validation:**
 
-- ✅ Model loaded (SigLIP google/siglip-base-patch16-224)
-- ✅ Embeddings are 768 dimensions
-- ✅ Tags returned with confidence scores
+- ✅ Classifier loaded (text-only or vision variant)
+- ✅ Taxonomy loaded from Stash
+- ✅ Tags returned with confidence scores and taxonomy paths
 - ✅ Cache hit on duplicate request
 
 #### Scene-Aware Semantics (via Vision API)
@@ -1217,7 +1215,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 - [x] Scene detection (ContentDetector, ThresholdDetector)
 - [x] Face recognition and clustering
 - [x] Multi-service workflows (scenes → faces → semantics)
-- [x] Semantic analysis (SigLIP classification)
+- [x] Semantic analysis (bi-encoder tag classification)
 - [x] Cache hit/miss behavior
 - [x] Performance benchmarking
 

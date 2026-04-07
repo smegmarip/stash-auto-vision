@@ -7,15 +7,16 @@ Replaces the old SigLIP zero-shot service and JoyCaption captioning service.
 """
 
 import gc
+import io
 import os
 import time
 import uuid
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from PIL import Image
 import httpx
@@ -24,14 +25,17 @@ from .models import (
     AnalyzeSemanticsRequest,
     AnalyzeSemanticsResponse,
     JobStatusResponse,
+    SceneContext,
     SemanticsOutcome,
     SemanticsResults,
     SemanticsMetadata,
+    SceneMetadata,
     ClassifierTag,
     FrameCaptionResult,
     HealthResponse,
     TaxonomyStatus,
     JobStatus,
+    FrameSelectionMethod,
 )
 from .cache_manager import CacheManager
 from .classifier import TagClassifier
@@ -41,6 +45,9 @@ from .taxonomy_builder import TaxonomyBuilder
 from .frame_client import FrameServerClient
 from .resource_client import ResourceManagerClient
 from .scenes_client import ScenesServerClient
+from .model_manager import ModelManager
+from .job_queue import JobQueue
+from .worker import SemanticsWorker
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -71,8 +78,15 @@ tag_classifier: Optional[TagClassifier] = None
 frame_client: Optional[FrameServerClient] = None
 resource_client: Optional[ResourceManagerClient] = None
 summary_generator: Optional[SummaryGenerator] = None
+caption_generator: Optional[CaptionGenerator] = None
+model_manager: Optional[ModelManager] = None
+job_queue: Optional[JobQueue] = None
+worker: Optional[SemanticsWorker] = None
 taxonomy_data: Optional[dict] = None
 taxonomy_status: TaxonomyStatus = TaxonomyStatus(loaded=False)
+
+MODEL_IDLE_TIMEOUT = int(os.getenv("SEMANTICS_MODEL_IDLE_TIMEOUT", "300"))
+JOB_LOCK_TTL = int(os.getenv("SEMANTICS_JOB_LOCK_TTL", "3600"))
 
 
 async def _load_taxonomy_background():
@@ -94,7 +108,7 @@ async def _load_taxonomy_background():
         tag_count = len(taxonomy_data.get("tags", []))
         logger.info(f"Taxonomy loaded: {tag_count} tags")
 
-        if tag_classifier and tag_classifier.is_loaded:
+        if tag_classifier and tag_classifier.is_checkpoint_ready:
             tag_classifier.load_taxonomy(taxonomy_data)
             logger.info("Classifier tag cache rebuilt from taxonomy")
 
@@ -112,7 +126,9 @@ async def _load_taxonomy_background():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: initialize services on startup, cleanup on shutdown."""
-    global cache_manager, tag_classifier, frame_client, resource_client, summary_generator
+    global cache_manager, tag_classifier, frame_client, resource_client
+    global summary_generator, caption_generator, model_manager
+    global job_queue, worker
 
     logger.info("Starting Semantics Service v2.0 (tag classifier pipeline)")
 
@@ -120,6 +136,10 @@ async def lifespan(app: FastAPI):
     cache_manager = CacheManager(REDIS_URL, module="semantics", ttl=CACHE_TTL)
     await cache_manager.connect()
     logger.info("Cache manager initialized")
+
+    # Job queue (uses cache_manager's Redis connection)
+    job_queue = JobQueue(redis=cache_manager.redis, module="semantics", lock_ttl_seconds=JOB_LOCK_TTL)
+    logger.info(f"Job queue initialized (worker_id={job_queue.worker_id}, lock_ttl={JOB_LOCK_TTL}s)")
 
     # Frame server client
     frame_client = FrameServerClient(FRAME_SERVER_URL)
@@ -129,11 +149,17 @@ async def lifespan(app: FastAPI):
     resource_client = ResourceManagerClient(RESOURCE_MANAGER_URL)
     logger.info("Resource manager client initialized")
 
-    # Summary generator (calls external LLM API)
-    summary_generator = SummaryGenerator()
-    logger.info(f"Summary generator initialized (api_base={summary_generator.api_base})")
+    # Caption generator (JoyCaption, 4-bit NF4 — fits 15.6GB VRAM alongside classifier)
+    # Training pipeline used bfloat16 on H100 (80GB), we must quantize on 16GB cards.
+    caption_generator = CaptionGenerator(use_quantization=True, device=CLASSIFIER_DEVICE)
+    logger.info("Caption generator initialized (4-bit quantization)")
 
-    # Tag classifier (load model weights)
+    # Summary generator (Llama 3.1 8B — exclusive with caption)
+    # Will be quantized on CUDA to fit in VRAM after caption is unloaded.
+    summary_generator = SummaryGenerator(device=CLASSIFIER_DEVICE)
+    logger.info(f"Summary generator initialized (model={summary_generator.model_name}, device={summary_generator.device})")
+
+    # Tag classifier (lightweight, ~1.4GB — kept loaded)
     tag_classifier = TagClassifier(model_variant=CLASSIFIER_MODEL, device=CLASSIFIER_DEVICE)
     try:
         tag_classifier.load_model()
@@ -142,13 +168,32 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load classifier model: {e}", exc_info=True)
         logger.warning("Classifier will be unavailable until model is loaded")
 
+    # Model manager with idle-timeout unloading
+    model_manager = ModelManager(idle_timeout=MODEL_IDLE_TIMEOUT)
+    # Both models are exclusive — even quantized, they can't safely coexist
+    # alongside the classifier in 16GB VRAM. The classifier (~1.4GB) stays
+    # loaded separately. 4-bit JoyCaption ~7GB, 8-bit Llama 8B ~10GB.
+    model_manager.register("caption", caption_generator, vram_mb=7000, exclusive=True)
+    model_manager.register("summary", summary_generator, vram_mb=10000, exclusive=True)
+    model_manager.start_cleanup_loop()
+    logger.info(f"Model manager initialized (idle_timeout={MODEL_IDLE_TIMEOUT}s)")
+
     # Load taxonomy in background (non-blocking startup)
     asyncio.create_task(_load_taxonomy_background())
+
+    # Start the worker — single consumer of the job queue
+    worker = SemanticsWorker(queue=job_queue, process_fn=_run_pipeline)
+    await worker.start()
 
     yield
 
     # Cleanup
     logger.info("Shutting down Semantics Service...")
+    if worker:
+        await worker.stop()
+    if model_manager:
+        model_manager.stop_cleanup_loop()
+        model_manager.unload_all()
     if cache_manager:
         await cache_manager.disconnect()
     if tag_classifier:
@@ -195,59 +240,159 @@ async def _load_custom_taxonomy(custom_taxonomy) -> dict:
     return builder.build_from_tags(tags, root_tag_id=SEMANTICS_TAG_ID or None)
 
 
-async def _extract_frame_images(
-    job_id: str,
-    request: AnalyzeSemanticsRequest,
-    scene_boundaries: Optional[List[Dict]],
-) -> List[Image.Image]:
-    """Extract frames using frame-server with sharpness selection."""
+async def _fetch_scene_from_stash(scene_id: str) -> Dict[str, Any]:
+    """Fetch scene data from Stash via findScene GraphQL query."""
+    if not STASH_URL:
+        raise RuntimeError("STASH_URL not set — cannot fetch scene data")
+
+    query = """
+    query FindScene($id: ID!) {
+        findScene(id: $id) {
+            id
+            title
+            details
+            paths { sprite vtt }
+            performers { id name gender }
+            files { path duration width height frame_rate }
+        }
+    }
+    """
+    graphql_url = f"{STASH_URL.rstrip('/')}/graphql"
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if STASH_API_KEY:
+        headers["ApiKey"] = STASH_API_KEY
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(graphql_url, json={"query": query, "variables": {"id": scene_id}}, headers=headers)
+        resp.raise_for_status()
+        body = resp.json()
+
+    if "errors" in body and body["errors"]:
+        raise RuntimeError(f"Stash GraphQL errors: {body['errors']}")
+
+    scene = body.get("data", {}).get("findScene")
+    if not scene:
+        raise RuntimeError(f"Scene {scene_id} not found in Stash")
+
+    return scene
+
+
+def _build_scene_context(scene_id: str, stash_scene: Optional[Dict[str, Any]], request: AnalyzeSemanticsRequest) -> SceneContext:
+    """Build SceneContext from Stash data, with request parameters as overrides."""
     params = request.parameters
 
-    if params.frame_selection.value == "sprite_sheet" and params.sprite_vtt_url:
-        # Sprite sheet extraction
-        frames_data = await frame_client.extract_sprites(
-            sprite_image_url=params.sprite_image_url,
-            sprite_vtt_url=params.sprite_vtt_url,
-            max_frames=params.frames_per_scene,
+    # Start from Stash data (or empty)
+    if stash_scene:
+        paths = stash_scene.get("paths") or {}
+        primary_file = (stash_scene.get("files") or [{}])[0]
+        performers = stash_scene.get("performers") or []
+        ctx = SceneContext(
+            scene_id=scene_id,
+            source=primary_file.get("path") or request.source,
+            title=stash_scene.get("title"),
+            sprite_image_url=paths.get("sprite"),
+            sprite_vtt_url=paths.get("vtt"),
+            details=stash_scene.get("details"),
+            duration=primary_file.get("duration") or 0,
+            frame_rate=primary_file.get("frame_rate"),
+            width=primary_file.get("width"),
+            height=primary_file.get("height"),
+            performer_count=len(performers),
+            performer_genders=[p.get("gender") for p in performers if p.get("gender")],
         )
     else:
-        # Video frame extraction
+        ctx = SceneContext(scene_id=scene_id, source=request.source)
+
+    # Request parameters override Stash data
+    if params.sprite_image_url is not None:
+        ctx.sprite_image_url = params.sprite_image_url
+    if params.sprite_vtt_url is not None:
+        ctx.sprite_vtt_url = params.sprite_vtt_url
+    if params.details is not None:
+        ctx.details = params.details
+    if request.source:
+        ctx.source = request.source
+
+    return ctx
+
+
+async def _extract_frame_images(
+    ctx: SceneContext,
+    params,
+    scene_boundaries: Optional[List[Dict]],
+) -> Tuple[List[Image.Image], List[float]]:
+    """Extract frames from sprite sheets (default) or video via frame-server.
+
+    Returns:
+        Tuple of (images, timestamps) where timestamps are in seconds.
+    """
+    use_sprites = params.frame_selection == FrameSelectionMethod.SPRITE_SHEET and ctx.sprite_vtt_url and ctx.sprite_image_url
+
+    if use_sprites:
+        frames_data = await frame_client.extract_sprites(
+            video_path=ctx.source,
+            sprite_vtt_url=ctx.sprite_vtt_url,
+            sprite_image_url=ctx.sprite_image_url,
+            frames_per_scene=params.frames_per_scene,
+            scene_boundaries=scene_boundaries,
+        )
+    else:
+        if params.frame_selection == FrameSelectionMethod.SPRITE_SHEET:
+            logger.warning("Sprite sheet requested but sprite URLs not available, falling back to video frames")
         frames_data = await frame_client.extract_frames(
-            video_path=request.source,
+            video_path=ctx.source,
             sampling_interval=params.sampling_interval,
             scene_boundaries=scene_boundaries,
             frames_per_scene=params.frames_per_scene,
             select_sharpest=params.select_sharpest,
-            sharpness_candidate_multiplier=params.sharpness_candidate_multiplier,
+            candidate_multiplier=params.sharpness_candidate_multiplier,
             min_quality=params.min_frame_quality,
         )
 
     if not frames_data:
-        raise RuntimeError("No frames extracted from video")
+        raise RuntimeError("No frames extracted")
 
-    # Fetch actual frame images
+    # Fetch actual frame images and timestamps
+    frames = frames_data if isinstance(frames_data, list) else frames_data.get("frames", [])
     images = []
-    for frame_info in frames_data:
+    timestamps = []
+    for frame_info in frames:
         try:
-            img = await frame_client.get_frame(frame_info["url"])
-            if img is not None:
-                images.append(img)
+            url = frame_info.get("url") if isinstance(frame_info, dict) else None
+            if not url:
+                continue
+            if url.startswith("file://"):
+                img = Image.open(url[7:]).convert("RGB")
+            else:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            images.append(img)
+            timestamps.append(frame_info.get("timestamp", 0.0) if isinstance(frame_info, dict) else 0.0)
         except Exception as e:
-            logger.warning(f"Failed to load frame {frame_info.get('index', '?')}: {e}")
+            logger.warning(f"Failed to load frame {frame_info.get('index', '?') if isinstance(frame_info, dict) else '?'}: {e}")
 
     if not images:
         raise RuntimeError("Failed to load any frame images")
 
-    return images
+    return images, timestamps
 
 
-async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsRequest):
-    """Background task: full tag classification pipeline."""
+async def _run_pipeline(job_id: str, request_payload: dict):
+    """Worker callback: full tag classification pipeline for a single job.
+
+    Called by SemanticsWorker after acquiring the job from the Redis queue.
+    Job sequencing is enforced by the queue's atomic Lua script — this
+    function trusts that only one instance runs at a time.
+    """
     global taxonomy_data, taxonomy_status
+
+    # Deserialize the stored request
+    request = AnalyzeSemanticsRequest.model_validate(request_payload)
 
     start_time = time.time()
     lease_id = None
-    caption_gen = None
 
     try:
         logger.info(f"Starting semantics analysis job {job_id} for scene {request.source_id}")
@@ -288,16 +433,39 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
         if not active_taxonomy or not active_taxonomy.get("tags"):
             raise RuntimeError("No taxonomy available. Set STASH_URL or provide custom_taxonomy.")
 
-        # Ensure classifier has this taxonomy loaded
+        # Ensure classifier has this taxonomy loaded.
+        # Only reload if the taxonomy actually differs — load_taxonomy
+        # re-creates the classifier model, which is expensive and allocates
+        # fresh VRAM. Skip it when the existing taxonomy matches.
         if tag_classifier and tag_classifier.is_loaded:
+            existing = tag_classifier.taxonomy
+            if existing is not active_taxonomy:
+                existing_ids = {str(t["id"]) for t in (existing or {}).get("tags", [])}
+                new_ids = {str(t["id"]) for t in active_taxonomy.get("tags", [])}
+                if existing_ids != new_ids:
+                    logger.info(f"Taxonomy changed ({len(existing_ids)} → {len(new_ids)} tags), reloading classifier")
+                    tag_classifier.load_taxonomy(active_taxonomy)
+        elif tag_classifier and tag_classifier.is_checkpoint_ready:
+            # First job: taxonomy wasn't loaded at startup (no STASH_URL), load now
             tag_classifier.load_taxonomy(active_taxonomy)
         else:
             raise RuntimeError("Tag classifier not loaded")
 
-        # --- Step 1: Fetch scene boundaries ---
+        # --- Step 1: Resolve scene context from Stash ---
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.03, stage="fetching_scene", message="Fetching scene data from Stash")
+        stash_scene = None
+        try:
+            stash_scene = await _fetch_scene_from_stash(request.source_id)
+            logger.info(f"Fetched scene {request.source_id} from Stash")
+        except Exception as e:
+            logger.warning(f"Could not fetch scene from Stash: {e}")
+
+        ctx = _build_scene_context(request.source_id, stash_scene, request)
+        logger.info(f"Scene context: source={ctx.source}, sprites={'yes' if ctx.sprite_vtt_url else 'no'}, promo={'yes' if ctx.has_promo else 'no'}, duration={ctx.duration:.0f}s")
+
+        # --- Step 1b: Fetch scene boundaries ---
         scene_boundaries = params.scene_boundaries
         if not scene_boundaries and request.scenes_job_id:
-            await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.03, stage="fetching_scenes", message="Fetching scene boundaries")
             try:
                 scenes_client = ScenesServerClient(SCENES_SERVER_URL)
                 scene_boundaries = await scenes_client.get_scene_boundaries(request.scenes_job_id)
@@ -306,8 +474,8 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
                 logger.warning(f"Failed to fetch scene boundaries: {e}")
 
         # --- Step 2: Extract frames ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.05, stage="extracting_frames", message="Extracting frames from video")
-        frame_images = await _extract_frame_images(job_id, request, scene_boundaries)
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.05, stage="extracting_frames", message="Extracting frames")
+        frame_images, frame_timestamps = await _extract_frame_images(ctx, params, scene_boundaries)
         num_frames = len(frame_images)
         logger.info(f"Extracted {num_frames} frames")
 
@@ -317,11 +485,12 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             logger.warning(f"Only {num_frames} frames extracted, padding to {target_frames}")
             while len(frame_images) < target_frames:
                 frame_images.append(frame_images[-1])
+                frame_timestamps.append(frame_timestamps[-1] if frame_timestamps else 0.0)
         elif num_frames > target_frames:
-            # Linearly sample 16 from available
             import numpy as np
             indices = np.linspace(0, num_frames - 1, target_frames, dtype=int)
             frame_images = [frame_images[i] for i in indices]
+            frame_timestamps = [frame_timestamps[i] for i in indices]
 
         # --- Step 3: Request GPU ---
         await cache_manager.update_job_status(job_id, JobStatus.WAITING_FOR_GPU.value, progress=0.10, stage="requesting_gpu", message="Requesting GPU access")
@@ -340,18 +509,13 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
         # --- Step 4: Generate captions ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Generating frame captions with JoyCaption")
 
-        caption_gen = CaptionGenerator(use_quantization=params.use_quantization, device=CLASSIFIER_DEVICE)
-        caption_gen.load()
+        def _generate_captions():
+            with model_manager.using("caption"):
+                return caption_generator.generate_captions(frame_images)
 
-        raw_captions = caption_gen.generate_captions(frame_images)
-
-        # Fix captions to match training format
+        raw_captions = await asyncio.to_thread(_generate_captions)
         fixed_captions = [CaptionGenerator.fix_caption(c, i) for i, c in enumerate(raw_captions)]
         logger.info(f"Generated {len(fixed_captions)} captions")
-
-        # Unload JoyCaption to free GPU memory
-        caption_gen.unload()
-        caption_gen = None
 
         # Heartbeat GPU lease
         if lease_id:
@@ -361,20 +525,54 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
                 pass
 
         # --- Step 5: Generate scene summary ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.60, stage="summarizing", message="Generating scene summary")
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.60, stage="summarizing", message="Preparing summary prompt")
 
-        # Build frame caption dicts for the summary generator
-        frame_caption_dicts = [{"frame_index": i, "timestamp": i * 2.0, "caption": c} for i, c in enumerate(fixed_captions)]
-        promo_desc = params.details or ""
-        has_promo = bool(promo_desc.strip())
+        frame_caption_dicts = [{"frame_index": i, "timestamp": frame_timestamps[i], "caption": c} for i, c in enumerate(fixed_captions)]
+
+        # Progress callback: map token count to the 0.60-0.79 range.
+        # Runs in the generation thread, so it schedules the async status
+        # update back on the main event loop. Throttled to avoid spamming Redis.
+        event_loop = asyncio.get_running_loop()
+        _last_update_ts: List[float] = [0.0]
+        _update_interval = 1.0  # seconds
+
+        def _update_summary_progress(tokens: int, max_tokens: int) -> None:
+            now = time.monotonic()
+            if now - _last_update_ts[0] < _update_interval:
+                return
+            _last_update_ts[0] = now
+            pct = 0.60 + 0.19 * min(1.0, tokens / max(1, max_tokens))
+            msg = f"Generating scene summary ({tokens}/{max_tokens} tokens)"
+            asyncio.run_coroutine_threadsafe(
+                cache_manager.update_job_status(
+                    job_id, JobStatus.PROCESSING.value,
+                    progress=pct, stage="summarizing", message=msg,
+                ),
+                event_loop,
+            )
+
+        def _generate_summary():
+            with model_manager.using("summary"):
+                return summary_generator.generate_summary(
+                    frame_caption_dicts,
+                    ctx.promo_desc,
+                    ctx.duration,
+                    ctx.performer_count,
+                    ctx.performer_genders,
+                    ctx.resolution,
+                    progress_callback=_update_summary_progress,
+                )
+
+        await cache_manager.update_job_status(
+            job_id, JobStatus.PROCESSING.value,
+            progress=0.61, stage="summarizing",
+            message="Processing input (prefill — can take several minutes on CPU)",
+        )
 
         try:
-            scene_summary = await summary_generator.generate_summary(
-                frame_captions=frame_caption_dicts,
-                promo_desc=promo_desc,
-            )
+            scene_summary = await asyncio.to_thread(_generate_summary)
         except Exception as e:
-            logger.warning(f"Summary generation failed: {e}. Using concatenated captions as fallback.")
+            logger.warning(f"Summary generation failed: {e}. Using concatenated captions as fallback.", exc_info=True)
             scene_summary = " ".join(c for c in fixed_captions)
 
         logger.info(f"Summary generated ({len(scene_summary)} chars)")
@@ -382,11 +580,12 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
         # --- Step 6: Run tag classifier ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="classifying", message="Running tag classifier")
 
-        prediction = tag_classifier.predict(
+        prediction = await asyncio.to_thread(
+            tag_classifier.predict,
             frame_captions=fixed_captions,
             summary=scene_summary,
-            promo_desc=promo_desc,
-            has_promo=has_promo,
+            promo_desc=ctx.promo_desc,
+            has_promo=ctx.has_promo,
             top_k=params.top_k_tags,
             min_score=params.min_confidence,
             use_hierarchical_decoding=params.use_hierarchical_decoding,
@@ -399,7 +598,7 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
         scene_embedding = None
         if params.generate_embeddings:
             try:
-                scene_embedding = tag_classifier.get_scene_embedding(fixed_captions, scene_summary, promo_desc, has_promo)
+                scene_embedding = tag_classifier.get_scene_embedding(fixed_captions, scene_summary, ctx.promo_desc, ctx.has_promo)
             except Exception as e:
                 logger.warning(f"Embedding generation failed: {e}")
 
@@ -418,7 +617,7 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
         ]
 
         frame_caption_results = [
-            FrameCaptionResult(frame_index=i, timestamp=i * 2.0, caption=c)
+            FrameCaptionResult(frame_index=i, timestamp=frame_timestamps[i], caption=c)
             for i, c in enumerate(fixed_captions)
         ]
 
@@ -429,8 +628,10 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             scene_embedding=scene_embedding,
         )
 
+        tag_name_to_id = {str(t.get("name", "")): str(t["id"]) for t in active_taxonomy.get("tags", []) if t.get("name")}
+
         result_metadata = SemanticsMetadata(
-            source=request.source,
+            source=ctx.source,
             source_id=request.source_id,
             total_frames_extracted=num_frames,
             frames_captioned=len(fixed_captions),
@@ -438,7 +639,18 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             processing_time_seconds=round(processing_time, 2),
             device=CLASSIFIER_DEVICE,
             taxonomy_size=len(active_taxonomy.get("tags", [])),
-            has_promo=has_promo,
+            has_promo=ctx.has_promo,
+            sprite_image_url=ctx.sprite_image_url,
+            sprite_vtt_url=ctx.sprite_vtt_url,
+            tag_name_to_id=tag_name_to_id,
+            scene=SceneMetadata(
+                title=ctx.title,
+                duration=ctx.duration if ctx.duration else None,
+                resolution=ctx.resolution,
+                frame_rate=ctx.frame_rate,
+                performer_count=ctx.performer_count,
+                performer_genders=ctx.performer_genders,
+            ),
         )
 
         results = {
@@ -462,17 +674,11 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
             pass
 
     finally:
-        # Release GPU lease
         if lease_id:
             try:
                 await resource_client.release_gpu(lease_id)
             except Exception:
                 pass
-
-        # Cleanup VLM if still loaded
-        if caption_gen and caption_gen.is_loaded:
-            caption_gen.unload()
-
         gc.collect()
 
 
@@ -481,12 +687,20 @@ async def process_semantics_analysis(job_id: str, request: AnalyzeSemanticsReque
 # ---------------------------------------------------------------------------
 
 @app.post("/semantics/analyze", response_model=AnalyzeSemanticsResponse, status_code=202)
-async def analyze_semantics(request: AnalyzeSemanticsRequest, background_tasks: BackgroundTasks):
-    """Submit tag classification analysis job."""
+async def analyze_semantics(request: AnalyzeSemanticsRequest):
+    """Submit tag classification analysis job to the Redis-backed queue.
+
+    The endpoint never touches GPU code. It stores the request payload in
+    Redis and pushes the job_id to the pending queue. The worker (a single
+    background task) pulls jobs serially using an atomic Lua script.
+    """
     try:
         # Validate source exists (for local paths)
-        if not request.source.startswith(("http://", "https://")) and not os.path.exists(request.source):
+        if request.source and not request.source.startswith(("http://", "https://")) and not os.path.exists(request.source):
             raise HTTPException(status_code=404, detail=f"Video not found: {request.source}")
+
+        if not job_queue:
+            raise HTTPException(status_code=503, detail="Job queue not initialized")
 
         # Check cache
         cache_params = {
@@ -512,13 +726,18 @@ async def analyze_semantics(request: AnalyzeSemanticsRequest, background_tasks: 
             )
 
         job_id = request.job_id or str(uuid.uuid4())
-        background_tasks.add_task(process_semantics_analysis, job_id, request)
 
-        logger.info(f"Semantics analysis job {job_id} queued for scene {request.source_id}")
+        # Store the full request payload in Redis (source of truth for the worker)
+        await job_queue.store_request(job_id, request.model_dump())
+
+        # Push to pending queue — the worker will pick it up via atomic acquire
+        pending_count = await job_queue.enqueue(job_id)
+
+        logger.info(f"Job {job_id} enqueued for scene {request.source_id} (pending={pending_count})")
         return AnalyzeSemanticsResponse(
             job_id=job_id,
             status=JobStatus.QUEUED,
-            message="Tag classification job queued",
+            message=f"Tag classification job queued ({pending_count} ahead in queue)",
             created_at=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             cache_hit=False,
         )
@@ -584,6 +803,12 @@ async def get_job_results(job_id: str):
 async def health_check():
     """Health check endpoint."""
     classifier_loaded = tag_classifier is not None and tag_classifier.is_loaded
+    queue_stats = None
+    if job_queue:
+        try:
+            queue_stats = await job_queue.queue_stats()
+        except Exception as e:
+            logger.warning(f"Failed to fetch queue stats: {e}")
     return HealthResponse(
         status="healthy" if classifier_loaded and taxonomy_status.loaded else "degraded",
         classifier_model=CLASSIFIER_MODEL if classifier_loaded else None,
@@ -591,6 +816,7 @@ async def health_check():
         device=CLASSIFIER_DEVICE,
         taxonomy=taxonomy_status,
         default_min_confidence=float(os.getenv("SEMANTICS_MIN_CONFIDENCE", "0.75")),
+        queue=queue_stats,
     )
 
 
