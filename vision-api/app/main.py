@@ -428,6 +428,15 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                 logger.info("Running semantics analysis...")
                 await update_metadata(job_id, metadata, stage="semantic_analysis", message="Analyzing scene semantics")
 
+                # Build scene boundaries from scenes results if available.
+                # (faces stage may not have run, so scene_boundaries may not exist yet)
+                semantics_scene_boundaries = None
+                if results.get("scenes") and results["scenes"].get("scenes"):
+                    semantics_scene_boundaries = [
+                        {"start_timestamp": scene["start_timestamp"], "end_timestamp": scene["end_timestamp"]}
+                        for scene in results["scenes"]["scenes"]
+                    ]
+
                 semantics_params = request.modules.semantics.parameters or {}
                 semantics_request = {
                     "source": request.source,
@@ -451,7 +460,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                         "details": semantics_params.get("details"),
                         "sprite_vtt_url": semantics_params.get("sprite_vtt_url"),
                         "sprite_image_url": semantics_params.get("sprite_image_url"),
-                        "scene_boundaries": scene_boundaries if scene_boundaries else None,
+                        "scene_boundaries": semantics_scene_boundaries,
                     },
                 }
                 if semantics_params.get("custom_taxonomy"):
