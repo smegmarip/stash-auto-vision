@@ -716,7 +716,9 @@ paths:
   /semantics/analyze:
     post:
       summary: Analyze Semantics
-      description: Submit tag classification analysis job.
+      description: "Submit tag classification analysis job to the Redis-backed queue.\n\nThe endpoint never touches GPU code.
+        It stores the request payload in\nRedis and pushes the job_id to the pending queue. The worker (a single\nbackground
+        task) pulls jobs serially using an atomic Lua script."
       operationId: analyze_semantics_semantics_analyze_post
       requestBody:
         content:
