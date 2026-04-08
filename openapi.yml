@@ -5,8 +5,8 @@ info:
     and object detection capabilities.\n\nArchitecture: Microservices (6 services) coordinated via Vision API rollup endpoint.\n\
     \nServices:\n- Frame Server (port 5001) - Frame extraction and caching\n- Scenes Service (port 5002) - Scene boundary
     detection\n- Faces Service (port 5003) - Face detection, recognition, and quality assessment\n- Semantics Service (port
-    5004) - Tag classification with trained multi-view bi-encoder (Phase 3)\n- Objects Service (port 5005) - YOLO-World object
-    detection (stub - Phase 3)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010)
+    5004) - Tag classification with trained multi-view bi-encoder\n- Objects Service (port 5005) - YOLO-World object
+    detection (stub - Phase 4)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010)
     - Orchestration and rollup endpoint\n\nFor detailed service documentation, see:\n- docs/FRAME_SERVER.md\n- docs/SCENES_SERVICE.md\n\
     - docs/FACES_SERVICE.md\n- docs/SEMANTICS_SERVICE.md\n- docs/OBJECTS_SERVICE.md\n- docs/VISION_API.md\n"
   version: 1.0.0
@@ -812,7 +812,7 @@ paths:
   /objects/analyze:
     post:
       summary: Analyze Objects
-      description: "Stub endpoint for object analysis\n\nPhase 3 implementation will use YOLO-World for:\n- Open-vocabulary
+      description: "Stub endpoint for object analysis\n\nPhase 4 implementation will use YOLO-World for:\n- Open-vocabulary
         object detection\n- Custom object categories\n- Temporal object tracking\n- Bounding box annotations"
       operationId: analyze_objects_objects_analyze_post
       requestBody:

@@ -2,9 +2,9 @@
 
 **Comprehensive testing strategy for all implemented and future services**
 
-**Version:** 2.0.0
-**Last Updated:** 2025-12-02
-**Status:** Phase 2 Complete - Semantics Implemented
+**Version:** 3.0.0
+**Last Updated:** 2026-04-08
+**Status:** Phase 3 Complete - Tag Classifier Pipeline
 
 ---
 
@@ -715,7 +715,7 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 ### 6. Stub Service Tests
 
-#### Objects Service (Phase 3)
+#### Objects Service (Phase 4)
 
 ```bash
 curl http://localhost:5005/objects/health | jq .
@@ -735,7 +735,7 @@ curl -X POST http://localhost:5005/objects/analyze \
 {
   "job_id": "objects-stub-001",
   "status": "not_implemented",
-  "message": "Objects service is stubbed - awaiting Phase 3 implementation"
+  "message": "Objects service is stubbed - awaiting Phase 4 implementation"
 }
 ```
 
@@ -1190,7 +1190,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 | scenes-service    | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | faces-service     | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | semantics-service | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
-| objects-service   | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 3 |
+| objects-service   | ✅ Pass      | ⏸️ Stub       | ⏸️ N/A      | ⏸️ Awaiting Phase 4 |
 | vision-api        | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | jobs-viewer       | ✅ Pass      | ✅ Pass       | ✅ Pass     | ✅ Operational      |
 | schema-service    | ✅ Pass      | ✅ Pass       | N/A         | ✅ Operational      |
@@ -1215,7 +1215,9 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 - [x] Scene detection (ContentDetector, ThresholdDetector)
 - [x] Face recognition and clustering
 - [x] Multi-service workflows (scenes → faces → semantics)
-- [x] Semantic analysis (bi-encoder tag classification)
+- [x] Semantic analysis (multi-view bi-encoder tag classifier, 99.2% match rate)
+- [x] JoyCaption beta-one per-frame captioning (~8GB VRAM, load/unload lifecycle)
+- [x] Llama 3.1 8B narrative summary generation
 - [x] Cache hit/miss behavior
 - [x] Performance benchmarking
 
@@ -1229,7 +1231,7 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 
 ### Success Criteria
 
-**Phase 2 Complete When:**
+**Phase 3 Complete When:**
 
 - [x] All services start successfully
 - [x] Health checks pass for all services
@@ -1242,9 +1244,9 @@ docker-compose exec vision-api pytest tests/performance/ --benchmark
 - [x] Orchestrator successfully chains services
 - [x] Performance meets CPU targets
 
-**Status:** ✅ Phase 2 Testing Complete - Ready for Production Validation
+**Status:** ✅ Phase 3 Testing Complete - Tag Classifier Pipeline Validated
 
 ---
 
-**Last Updated:** 2025-12-02
+**Last Updated:** 2026-04-08
 **Version:** 2.0.0

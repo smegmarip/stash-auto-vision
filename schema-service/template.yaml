@@ -11,8 +11,8 @@ info:
     - Frame Server (port 5001) - Frame extraction and caching
     - Scenes Service (port 5002) - Scene boundary detection
     - Faces Service (port 5003) - Face detection, recognition, and quality assessment
-    - Semantics Service (port 5004) - Tag classification with trained multi-view bi-encoder (Phase 3)
-    - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 3)
+    - Semantics Service (port 5004) - Tag classification with trained multi-view bi-encoder
+    - Objects Service (port 5005) - YOLO-World object detection (stub - Phase 4)
     - Jobs Viewer Service (port 5020) - Job management and monitoring UI
     - Vision API (port 5010) - Orchestration and rollup endpoint
 

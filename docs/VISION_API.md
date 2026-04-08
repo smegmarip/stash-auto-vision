@@ -3,36 +3,42 @@
 **Service:** Vision API (Orchestrator)
 **Port:** 5010
 **Path:** `/vision`
-**Status:** Phase 2 - Implemented
-**Version:** 2.0.0
+**Status:** Phase 3 Complete - Orchestrator for scenes, faces, and semantics
+**Version:** 3.0.0
 
 ---
 
 ## Summary
 
-The Vision API is the primary orchestrator and rollup service for the Stash Auto Vision platform. It coordinates all backend analysis modules (scenes, faces, semantics, objects) and provides a unified API for comprehensive video analysis. This service acts as the main entry point for clients and manages complex multi-module workflows.
+The Vision API is the primary orchestrator and rollup service for the Stash Auto Vision platform. It coordinates the backend analysis modules (scenes, faces, semantics, objects) and provides a unified API for multi-module video analysis. Clients submit a single job describing which modules to run; the Vision API dispatches per-module sub-jobs, tracks aggregate progress in Redis, and returns the combined results.
 
-As an orchestrator, the Vision API does not perform video processing directly. Instead, it coordinates calls to specialized backend services, manages job state across multiple modules, aggregates results, and handles error scenarios. The service supports both sequential processing (default) for resource-efficient operation and parallel processing (future) for maximum throughput.
+As an orchestrator, the Vision API does not perform video processing directly. Instead, it calls each enabled service, polls for completion, aggregates results, and manages job state under the `vision:` Redis namespace. Scene boundaries produced by scenes-service are forwarded to downstream modules (faces, semantics) to avoid redundant decoding work.
 
-The Vision API integrates with seven backend services: frame-server (port 5001) for GPU-accelerated frame extraction, scenes-service (port 5002) for scene boundary detection, faces-service (port 5003) for face recognition, semantics-service (port 5004) for SigLIP-based scene understanding (implemented), objects-service (port 5005) for YOLO-World object detection (Phase 3), schema-service (port 5009) for OpenAPI aggregation, and jobs-viewer (port 5020) for React-based monitoring UI. Health monitoring across all services ensures reliable operation.
+Processing is sequential by default to avoid GPU memory contention (JoyCaption beta-one alone peaks around 8 GB VRAM during semantic captioning). Parallel execution is reserved for a future phase.
 
-In production testing, the Vision API successfully processed a 120-second video with both scenes and faces analysis in 13.97 seconds (sequential mode). The service provides comprehensive result aggregation, combining outputs from multiple backend services into a single unified response for easy client consumption.
+**Downstream services called by Vision API:**
+
+| Name | URL (default) | Endpoint | Notes |
+|---|---|---|---|
+| scenes | `http://scenes-service:5002` | `/scenes/detect` | Scene boundary detection |
+| faces | `http://faces-service:5003` | `/faces/analyze` | InsightFace buffalo_l |
+| semantics | `http://semantics-service:5004` | `/semantics/analyze` | Trained multi-view bi-encoder tag classifier + JoyCaption captioning |
+| objects | `http://objects-service:5005` | `/objects/analyze` | Stub (Phase 4) |
+
+> **Live schema:** the authoritative, always-current schema is exposed via the schema-service at **<http://localhost:5009/docs>** (Swagger UI) and **<http://localhost:5009/openapi.json>** (raw). The hand-authored OpenAPI block below is a reference snapshot, not the source of truth.
 
 ---
 
-## OpenAPI 3.0 Schema
+## OpenAPI Reference
+
+This block is extracted from the live `openapi.yml` artifact and kept in sync with the FastAPI models in `vision-api/app/models.py`. Treat it as a user-facing reference; for a byte-accurate schema always consult `/openapi.json`.
 
 ```yaml
-openapi: 3.0.3
+openapi: 3.1.1
 info:
   title: Vision API - Orchestrator
-  description: Main API gateway and multi-module coordinator for video analysis
+  description: Orchestrator for video vision analysis services
   version: 1.0.0
-servers:
-  - url: http://vision-api:5010
-    description: Internal Docker network
-  - url: http://localhost:5010
-    description: Local development
 
 paths:
   /vision/analyze:
@@ -40,39 +46,15 @@ paths:
       summary: Submit comprehensive video analysis job
       description: |
         Submit a video for multi-module analysis. Enabled modules are processed
-        according to the specified processing mode (sequential or parallel).
-        Scene boundaries from scenes-service are passed to faces-service for
-        optimized sampling.
+        sequentially. Scene boundaries from scenes-service are forwarded to
+        downstream modules (faces, semantics) for optimized sampling.
       operationId: analyzeVideo
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AnalyzeRequest"
-            examples:
-              faces_and_scenes:
-                summary: Faces and scenes analysis
-                value:
-                  video_path: /media/videos/scene.mp4
-                  source_id: "12345"
-                  enable_scenes: true
-                  enable_faces: true
-                  processing_mode: sequential
-                  parameters:
-                    scene_threshold: 27.0
-                    face_min_confidence: 0.9
-                    max_faces: 50
-              faces_only:
-                summary: Faces only
-                value:
-                  video_path: /media/videos/scene.mp4
-                  source_id: "12345"
-                  enable_faces: true
-                  parameters:
-                    face_min_confidence: 0.8
-                    max_faces: 100
-                    similarity_threshold: 0.6
+              $ref: "#/components/schemas/AnalyzeVideoRequest"
       responses:
         "202":
           description: Analysis job accepted and queued
@@ -80,38 +62,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalyzeJobResponse"
-        "400":
-          description: Invalid request parameters
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Video file not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+          description: Video file not found (for local file sources)
+        "422":
+          description: Validation error
 
   /vision/jobs/{job_id}/status:
     get:
       summary: Get analysis job status
-      description: Poll job status and progress across all enabled modules
-      operationId: getJobStatus
+      description: |
+        Poll orchestrator job status. Looks up the job across all service
+        namespaces (vision, faces, scenes, semantics, objects).
       parameters:
         - name: job_id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
-          description: Job identifier returned from /vision/analyze
       responses:
         "200":
           description: Job status retrieved
@@ -121,110 +88,48 @@ paths:
                 $ref: "#/components/schemas/AnalyzeJobStatus"
         "404":
           description: Job not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
 
   /vision/jobs/{job_id}/results:
     get:
       summary: Get aggregated analysis results
       description: |
-        Retrieve comprehensive results from all enabled modules. Only
-        available when job status is "completed". Results include all
-        module outputs aggregated into a single response.
-      operationId: getJobResults
+        Retrieve aggregated results from all enabled modules. Only available
+        when job status is "completed".
       parameters:
         - name: job_id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         "200":
           description: Analysis results
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalyzeResults"
+                $ref: "#/components/schemas/AnalyzeJobResults"
         "404":
           description: Job not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Job not completed yet
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
 
   /vision/jobs:
     get:
-      summary: List all jobs across services
+      summary: List jobs across all services
       description: |
-        List all jobs from vision-api, faces-service, and scenes-service
-        with optional filtering and pagination. Jobs are deduplicated
+        List jobs from vision, faces, scenes, semantics, and objects
+        namespaces with optional filtering and pagination. Deduplicated
         by cache_key, preferring vision-level jobs.
-      operationId: listJobs
       parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [queued, processing, completed, failed]
-        - name: service
-          in: query
-          schema:
-            type: string
-            enum: [vision, faces, scenes]
-        - name: source_id
-          in: query
-          schema:
-            type: string
-        - name: source
-          in: query
-          schema:
-            type: string
-        - name: start_date
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - name: end_date
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - name: include_results
-          in: query
-          schema:
-            type: boolean
-            default: false
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
+        - { name: status,          in: query, schema: { type: string, enum: [queued, processing, completed, failed] } }
+        - { name: service,         in: query, schema: { type: string, enum: [vision, faces, scenes, semantics, objects] } }
+        - { name: source_id,       in: query, schema: { type: string } }
+        - { name: source,          in: query, schema: { type: string } }
+        - { name: start_date,      in: query, schema: { type: string, format: date-time } }
+        - { name: end_date,        in: query, schema: { type: string, format: date-time } }
+        - { name: include_results, in: query, schema: { type: boolean, default: false } }
+        - { name: limit,           in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 500 } }
+        - { name: offset,          in: query, schema: { type: integer, default: 0, minimum: 0 } }
       responses:
         "200":
           description: List of jobs
@@ -233,14 +138,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListJobsResponse"
 
+  /vision/jobs/count:
+    get:
+      summary: Count jobs matching filters
+      description: |
+        Efficient count-only variant of /vision/jobs for pagination and
+        tab displays. Returns a total plus a per-service breakdown.
+      responses:
+        "200":
+          description: Count result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  by_service:
+                    type: object
+                    additionalProperties:
+                      type: integer
+
   /vision/health:
     get:
       summary: Service health check
       description: |
-        Health status for Vision API and all downstream services.
-        Returns detailed health information for scenes-service,
-        faces-service, semantics-service, and objects-service.
-      operationId: healthCheck
+        Returns Vision API health along with aggregated health from
+        scenes, faces, semantics, and objects services.
       responses:
         "200":
           description: Service healthy
@@ -248,529 +172,388 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
-        "503":
-          description: Service unhealthy
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   schemas:
-    AnalyzeRequest:
+    AnalyzeVideoRequest:
       type: object
-      required:
-        - video_path
-        - source_id
+      required: [source, source_id]
       properties:
-        video_path:
+        source:
           type: string
-          description: Absolute path to video file on shared volume
+          description: Path, URL, or image source to analyze
           example: /media/videos/scene.mp4
         source_id:
           type: string
-          description: Scene identifier for reference
+          description: Scene ID for reference (Stash scene ID)
           example: "12345"
         job_id:
           type: string
-          format: uuid
           description: Optional custom job ID (generated if not provided)
-        enable_scenes:
-          type: boolean
-          default: false
-          description: Enable scene boundary detection
-        enable_faces:
-          type: boolean
-          default: false
-          description: Enable face recognition analysis
-        enable_semantics:
-          type: boolean
-          default: false
-          description: Enable semantic analysis (Phase 2 - currently stubbed)
-        enable_objects:
-          type: boolean
-          default: false
-          description: Enable object detection (Phase 3 - currently stubbed)
         processing_mode:
           type: string
           enum: [sequential, parallel]
           default: sequential
           description: |
-            Processing mode - sequential (one module at a time) or
-            parallel (all modules simultaneously). Sequential is default
-            for resource efficiency.
+            Sequential processes one module at a time (default, resource-efficient).
+            Parallel is reserved for a future phase.
+        modules:
+          $ref: "#/components/schemas/ModulesConfig"
+
+    ModulesConfig:
+      type: object
+      properties:
+        scenes:    { $ref: "#/components/schemas/ModuleConfig" }   # default enabled: true
+        faces:     { $ref: "#/components/schemas/ModuleConfig" }   # default enabled: true
+        semantics: { $ref: "#/components/schemas/ModuleConfig" }   # default enabled: false
+        objects:   { $ref: "#/components/schemas/ModuleConfig" }   # default enabled: false
+
+    ModuleConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
         parameters:
           type: object
-          description: Module-specific parameters
-          properties:
-            scene_detection_method:
-              type: string
-              enum: [content, threshold, adaptive]
-              default: content
-            scene_threshold:
-              type: number
-              default: 27.0
-              description: Scene detection sensitivity (higher = fewer scenes)
-            min_scene_length:
-              type: number
-              default: 0.6
-              description: Minimum scene duration in seconds
-            face_min_confidence:
-              type: number
-              default: 0.9
-              minimum: 0
-              maximum: 1
-              description: Minimum face detection confidence
-            max_faces:
-              type: integer
-              default: 50
-              minimum: 1
-              description: Maximum unique faces to detect
-            face_sampling_interval:
-              type: number
-              default: 2.0
-              description: Seconds between sampled frames for face detection
-            enable_deduplication:
-              type: boolean
-              default: true
-              description: Deduplicate faces by embedding similarity
-            similarity_threshold:
-              type: number
-              default: 0.6
-              minimum: 0
-              maximum: 1
-              description: Cosine similarity threshold for face deduplication
-            detect_demographics:
-              type: boolean
-              default: true
-              description: Extract age/gender/emotion from faces
+          description: |
+            Module-specific parameters. See each service's documentation
+            for accepted keys:
+              - scenes:    docs/SCENES_SERVICE.md
+              - faces:     docs/FACES_SERVICE.md
+              - semantics: docs/SEMANTICS_SERVICE.md
+              - objects:   docs/OBJECTS_SERVICE.md
 
     AnalyzeJobResponse:
       type: object
+      required: [job_id, status, created_at]
       properties:
-        job_id:
-          type: string
-          format: uuid
-          description: Job identifier for status polling
-        status:
-          type: string
-          enum: [queued, processing, completed, failed]
-        created_at:
-          type: string
-          format: date-time
+        job_id:         { type: string }
+        status:         { type: string, enum: [queued, processing, completed, failed] }
+        created_at:     { type: string, format: date-time }
         services_enabled:
           type: object
           properties:
-            scenes:
-              type: boolean
-            faces:
-              type: boolean
-            semantics:
-              type: boolean
-            objects:
-              type: boolean
+            scenes:    { type: boolean }
+            faces:     { type: boolean }
+            semantics: { type: boolean }
+            objects:   { type: boolean }
         processing_mode:
           type: string
           enum: [sequential, parallel]
 
     AnalyzeJobStatus:
       type: object
+      required: [job_id, status, progress, created_at]
       properties:
-        job_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [queued, processing, completed, failed]
-        progress:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: Overall progress (0.0 to 1.0)
-        processing_mode:
-          type: string
-          enum: [sequential, parallel]
+        job_id:          { type: string }
+        status:          { type: string, enum: [queued, processing, completed, failed] }
+        progress:        { type: number, minimum: 0, maximum: 1 }
+        processing_mode: { type: string, enum: [sequential, parallel] }
+        stage:           { type: string, nullable: true, description: "Current processing stage (e.g. scene_detection, face_recognition, semantic_analysis)" }
+        message:         { type: string, nullable: true }
         services:
           type: array
-          description: Individual service statuses (future enhancement)
+          description: Individual service sub-statuses (currently returned empty; reserved for future use)
           items:
             type: object
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        error:
-          type: string
-          nullable: true
-          description: Error message if status is "failed"
+        created_at:    { type: string, format: date-time }
+        started_at:    { type: string, format: date-time, nullable: true }
+        completed_at:  { type: string, format: date-time, nullable: true }
+        result_summary:{ type: object, nullable: true }
+        error:         { type: string, nullable: true }
 
-    AnalyzeResults:
+    AnalyzeJobResults:
       type: object
+      required: [job_id, source_id, status]
       properties:
-        job_id:
-          type: string
-          format: uuid
-        source_id:
-          type: string
-        status:
-          type: string
-          enum: [completed]
-        scenes:
-          type: object
-          nullable: true
-          description: Full scenes-service results (if enabled)
-        faces:
-          type: object
-          nullable: true
-          description: Full faces-service results (if enabled)
-        semantics:
-          type: object
-          nullable: true
-          description: Semantics results (tag classification)
-        objects:
-          type: object
-          nullable: true
-          description: Objects results or stub response
+        job_id:    { type: string }
+        source_id: { type: string }
+        status:    { type: string, enum: [completed] }
+        scenes:    { type: object, nullable: true, description: "scenes-service rollup" }
+        faces:     { type: object, nullable: true, description: "faces-service rollup" }
+        semantics: { type: object, nullable: true, description: "semantics-service rollup (tags, frame_captions, scene_summary, scene_embedding)" }
+        objects:   { type: object, nullable: true, description: "objects-service rollup or stub response" }
         metadata:
           type: object
           properties:
-            processing_time_seconds:
-              type: number
-              format: float
-            processing_mode:
-              type: string
-              enum: [sequential, parallel]
+            processing_time_seconds: { type: number }
+            processing_mode:         { type: string, enum: [sequential, parallel] }
             services_used:
               type: object
               properties:
-                scenes:
-                  type: boolean
-                faces:
-                  type: boolean
-                semantics:
-                  type: boolean
-                objects:
-                  type: boolean
+                scenes:    { type: boolean }
+                faces:     { type: boolean }
+                semantics: { type: boolean }
+                objects:   { type: boolean }
 
     HealthResponse:
       type: object
+      required: [status, service]
       properties:
-        status:
-          type: string
-          enum: [healthy, unhealthy]
-        service:
-          type: string
-          example: vision-api
-        version:
-          type: string
-          example: 1.0.0
+        status:  { type: string, enum: [healthy, unhealthy] }
+        service: { type: string, example: vision-api }
+        version: { type: string, example: "1.0.0" }
         services:
           type: object
-          description: Health status of all downstream services
+          description: Aggregated health from downstream services
           additionalProperties:
             type: object
-            properties:
-              status:
-                type: string
-              version:
-                type: string
-              error:
-                type: string
-
-    ErrorResponse:
-      type: object
-      properties:
-        detail:
-          type: string
-          description: Error message
 
     ListJobsResponse:
       type: object
+      required: [jobs, total, limit, offset]
       properties:
         jobs:
           type: array
-          items:
-            $ref: "#/components/schemas/JobSummary"
-        total:
-          type: integer
-          description: Total matching jobs before pagination
-        limit:
-          type: integer
-        offset:
-          type: integer
+          items: { $ref: "#/components/schemas/JobSummary" }
+        total:  { type: integer }
+        limit:  { type: integer }
+        offset: { type: integer }
 
     JobSummary:
       type: object
+      required: [job_id, service, status, progress]
       properties:
-        job_id:
-          type: string
-        service:
-          type: string
-          enum: [vision, faces, scenes]
-        status:
-          type: string
-          enum: [queued, processing, completed, failed]
-        progress:
-          type: number
-        source:
-          type: string
-          nullable: true
-        source_id:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        result_summary:
-          type: object
-          nullable: true
+        job_id:       { type: string }
+        service:      { type: string, enum: [vision, faces, scenes, semantics, objects] }
+        status:       { type: string, enum: [queued, processing, completed, failed] }
+        progress:     { type: number, minimum: 0, maximum: 1 }
+        source:       { type: string, nullable: true }
+        source_id:    { type: string, nullable: true }
+        created_at:   { type: string, format: date-time, nullable: true }
+        started_at:   { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        result_summary: { type: object, nullable: true }
         results:
           type: object
           nullable: true
-          description: Full results when include_results=true
+          description: Full results; populated only when include_results=true
 ```
+
+---
+
+## Request Shape
+
+The Vision API uses a **nested `modules` configuration** rather than flat `enable_*` booleans. Each module has its own `enabled` flag and `parameters` map:
+
+```json
+{
+  "source": "/media/videos/scene_12345.mp4",
+  "source_id": "12345",
+  "processing_mode": "sequential",
+  "modules": {
+    "scenes":    { "enabled": true,  "parameters": { "scene_threshold": 27.0 } },
+    "faces":     { "enabled": true,  "parameters": { "face_min_confidence": 0.9, "max_faces": 50 } },
+    "semantics": { "enabled": false, "parameters": {} },
+    "objects":   { "enabled": false, "parameters": {} }
+  }
+}
+```
+
+**Field notes:**
+
+- `source` accepts a local path, an HTTP(S) URL (downloaded to `/tmp/downloads`), or an image file. When the source is an image, `modules.scenes` is auto-disabled.
+- `source_id` is the scene identifier used for Stash correlation and caching.
+- `modules.scenes` and `modules.faces` default to `enabled: true`; `modules.semantics` and `modules.objects` default to `enabled: false`.
+- Parameter keys are forwarded as-is to each service — see the per-service documentation for the accepted keys.
+- `processing_mode` currently supports only `sequential`. `parallel` is reserved.
+
+**Auto-enabled scenes:** if `modules.semantics.enabled = true` and `parameters.frame_selection = "scene_based"`, the orchestrator automatically enables `modules.scenes` to supply boundary data.
 
 ---
 
 ## Functional Details
 
-### Orchestration Architecture
+### Orchestration Flow
 
-The Vision API implements a hub-and-spoke architecture where it acts as the central coordinator for all backend services:
+```
+/vision/analyze (POST)
+   │
+   ├─ validate source (local files: must exist; URLs: downloaded later)
+   ├─ generate job_id (or use provided)
+   ├─ enqueue BackgroundTask(process_video_analysis)
+   └─ return 202 { job_id, status: queued, services_enabled, processing_mode }
 
-**Service Coordination:**
+process_video_analysis (async)
+   │
+   ├─ if source is URL → download_url() → replace request.source with local path
+   ├─ if source is image → EXIF normalize, auto-disable scenes
+   ├─ write initial metadata to vision:job:{id}:metadata in Redis
+   ├─ sequential pipeline:
+   │     1. scenes   (if enabled)  → results["scenes"]
+   │     2. faces    (if enabled)  → receives scene_boundaries from step 1
+   │     3. semantics(if enabled)  → receives scene_boundaries from step 1
+   │     4. objects  (if enabled)  → stub response
+   ├─ each step calls call_service() which POSTs to the service, polls
+   │  {service}/jobs/{id}/status at 2s intervals, then GETs results
+   ├─ each poll updates orchestrator progress = base + sub_progress * weight
+   └─ on completion: write aggregated results to vision:job:{id}:results
+```
 
-- Submits jobs to backend services via HTTP POST
-- Polls backend service status endpoints at 2-second intervals
-- Retrieves results from backend services when jobs complete
-- Aggregates results from multiple services into unified response
-- Manages job state in Redis with 1-hour TTL
-- Handles partial failures gracefully
+**Progress model:** weights are divided evenly across enabled modules (`1 / N` per module). Within each module the orchestrator advances linearly based on the sub-service's reported progress.
 
-**Service Discovery:**
+### Service Coordination
 
-- scenes-service: `http://scenes-service:5002`
-- faces-service: `http://faces-service:5003`
-- semantics-service: `http://semantics-service:5004`
-- objects-service: `http://objects-service:5005`
+`call_service()` (in `vision-api/app/main.py`) handles the generic submit-poll-retrieve loop for every downstream service. Scene requests hit `/scenes/detect`; all other modules hit `/{service}/analyze`. Sub-jobs inherit IDs from the orchestrator job: `scenes-{job_id}`, `faces-{job_id}`, etc.
 
-**Health Monitoring:**
-All downstream services are health-checked via `<service>/health` endpoints with 5-second timeouts. The Vision API aggregates health status from all services.
+Scene boundaries from `results["scenes"]["scenes"]` are flattened to `[{start_timestamp, end_timestamp}, …]` before being forwarded to faces and semantics — semantics builds them independently of whether faces ran, so the two downstream steps are order-agnostic.
 
-### Processing Modes
+### Cross-Namespace Job Lookups
 
-#### Sequential Mode (Default)
+`GET /vision/jobs/{id}/status` and `GET /vision/jobs/{id}/results` search the following Redis namespaces in order:
 
-Processes modules one at a time in dependency order:
+```
+vision → faces → scenes → semantics → objects
+```
 
-**Execution Order:**
+The first match wins. This lets clients query any job ID (orchestrator or single-service) through the unified `/vision/jobs/…` endpoint.
 
-1. **Scenes Service** (if enabled) - Detects scene boundaries
-2. **Faces Service** (if enabled) - Uses scene boundaries for optimized sampling
-3. **Semantics Service** (if enabled) - Uses scene boundaries for frame selection
-4. **Objects Service** (if enabled) - Independent processing
+### Job Listing and Counting
 
-**Advantages:**
+`GET /vision/jobs` aggregates jobs from all service namespaces via `CacheManager.list_jobs()` and deduplicates by `cache_key` (vision-level jobs are preferred). Filters: `status`, `service`, `source_id`, `source`, `start_date`, `end_date`. Pagination: `limit` (1-500, default 50), `offset`. Pass `include_results=true` to embed full result payloads (heavy — use with small page sizes).
 
-- Lower memory usage (one service active at a time)
-- Predictable GPU resource usage (no contention)
-- Clear error isolation
-- Scene-aware face sampling (passes boundaries to faces-service)
+`GET /vision/jobs/count` is an optimized count-only variant used by the jobs-viewer UI for tab badges and pagination headers. Returns `{ total, by_service: { vision, faces, scenes, semantics, objects } }`.
 
-**Performance:**
+### Health Aggregation
 
-- 13.97 seconds for 120s video (scenes + faces)
-- 3.39s scenes + 7.05s faces + 3.53s coordination overhead
-- ~11.4 FPS aggregate throughput (CPU mode)
-
-#### Parallel Mode (Future - Phase 2)
-
-Processes all enabled modules simultaneously using `asyncio.gather()`:
-
-**Advantages:**
-
-- 3-4x faster completion time
-- Efficient use of idle GPU during I/O
-- Maximum throughput
-
-**Considerations:**
-
-- Higher GPU memory (all models loaded)
-- Higher system memory usage
-- Potential resource contention
-- No inter-service dependency passing
-
-### Module Configuration
-
-Each module can be individually enabled with custom parameters:
-
-**Scenes Module:**
+`GET /vision/health` fans out to `{scenes,faces,semantics,objects}/{name}/health` (5s timeout) and returns:
 
 ```json
 {
-  "enable_scenes": true,
-  "parameters": {
-    "scene_detection_method": "content",
-    "scene_threshold": 27.0,
-    "min_scene_length": 0.6
+  "status": "healthy",
+  "service": "vision-api",
+  "version": "1.0.0",
+  "services": {
+    "scenes":    { "status": "healthy", ... },
+    "faces":     { "status": "healthy", "model": "buffalo_l", ... },
+    "semantics": { "status": "healthy", "classifier_loaded": true, "taxonomy": { "loaded": true, "tag_count": 492 } },
+    "objects":   { "status": "healthy", "implemented": false, "phase": 4 }
   }
 }
 ```
 
-**Faces Module:**
+A downstream failure does not fail the overall response — individual services are marked `unhealthy` with an `error` field.
 
-```json
-{
-  "enable_faces": true,
-  "parameters": {
-    "face_min_confidence": 0.9,
-    "max_faces": 50,
-    "face_sampling_interval": 2.0,
-    "enable_deduplication": true,
-    "similarity_threshold": 0.6,
-    "detect_demographics": true
-  }
-}
-```
+---
 
-**Semantics Module (Implemented):**
+## Examples
 
-```json
-{
-  "enable_semantics": true,
-  "parameters": {
-    "classification_tags": ["indoor", "outdoor", "conversation", "action"],
-    "min_confidence": 0.5,
-    "sampling_interval": 2.0
-  }
-}
-```
+### Scenes + Faces (sequential)
 
-**Objects Module (Phase 3):**
-
-```json
-{
-  "enable_objects": true
-}
-```
-
-### Workflow Examples
-
-#### Example 1: Scenes + Faces Sequential
-
-```python
-import requests
-import time
-
-# Submit job
-response = requests.post("http://localhost:5010/vision/analyze", json={
-    "source": "/media/videos/scene.mp4",
+```bash
+# Submit
+curl -X POST http://localhost:5010/vision/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/scene_12345.mp4",
     "source_id": "12345",
-    "enable_scenes": True,
-    "enable_faces": True,
-    "processing_mode": "sequential",
-    "parameters": {
-        "scene_threshold": 27.0,
-        "face_min_confidence": 0.9,
-        "max_faces": 50
+    "modules": {
+      "scenes": { "enabled": true, "parameters": { "scene_threshold": 27.0 } },
+      "faces":  { "enabled": true, "parameters": { "face_min_confidence": 0.9, "max_faces": 50 } }
     }
-})
+  }'
+# → { "job_id": "…", "status": "queued", "services_enabled": {...}, "processing_mode": "sequential" }
 
-job_id = response.json()["job_id"]
+# Poll
+curl http://localhost:5010/vision/jobs/{job_id}/status
 
-# Poll status
-while True:
-    status = requests.get(f"http://localhost:5010/vision/jobs/{job_id}/status").json()
-    print(f"Progress: {status['progress']*100:.1f}%")
-
-    if status["status"] == "completed":
-        break
-    elif status["status"] == "failed":
-        raise Exception(status["error"])
-
-    time.sleep(2)
-
-# Get results
-results = requests.get(f"http://localhost:5010/vision/jobs/{job_id}/results").json()
-
-# Access scene boundaries
-scenes = results["scenes"]["scenes"]
-for scene in scenes:
-    print(f"Scene {scene['scene_number']}: {scene['start_timestamp']:.2f}s - {scene['end_timestamp']:.2f}s")
-
-# Access detected faces
-faces = results["faces"]["faces"]
-for face in faces:
-    print(f"Face {face['face_id']}: {len(face['detections'])} detections")
+# Fetch
+curl http://localhost:5010/vision/jobs/{job_id}/results
 ```
 
-#### Example 2: Faces Only (No Scene Detection)
+### Semantics with auto-enabled scenes
 
-```python
-response = requests.post("http://localhost:5010/vision/analyze", json={
-    "source": "/media/videos/scene.mp4",
+```bash
+curl -X POST http://localhost:5010/vision/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "/media/videos/scene_12345.mp4",
     "source_id": "12345",
-    "enable_faces": True,
-    "parameters": {
-        "face_min_confidence": 0.8,
-        "max_faces": 100,
-        "face_sampling_interval": 1.0
+    "modules": {
+      "semantics": {
+        "enabled": true,
+        "parameters": {
+          "frame_selection": "scene_based",
+          "frames_per_scene": 16,
+          "min_confidence": 0.75,
+          "top_k_tags": 30
+        }
+      }
     }
-})
+  }'
 ```
 
-### Result Aggregation
+`modules.scenes` is auto-enabled because `frame_selection=scene_based` needs boundary data.
 
-The Vision API combines results from all enabled services into a single unified response:
+### Semantics with sprite-sheet frames (no scene decoding)
 
-```json
+```bash
+curl -X POST http://localhost:5010/vision/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_id": "12345",
+    "modules": {
+      "semantics": {
+        "enabled": true,
+        "parameters": { "frame_selection": "sprite_sheet" }
+      }
+    }
+  }'
+```
+
+Sprite URLs and promotional description are fetched from Stash via `source_id`. No frame-server decoding is needed.
+
+### Filtered job listing
+
+```bash
+# Completed semantics jobs from the last 24h, full results embedded
+curl "http://localhost:5010/vision/jobs?service=semantics&status=completed&include_results=true&limit=10"
+
+# Cheap count for the jobs-viewer header
+curl "http://localhost:5010/vision/jobs/count?status=processing"
+```
+
+---
+
+## Aggregated Result Shape
+
+```jsonc
 {
-  "job_id": "16542ef6-73b5-4200-a5be-414b8bfb6bc2",
-  "source_id": "test_rollup_001",
-  "status": "completed",
+  "job_id":    "…",
+  "source_id": "12345",
+  "status":    "completed",
+
   "scenes": {
     "status": "completed",
     "scenes": [
-      {
-        "scene_number": 0,
-        "start_timestamp": 0.0,
-        "end_timestamp": 30.03,
-        "duration": 30.03
-      }
+      { "scene_number": 0, "start_timestamp": 0.0, "end_timestamp": 30.03, "duration": 30.03 }
     ],
-    "metadata": {
-      "processing_time_seconds": 3.39
-    }
+    "metadata": { "processing_time_seconds": 3.39 }
   },
+
   "faces": {
     "status": "completed",
-    "faces": [
-      {
-        "face_id": "face_0",
-        "embedding": [0.123, -0.456, ...],
-        "detections": [...]
-      }
-    ],
+    "faces":  [ { "face_id": "face_0", "embedding": [/* 512-D */], "detections": [ /* … */ ] } ],
     "metadata": {
       "unique_faces": 11,
       "total_detections": 16,
       "processing_time_seconds": 7.05
     }
   },
+
   "semantics": {
     "status": "completed",
     "semantics": {
-      "tags": [...],
-      "frame_captions": [...],
-      "scene_summary": "..."
+      "tags": [
+        { "tag_id": "123", "tag_name": "Indoor",       "score": 0.95, "path": "Setting/Indoor",              "decode_type": "hierarchical" },
+        { "tag_id": "456", "tag_name": "Living Room",  "score": 0.88, "path": "Setting/Indoor/Living Room",  "decode_type": "hierarchical" }
+      ],
+      "frame_captions": [
+        { "frame_index": 0, "timestamp": 5.0, "caption": "A woman sits on a beige couch…" }
+      ],
+      "scene_summary":  "A woman relaxes in a warmly decorated living room…",
+      "scene_embedding": [0.012, -0.034, 0.078 /* … */]
     },
     "metadata": {
       "classifier_model": "text-only",
@@ -779,176 +562,25 @@ The Vision API combines results from all enabled services into a single unified 
       "processing_time_seconds": 45.2
     }
   },
-  "objects": {
-    "status": "not_implemented"
-  },
+
+  "objects": { "status": "not_implemented" },
+
   "metadata": {
-    "processing_time_seconds": 13.97,
+    "processing_time_seconds": 56.61,
     "processing_mode": "sequential",
-    "services_used": {
-      "scenes": true,
-      "faces": true,
-      "semantics": false,
-      "objects": false
-    }
+    "services_used": { "scenes": true, "faces": true, "semantics": true, "objects": false }
   }
 }
 ```
 
-### Job Listing
+---
 
-The Vision API provides a unified job listing endpoint that aggregates jobs from all services:
+## Configuration
 
-```python
-import requests
-
-# List all jobs
-response = requests.get("http://localhost:5010/vision/jobs")
-jobs = response.json()
-print(f"Found {jobs['total']} jobs")
-
-# Filter by status
-completed = requests.get("http://localhost:5010/vision/jobs?status=completed")
-
-# Filter by service
-faces_jobs = requests.get("http://localhost:5010/vision/jobs?service=faces")
-
-# Filter by source_id
-scene_jobs = requests.get("http://localhost:5010/vision/jobs?source_id=12345")
-
-# Date range filtering
-from_date = requests.get(
-    "http://localhost:5010/vision/jobs?start_date=2025-01-01T00:00:00Z"
-)
-
-# Include full results
-with_results = requests.get(
-    "http://localhost:5010/vision/jobs?include_results=true&limit=10"
-)
-
-# Pagination
-page_2 = requests.get("http://localhost:5010/vision/jobs?limit=50&offset=50")
-```
-
-**Example Response:**
-
-```json
-{
-  "jobs": [
-    {
-      "job_id": "16542ef6-73b5-4200-a5be-414b8bfb6bc2",
-      "service": "vision",
-      "status": "completed",
-      "progress": 1.0,
-      "source": "/media/videos/scene.mp4",
-      "source_id": "12345",
-      "created_at": "2025-11-26T04:30:00.000Z",
-      "result_summary": {
-        "scenes": 4,
-        "faces": 11
-      }
-    },
-    {
-      "job_id": "faces-abc123",
-      "service": "faces",
-      "status": "processing",
-      "progress": 0.75,
-      "source": "/media/videos/another.mp4",
-      "source_id": "67890",
-      "created_at": "2025-11-26T04:35:00.000Z"
-    }
-  ],
-  "total": 156,
-  "limit": 50,
-  "offset": 0
-}
-```
-
-**Deduplication:**
-Jobs are deduplicated by `cache_key`. If the same video is processed through both vision-api and directly to faces-service, only the vision-level job is returned (as it contains more complete context).
-
-### Cross-Service Job Aggregation
-
-The Vision API aggregates jobs from multiple namespaces (vision, faces, scenes, semantics) into a unified view:
-
-**Multi-Namespace Lookup:**
-
-```python
-# Internal implementation for job lookup
-namespaces = ["vision", "faces", "scenes", "semantics"]
-for namespace in namespaces:
-    job_keys = redis.keys(f"{namespace}:job:*:status")
-    # Aggregate and deduplicate by cache_key
-```
-
-**TTL-Based Cleanup:**
-
-- Job metadata: 1 year retention (CACHE_TTL=31536000)
-- Extracted frames: 2 hours (FRAME_TTL_HOURS=2)
-- Download artifacts: Automatic cleanup after job completion
-
-### Service Health Monitoring
-
-The Vision API monitors all downstream services and reports aggregated health:
-
-```python
-# Health check all services
-response = requests.get("http://localhost:5010/vision/health")
-
-# Example response
-{
-  "status": "healthy",
-  "service": "vision-api",
-  "version": "1.0.0",
-  "services": {
-    "scenes": {
-      "status": "healthy",
-      "version": "1.0.0",
-      "gpu_available": false
-    },
-    "faces": {
-      "status": "healthy",
-      "version": "1.0.0",
-      "model": "buffalo_l",
-      "gpu_available": false
-    },
-    "semantics": {
-      "status": "healthy",
-      "classifier_model": "text-only",
-      "classifier_loaded": true,
-      "device": "cuda",
-      "taxonomy": {"loaded": true, "tag_count": 492}
-    },
-    "objects": {
-      "status": "healthy",
-      "implemented": false,
-      "phase": 3
-    }
-  }
-}
-```
-
-### Performance
-
-**Test Results (CPU Mode - 120s Video):**
-
-- Scenes detection: 3.39 seconds (4 scenes)
-- Faces analysis: 7.05 seconds (11 frames)
-- Total processing: 13.97 seconds
-- Aggregate throughput: 11.4 FPS
-
-**Expected GPU Performance:**
-
-- Scenes detection: ~2s (GPU-accelerated histogram)
-- Faces analysis: ~2-3s (GPU-accelerated InsightFace)
-- Total processing: ~6-8 seconds (2-3x speedup)
-
-### Configuration
-
-Environment variables:
+Environment variables (all optional; defaults shown):
 
 ```bash
-# Service URLs
+# Downstream service URLs
 SCENES_SERVICE_URL=http://scenes-service:5002
 FACES_SERVICE_URL=http://faces-service:5003
 SEMANTICS_SERVICE_URL=http://semantics-service:5004
@@ -956,13 +588,16 @@ OBJECTS_SERVICE_URL=http://objects-service:5005
 
 # Redis
 REDIS_URL=redis://redis:6379/0
+CACHE_TTL=31536000          # 1 year (job metadata retention)
 
-# Cache Configuration
-CACHE_TTL=31536000        # 1 year job history retention
-
-# Timeouts
-SERVICE_TIMEOUT=300        # 5 minutes per service call
-POLLING_INTERVAL=2.0       # 2 seconds between status polls
+# Confidence defaults (overridable per request)
+FACES_MIN_CONFIDENCE=0.9
+FACES_MIN_QUALITY=0.0
+FACES_ENHANCEMENT_QUALITY_TRIGGER=0.5
+SCENES_THRESHOLD=27.0
+SEMANTICS_MIN_CONFIDENCE=0.75
+OBJECTS_MIN_CONFIDENCE=0.5
+CLASSIFIER_MODEL=text-only
 
 # Logging
 LOG_LEVEL=INFO
@@ -970,6 +605,18 @@ LOG_LEVEL=INFO
 
 ---
 
-**Last Updated:** 2025-12-02
-**Version:** 2.0.0
-**Status:** Phase 2 Complete - Semantics Integrated
+## Related Documentation
+
+- [How to Use](HOW_TO_USE.md)
+- [Scenes Service](SCENES_SERVICE.md)
+- [Faces Service](FACES_SERVICE.md)
+- [Semantics Service](SEMANTICS_SERVICE.md)
+- [Objects Service](OBJECTS_SERVICE.md)
+- [Resource Manager](RESOURCE_MANAGER.md)
+- [Testing Guide](TESTING.md)
+
+---
+
+**Last Updated:** 2026-04-08
+**Version:** 3.0.0
+**Status:** Phase 3 Complete - Scenes + Faces + Semantics orchestration

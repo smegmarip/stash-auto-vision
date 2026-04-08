@@ -256,6 +256,81 @@ curl http://localhost:5004/semantics/health | jq .
 
 ---
 
+## Model Management
+
+### Classifier Source
+
+The tag classifier is a **custom-trained multi-view bi-encoder** hosted on HuggingFace Hub at **[smegmarip/tag-classifier](https://huggingface.co/smegmarip/tag-classifier)**. Training was done in a separate experiment repository; only inference code is shipped with this service (bundled under `semantics-service/train/`).
+
+### Variants
+
+The HF repo publishes two flavors of the classifier:
+
+| Variant | Backbone | Description |
+|---|---|---|
+| `text-only` (default) | Text-only bi-encoder | Uses JoyCaption frame captions + Llama 3.1 scene summary as the sole input. Smaller, faster, no vision tower at inference time. |
+| `vision` | Multi-view vision + text | Uses frame pixel features alongside captions. Larger, higher headroom on visual-signal tags. |
+
+Each variant in the HF repo contains two files:
+
+- `<variant>/best_model.pt` — PyTorch checkpoint
+- `<variant>/tag_mapping.json` — label-space mapping for the variant (optional; the service will warn and continue if it's missing)
+
+### Auto-Download at Startup
+
+On first use, `semantics-service/app/classifier.py` calls `huggingface_hub.hf_hub_download()` to fetch the configured variant into `MODEL_CACHE_DIR` (default: `semantics-service/models/`). Subsequent starts use the cached copy.
+
+```
+semantics-service/models/
+├── text-only/
+│   ├── best_model.pt
+│   └── tag_mapping.json
+└── vision/
+    ├── best_model.pt
+    └── tag_mapping.json
+```
+
+The download is skipped entirely if `CLASSIFIER_MODEL` is set to an absolute file path — see "Custom Checkpoints" below.
+
+### HuggingFace Repo / File Overrides
+
+Every HF source path is overridable via environment variables, so you can point the service at a forked repo or at different file layouts without rebuilding the image:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SEMANTICS_HF_REPO` | `smegmarip/tag-classifier` | HuggingFace repo ID |
+| `SEMANTICS_HF_TEXT_MODEL` | `text-only/best_model.pt` | Filename of the text-only checkpoint within the repo |
+| `SEMANTICS_HF_TEXT_TAG_MAPPING` | `text-only/tag_mapping.json` | Filename of the text-only tag mapping within the repo |
+| `SEMANTICS_HF_VISION_MODEL` | `vision/best_model.pt` | Filename of the vision checkpoint within the repo |
+| `SEMANTICS_HF_VISION_TAG_MAPPING` | `vision/tag_mapping.json` | Filename of the vision tag mapping within the repo |
+| `SEMANTICS_HF_TOKEN` | - | HuggingFace access token (mapped to `HF_TOKEN` inside the container; required for private repos) |
+| `MODEL_CACHE_DIR` | `models` | Local cache directory for downloaded checkpoints |
+
+### Custom Checkpoints
+
+Instead of using the HF-published variants, you can point the service at a local checkpoint file. Two options:
+
+1. **Global override** — set `CLASSIFIER_MODEL` to an absolute path on the mounted volume:
+
+   ```bash
+   CLASSIFIER_MODEL=/models/my-custom-classifier.pt
+   ```
+
+2. **Per-request override** — pass the `model_variant` parameter in the analyze request:
+
+   ```json
+   {
+     "source_id": "12345",
+     "parameters": {
+       "model_variant": "/models/my-custom-classifier.pt"
+     }
+   }
+   ```
+
+Any value that is not `text-only` or `vision` is treated as a filesystem path and loaded directly, bypassing the HF download step entirely. The checkpoint must be compatible with the `MultiViewClassifier` architecture defined in `semantics-service/train/model.py`.
+
+---
+
 ## Configuration
 
 ### Environment Variables

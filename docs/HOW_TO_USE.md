@@ -179,6 +179,8 @@ docker compose logs frame-server | grep -i "Downloading\|GFPGAN initialized"
 
 ## API Documentation
 
-Interactive docs: `http://localhost:5010/docs`
+Interactive combined docs (aggregated by schema-service): `http://localhost:5009/docs`
 
-Full API spec: See `openapi.yml`
+Per-service raw schemas: `http://localhost:500{1..5}/openapi.json`
+
+Full API spec artifact: `openapi.yml` in the repo root (generated from the live services).

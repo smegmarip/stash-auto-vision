@@ -403,4 +403,3 @@ If allocated VRAM doesn't match active services:
 
 - [Semantics Service](SEMANTICS_SERVICE.md)
 - [Faces Service](FACES_SERVICE.md)
-- [Docker Architecture](DOCKER_ARCHITECTURE.md)

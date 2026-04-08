@@ -8,7 +8,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 
 ## Project Overview
 
-Stash Auto Vision is a standalone microservices platform that processes video content to extract faces, detect scene boundaries, provide semantic classification, and (future) object detection. It serves as the video processing backend for stash-compreface-plugin and future advanced scene analysis features.
+Stash Auto Vision is a standalone microservices platform that processes video content to extract faces, detect scene boundaries, provide semantic classification, and (future) object detection. It serves as the video processing backend for two Stash plugins: `stash-auto-vision-tagging` (fully integrated, tag classification via semantics-service) and `stash-compreface-plugin` (partially integrated, face recognition via faces-service — pending final end-to-end testing).
 
 ### Core Principles
 
@@ -45,8 +45,8 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 **Future Phases:**
 
 - **Phase 4:** YOLO-World open-vocabulary object detection
-- **Phase 5:** Multi-modal search and advanced tagging
-- **Phase 6:** stash-compreface-plugin integration
+- **Phase 5:** Production hardening (retries, metrics, stress tests)
+- **Phase 6:** Finalize `stash-compreface-plugin` video-path integration (end-to-end testing)
 
 ---
 
@@ -237,7 +237,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] Sequential workflow validated
 - [x] Test data generated from Charades dataset
 
-### Phase 3-5: Planned 🔄
+### Phase 4-6: Planned 🔄
 
 See [Future Work](#future-work) section below.
 
@@ -248,8 +248,9 @@ See [Future Work](#future-work) section below.
 ### API Documentation
 
 - **OpenAPI Specification** - Auto-generated from FastAPI at runtime (`/openapi.json`)
-- Access live docs: `http://localhost:5010/docs` (after starting services)
-- **Jobs Viewer** - React-based job monitoring UI at `http://localhost:5173` (dev mode)
+- Access combined live docs: `http://localhost:5009/docs` (Swagger UI aggregated by schema-service)
+- Per-service schemas: `http://localhost:500{1..5}/openapi.json`
+- **Jobs Viewer** - React-based job monitoring UI at `http://localhost:5020`
 
 ### Service-Specific Documentation
 
@@ -263,12 +264,10 @@ See [Future Work](#future-work) section below.
 ### User Guides
 
 - **[How to Use](docs/HOW_TO_USE.md)** - Quick start, API examples, troubleshooting
+- **[Vision API](docs/VISION_API.md)** - Orchestrator request shape, aggregated results, job listing
+- **[Testing Guide](docs/TESTING.md)** - Test scenarios and results
 
-### Infrastructure Documentation
-
-- **[Docker Architecture](docs/DOCKER_ARCHITECTURE.md)** - Service topology, health checks, dependencies
-- **[API Specification](docs/API_SPECIFICATION.md)** - All endpoints, request/response schemas
-- **[Service Specifications](docs/SERVICE_SPECIFICATIONS.md)** - Implementation details per service
+> **Note:** A previous generation of this project had several unified infrastructure docs (`DOCKER_ARCHITECTURE.md`, `API_SPECIFICATION.md`, `SERVICE_SPECIFICATIONS.md`, `CACHE_STRATEGY.md`, `DEPLOYMENT.md`). Those documents were dissolved into the per-service markdowns listed above, plus `docker-compose.yml` and `.env` examples in the repo root. The live OpenAPI schema at `http://localhost:5009/docs` is the authoritative API reference.
 
 ---
 
@@ -277,6 +276,8 @@ See [Future Work](#future-work) section below.
 ### Phase 2 & 3: Semantic Analysis (Tag Classifier) ✅
 
 **Status:** COMPLETE (2026-04-04)
+
+> **Phase history note:** Phase 2 and Phase 3 are collapsed into one body of work because Phase 2's original design (SigLIP zero-shot classification plus a JoyCaption alpha-two captioning service) was abandoned partway through and redesigned as the Phase 3 trained multi-view bi-encoder classifier with JoyCaption beta-one captioning. References to "Phase 2 & 3" throughout these docs reflect that combined implementation effort, not two separate milestones.
 
 **Implemented:**
 
@@ -301,9 +302,7 @@ See [Future Work](#future-work) section below.
 
 ## Future Work
 
-### Phase 3: Object Detection (YOLO-World Integration)
-
-**Duration:** 2-3 days
+### Phase 4: Object Detection (YOLO-World Integration)
 
 **Deliverables:**
 
@@ -320,9 +319,7 @@ See [Future Work](#future-work) section below.
 - Safety/content filtering based on objects
 - Action recognition via object interactions
 
-### Phase 4: Production Hardening
-
-**Duration:** 2-3 days
+### Phase 5: Production Hardening
 
 **Deliverables:**
 
@@ -333,18 +330,17 @@ See [Future Work](#future-work) section below.
 - Comprehensive unit and integration tests
 - Stress testing with 10+ concurrent jobs
 
-### Phase 5: stash-compreface-plugin Integration
+### Phase 6: Finalize Compreface Plugin Integration
 
-**Duration:** 1-2 days
+The `stash-auto-vision-tagging` plugin (see `../stash-auto-vision-tagging/`) is **fully integrated** — tag classification jobs submit against either `/vision/analyze` or `/semantics/analyze` with automatic submit-time failover, and results are written back to Stash via GraphQL. That work is considered complete.
+
+The `stash-compreface-plugin` (see `../stash-compreface-plugin/`) is **partially integrated** — its video recognition path (scene face extraction, sprite processing, embedding-based matching, face enhancement) is wired to this project's faces-service / frame-server as its Vision Service backend, but has not yet been validated end-to-end.
 
 **Deliverables:**
 
-- Update plugin to call vision-api instead of direct dlib processing
-- Submit face recognition jobs and poll status
-- Process results and create Compreface subjects
-- Update scene performers in Stash database
-- End-to-end workflow validation
-- Performance comparison vs dlib (target: 3-5x faster)
+- End-to-end validation of the compreface plugin's video recognition path against a live Stash instance
+- Benchmark performance vs. the plugin's legacy dlib path
+- Document remaining rough edges discovered during testing
 
 ---
 
@@ -387,8 +383,8 @@ See [Future Work](#future-work) section below.
 | Faces     | `face_min_quality`          | `FACES_MIN_QUALITY`                 | 0.0     | 0.0-1.0   | Minimum quality to keep (0.0 = no filtering) |
 | Faces     | N/A (nested in enhancement) | `FACES_ENHANCEMENT_QUALITY_TRIGGER` | 0.5     | 0.0-1.0   | Trigger enhancement if quality below this    |
 | Scenes    | `scene_threshold`           | `SCENES_THRESHOLD`                  | 27.0    | 0.0-100.0 | PySceneDetect ContentDetector scale          |
-| Semantics | `semantics_min_confidence`  | `SEMANTICS_MIN_CONFIDENCE`          | 0.75    | 0.0-1.0   | Tag classifier (Phase 3)                     |
-| Objects   | `objects_min_confidence`    | `OBJECTS_MIN_CONFIDENCE`            | 0.5     | 0.0-1.0   | YOLO detection (Phase 3)                     |
+| Semantics | `semantics_min_confidence`  | `SEMANTICS_MIN_CONFIDENCE`          | 0.75    | 0.0-1.0   | Tag classifier (Phase 3 complete)            |
+| Objects   | `objects_min_confidence`    | `OBJECTS_MIN_CONFIDENCE`            | 0.5     | 0.0-1.0   | YOLO detection (Phase 4, stub)               |
 
 Example: Set `FACES_MIN_CONFIDENCE=0.7` in `.env` for lower quality videos, or override per-request with `face_min_confidence` parameter.
 
@@ -422,7 +418,7 @@ cache_key = SHA256(video_path + mtime + module + params)
 {module}:cache:{cache_key}:job_id  # Cache key → job_id mapping
 ```
 
-See [docs/CACHE_STRATEGY.md](docs/CACHE_STRATEGY.md) for complete details.
+Cache behavior is implemented by each service's `cache_manager.py` (see `vision-api/app/cache_manager.py`, `faces-service/app/cache_manager.py`, etc.) — there is no centralized cache spec document.
 
 ### Sequential Processing
 
@@ -504,7 +500,7 @@ docker-compose up -d
 - OpenCV CUDA backend
 - Port 5000 for vision-api
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete setup instructions.
+See `docker-compose.yml`, `.env.example`, and `.env.cpu.example` in the repo root for complete setup.
 
 ---
 
@@ -531,8 +527,8 @@ curl http://localhost:5010/vision/health
 # View logs
 docker-compose logs -f vision-api
 
-# Access OpenAPI docs
-open http://localhost:5010/docs
+# Access combined OpenAPI docs (aggregated by schema-service)
+open http://localhost:5009/docs
 ```
 
 ---
@@ -587,7 +583,7 @@ docker exec -it vision-redis redis-cli KEYS "*"
 - Default port 5000 conflicts with AirPlay Receiver
 - Solution: Use VISION_API_PORT=5010 (already configured in .env.cpu.example)
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive troubleshooting.
+See the service-specific docs in `docs/` for further troubleshooting.
 
 ---
 

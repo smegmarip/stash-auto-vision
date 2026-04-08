@@ -1,6 +1,6 @@
 """
 Objects Service - Main Application (Stubbed)
-Placeholder for YOLO-World-based object detection (Phase 3)
+Placeholder for YOLO-World-based object detection (Phase 4)
 """
 
 import os
@@ -27,7 +27,7 @@ async def analyze_objects(request: dict):
     """
     Stub endpoint for object analysis
 
-    Phase 3 implementation will use YOLO-World for:
+    Phase 4 implementation will use YOLO-World for:
     - Open-vocabulary object detection
     - Custom object categories
     - Temporal object tracking
@@ -38,7 +38,7 @@ async def analyze_objects(request: dict):
     return {
         "job_id": f"objects-stub-{int(time.time())}",
         "status": "not_implemented",
-        "message": "Objects analysis module is not yet implemented (Phase 3)",
+        "message": "Objects analysis module is not yet implemented (Phase 4)",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     }
 
@@ -51,7 +51,7 @@ async def get_job_status(job_id: str):
         content={
             "job_id": job_id,
             "status": "not_implemented",
-            "message": "Objects analysis module is not yet implemented (Phase 3)",
+            "message": "Objects analysis module is not yet implemented (Phase 4)",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
         }
     )
@@ -64,7 +64,7 @@ async def get_job_results(job_id: str):
         status_code=501,
         content={
             "error": {
-                "message": "Objects analysis module is not yet implemented (Phase 3)",
+                "message": "Objects analysis module is not yet implemented (Phase 4)",
                 "type": "NotImplementedError"
             }
         }
@@ -79,7 +79,7 @@ async def health_check():
         "service": "objects-service",
         "version": "1.0.0",
         "implemented": False,
-        "phase": 3,
+        "phase": 4,
         "message": "Stub service - awaiting YOLO-World integration",
         "default_min_confidence": float(os.getenv("OBJECTS_MIN_CONFIDENCE", "0.5"))
     }
