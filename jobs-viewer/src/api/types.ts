@@ -263,6 +263,7 @@ export interface SemanticsOutcome {
   tags: ClassifierTag[];
   frame_captions: FrameCaptionResult[];
   scene_summary: string;
+  suggested_title?: string;
   scene_embedding?: number[];
 }
 

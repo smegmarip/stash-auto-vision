@@ -142,6 +142,7 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
   const tags: ClassifierTag[] = outcome.tags || []
   const frameCaptions: FrameCaptionResult[] = outcome.frame_captions || []
   const sceneSummary: string = outcome.scene_summary || ''
+  const suggestedTitle: string = outcome.suggested_title || ''
   const scene = metadata?.scene
 
   const directTags = tags.filter(t => t.decode_type === 'direct')
@@ -241,6 +242,21 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
           stashUrl={stashUrl}
           tagNameToId={metadata?.tag_name_to_id}
         />
+      )}
+
+      {/* Suggested title */}
+      {suggestedTitle && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium">Suggested Title</h3>
+            </div>
+            <p className="mt-3 text-lg font-semibold italic border-l-2 border-muted pl-4">
+              {suggestedTitle}
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Scene summary */}
