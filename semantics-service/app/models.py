@@ -274,6 +274,10 @@ class SemanticsOutcome(BaseModel):
     tags: List[ClassifierTag] = Field(description="Predicted tags sorted by score (descending)")
     frame_captions: List[FrameCaptionResult] = Field(description="Per-frame captions (16 frames)")
     scene_summary: str = Field(description="LLM narrative summary of the scene")
+    suggested_title: Optional[str] = Field(
+        default=None,
+        description="LLM-generated catchy scene title derived from summary and promotional description"
+    )
     scene_embedding: Optional[List[float]] = Field(
         default=None,
         description="512-D scene embedding from classifier (if generate_embeddings=True)"

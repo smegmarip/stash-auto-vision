@@ -40,7 +40,9 @@ from .models import (
 from .cache_manager import CacheManager
 from .classifier import TagClassifier
 from .caption_generator import CaptionGenerator
+from .llama_runtime import LlamaRuntime
 from .summary_generator import SummaryGenerator
+from .title_generator import TitleGenerator
 from .taxonomy_builder import TaxonomyBuilder
 from .frame_client import FrameServerClient
 from .resource_client import ResourceManagerClient
@@ -77,7 +79,9 @@ cache_manager: Optional[CacheManager] = None
 tag_classifier: Optional[TagClassifier] = None
 frame_client: Optional[FrameServerClient] = None
 resource_client: Optional[ResourceManagerClient] = None
+llama_runtime: Optional[LlamaRuntime] = None
 summary_generator: Optional[SummaryGenerator] = None
+title_generator: Optional[TitleGenerator] = None
 caption_generator: Optional[CaptionGenerator] = None
 model_manager: Optional[ModelManager] = None
 job_queue: Optional[JobQueue] = None
@@ -127,7 +131,7 @@ async def _load_taxonomy_background():
 async def lifespan(app: FastAPI):
     """Application lifespan: initialize services on startup, cleanup on shutdown."""
     global cache_manager, tag_classifier, frame_client, resource_client
-    global summary_generator, caption_generator, model_manager
+    global llama_runtime, summary_generator, title_generator, caption_generator, model_manager
     global job_queue, worker
 
     logger.info("Starting Semantics Service v2.0 (tag classifier pipeline)")
@@ -154,10 +158,13 @@ async def lifespan(app: FastAPI):
     caption_generator = CaptionGenerator(use_quantization=True, device=CLASSIFIER_DEVICE)
     logger.info("Caption generator initialized (4-bit quantization)")
 
-    # Summary generator (Llama 3.1 8B — exclusive with caption)
+    # Shared Llama runtime (Llama 3.1 8B — exclusive with caption)
     # Will be quantized on CUDA to fit in VRAM after caption is unloaded.
-    summary_generator = SummaryGenerator(device=CLASSIFIER_DEVICE)
-    logger.info(f"Summary generator initialized (model={summary_generator.model_name}, device={summary_generator.device})")
+    # Both summary and title generators share this single loaded model.
+    llama_runtime = LlamaRuntime(device=CLASSIFIER_DEVICE)
+    summary_generator = SummaryGenerator(llm=llama_runtime)
+    title_generator = TitleGenerator(llm=llama_runtime)
+    logger.info(f"Llama runtime initialized (model={llama_runtime.model_name}, device={llama_runtime.device})")
 
     # Tag classifier (lightweight, ~1.4GB — kept loaded)
     tag_classifier = TagClassifier(model_variant=CLASSIFIER_MODEL, device=CLASSIFIER_DEVICE)
@@ -173,8 +180,10 @@ async def lifespan(app: FastAPI):
     # Both models are exclusive — even quantized, they can't safely coexist
     # alongside the classifier in 16GB VRAM. The classifier (~1.4GB) stays
     # loaded separately. 4-bit JoyCaption ~7GB, 8-bit Llama 8B ~10GB.
+    # The Llama runtime is registered once and shared by both the summary
+    # and title generators (same weights, different prompts).
     model_manager.register("caption", caption_generator, vram_mb=7000, exclusive=True)
-    model_manager.register("summary", summary_generator, vram_mb=10000, exclusive=True)
+    model_manager.register("llm", llama_runtime, vram_mb=10000, exclusive=True)
     model_manager.start_cleanup_loop()
     logger.info(f"Model manager initialized (idle_timeout={MODEL_IDLE_TIMEOUT}s)")
 
@@ -552,7 +561,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             )
 
         def _generate_summary():
-            with model_manager.using("summary"):
+            with model_manager.using("llm"):
                 return summary_generator.generate_summary(
                     frame_caption_dicts,
                     ctx.promo_desc,
@@ -577,8 +586,37 @@ async def _run_pipeline(job_id: str, request_payload: dict):
 
         logger.info(f"Summary generated ({len(scene_summary)} chars)")
 
-        # --- Step 6: Run tag classifier ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="classifying", message="Running tag classifier")
+        # --- Step 6: Generate suggested title (reuses the already-loaded Llama runtime) ---
+        await cache_manager.update_job_status(
+            job_id, JobStatus.PROCESSING.value,
+            progress=0.80, stage="titling",
+            message="Generating scene title",
+        )
+
+        def _generate_title():
+            with model_manager.using("llm"):
+                return title_generator.generate_title(
+                    scene_source=request.source,
+                    scene_summary=scene_summary,
+                    promo_desc=ctx.promo_desc,
+                    duration=ctx.duration,
+                    performer_count=ctx.performer_count,
+                    performer_genders=ctx.performer_genders,
+                    resolution=ctx.resolution,
+                )
+
+        suggested_title: Optional[str] = None
+        try:
+            suggested_title = await asyncio.to_thread(_generate_title)
+        except Exception as e:
+            logger.warning(f"Title generation failed: {e}. Continuing without suggested_title.", exc_info=True)
+            suggested_title = None
+
+        if suggested_title:
+            logger.info(f"Suggested title: {suggested_title!r}")
+
+        # --- Step 7: Run tag classifier ---
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
 
         prediction = await asyncio.to_thread(
             tag_classifier.predict,
@@ -625,6 +663,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             tags=classifier_tags,
             frame_captions=frame_caption_results,
             scene_summary=scene_summary,
+            suggested_title=suggested_title,
             scene_embedding=scene_embedding,
         )
 
