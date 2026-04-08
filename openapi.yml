@@ -5,10 +5,10 @@ info:
     and object detection capabilities.\n\nArchitecture: Microservices (6 services) coordinated via Vision API rollup endpoint.\n\
     \nServices:\n- Frame Server (port 5001) - Frame extraction and caching\n- Scenes Service (port 5002) - Scene boundary
     detection\n- Faces Service (port 5003) - Face detection, recognition, and quality assessment\n- Semantics Service (port
-    5004) - Tag classification with trained multi-view bi-encoder\n- Objects Service (port 5005) - YOLO-World object
-    detection (stub - Phase 4)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010)
-    - Orchestration and rollup endpoint\n\nFor detailed service documentation, see:\n- docs/FRAME_SERVER.md\n- docs/SCENES_SERVICE.md\n\
-    - docs/FACES_SERVICE.md\n- docs/SEMANTICS_SERVICE.md\n- docs/OBJECTS_SERVICE.md\n- docs/VISION_API.md\n"
+    5004) - Tag classification with trained multi-view bi-encoder\n- Objects Service (port 5005) - YOLO-World object detection
+    (stub - Phase 4)\n- Jobs Viewer Service (port 5020) - Job management and monitoring UI\n- Vision API (port 5010) - Orchestration
+    and rollup endpoint\n\nFor detailed service documentation, see:\n- docs/FRAME_SERVER.md\n- docs/SCENES_SERVICE.md\n- docs/FACES_SERVICE.md\n\
+    - docs/SEMANTICS_SERVICE.md\n- docs/OBJECTS_SERVICE.md\n- docs/VISION_API.md\n"
   version: 1.0.0
   contact:
     name: Stash Auto Vision
@@ -785,7 +785,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/SemanticsResults'
         '422':
           description: Validation Error
           content:
@@ -2455,6 +2456,58 @@ components:
       - created_at
       title: AnalyzeSemanticsResponse
       description: Response for semantics analysis job submission
+    ClassifierTag:
+      properties:
+        tag_id:
+          type: string
+          title: Tag Id
+          description: Stash tag ID
+        tag_name:
+          type: string
+          title: Tag Name
+          description: Tag name
+        score:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Score
+          description: Classifier confidence score
+        path:
+          type: string
+          title: Path
+          description: Taxonomy path (e.g., 'Semantics > Apparel > Accessories')
+          default: ''
+        decode_type:
+          type: string
+          title: Decode Type
+          description: "How this tag was selected: 'direct' (above threshold) or 'parent_only' (activated by child)"
+          default: direct
+      type: object
+      required:
+      - tag_id
+      - tag_name
+      - score
+      title: ClassifierTag
+      description: A tag prediction from the trained classifier
+    FrameCaptionResult:
+      properties:
+        frame_index:
+          type: integer
+          title: Frame Index
+        timestamp:
+          type: number
+          title: Timestamp
+        caption:
+          type: string
+          title: Caption
+          description: JoyCaption taxonomy-prompt output
+      type: object
+      required:
+      - frame_index
+      - timestamp
+      - caption
+      title: FrameCaptionResult
+      description: Caption for a single frame
     FrameSelectionMethod:
       type: string
       enum:
@@ -2504,6 +2557,114 @@ components:
       - processing_mode
       - services
       - created_at
+    SceneMetadata:
+      properties:
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        duration:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Duration
+          description: Duration in seconds
+        resolution:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution
+          description: Video resolution (e.g. 1920x1080)
+        frame_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Frame Rate
+        performer_count:
+          type: integer
+          title: Performer Count
+          default: 0
+        performer_genders:
+          items:
+            type: string
+          type: array
+          title: Performer Genders
+      type: object
+      title: SceneMetadata
+      description: Scene metadata resolved from Stash via findScene.
+    SemanticsMetadata:
+      type: object
+      properties:
+        source:
+          type: string
+        source_id:
+          type: string
+        total_frames_extracted:
+          type: integer
+        frames_captioned:
+          type: integer
+        classifier_model:
+          type: string
+        caption_model:
+          type: string
+        summary_model:
+          type: string
+        processing_time_seconds:
+          type: number
+        device:
+          type: string
+        taxonomy_size:
+          type: integer
+        has_promo:
+          type: boolean
+        sprite_image_url:
+          type:
+          - string
+          - 'null'
+        sprite_vtt_url:
+          type:
+          - string
+          - 'null'
+    SemanticsOutcome:
+      properties:
+        tags:
+          items:
+            $ref: '#/components/schemas/ClassifierTag'
+          type: array
+          title: Tags
+          description: Predicted tags sorted by score (descending)
+        frame_captions:
+          items:
+            $ref: '#/components/schemas/FrameCaptionResult'
+          type: array
+          title: Frame Captions
+          description: Per-frame captions (16 frames)
+        scene_summary:
+          type: string
+          title: Scene Summary
+          description: LLM narrative summary of the scene
+        suggested_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suggested Title
+          description: LLM-generated catchy scene title derived from summary and promotional description
+        scene_embedding:
+          anyOf:
+          - items:
+              type: number
+            type: array
+          - type: 'null'
+          title: Scene Embedding
+          description: 512-D scene embedding from classifier (if generate_embeddings=True)
+      type: object
+      required:
+      - tags
+      - frame_captions
+      - scene_summary
+      title: SemanticsOutcome
+      description: Complete tag classification results for a scene
     SemanticsParameters:
       properties:
         model_variant:
@@ -2610,6 +2771,29 @@ components:
       title: SemanticsParameters
       description: "Unified parameters for the tag classification pipeline.\n\nCovers frame extraction, captioning, summarization,
         and classification."
+    SemanticsResults:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        source_id:
+          type: string
+          title: Source Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        semantics:
+          $ref: '#/components/schemas/SemanticsOutcome'
+        metadata:
+          $ref: '#/components/schemas/SemanticsMetadata'
+      type: object
+      required:
+      - job_id
+      - source_id
+      - status
+      - semantics
+      - metadata
+      title: SemanticsResults
+      description: Complete semantics analysis results
     TaxonomyStatus:
       properties:
         loaded:
@@ -3147,39 +3331,6 @@ components:
           type: integer
         avg_confidence:
           type: number
-    SemanticsMetadata:
-      type: object
-      properties:
-        source:
-          type: string
-        source_id:
-          type: string
-        total_frames_extracted:
-          type: integer
-        frames_captioned:
-          type: integer
-        classifier_model:
-          type: string
-        caption_model:
-          type: string
-        summary_model:
-          type: string
-        processing_time_seconds:
-          type: number
-        device:
-          type: string
-        taxonomy_size:
-          type: integer
-        has_promo:
-          type: boolean
-        sprite_image_url:
-          type:
-          - string
-          - 'null'
-        sprite_vtt_url:
-          type:
-          - string
-          - 'null'
   securitySchemes: {}
 security: []
 tags:
