@@ -776,7 +776,7 @@ async def get_job_status(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/semantics/jobs/{job_id}/results")
+@app.get("/semantics/jobs/{job_id}/results", response_model=SemanticsResults)
 async def get_job_results(job_id: str):
     """Get job results."""
     try:
