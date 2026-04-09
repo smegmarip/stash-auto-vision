@@ -182,22 +182,111 @@ images_dir = original_mafa_path / 'images'  # Also load full MAFA
 
 ## Deployment
 
-### Export to ONNX
+The published ONNX weights live on HuggingFace at
+[smegmarip/face-recognition](https://huggingface.co/smegmarip/face-recognition/tree/main/models)
+and are **auto-downloaded at container start** by the faces-service's
+bootstrap script. End users do not need to manually download, convert, or
+copy any files — the bootstrap runs on every `docker compose up faces-service`
+and populates the `faces_models_cache` named Docker volume, so the download
+happens exactly once per volume lifetime.
+
+### How the bootstrap resolves model files
+
+For each expected ONNX (occlusion_classifier, topiq_nr, clipiqa_plus),
+`faces-service/app/bootstrap.py` applies this precedence order:
+
+1. **Local override** — if `FACES_LOCAL_<MODEL>_PATH` is set and the file
+   exists at that path, use it directly (no download).
+2. **Cache hit** — if the file is already present in
+   `FACES_MODEL_CACHE_DIR` (default `/app/models`, which is the named
+   volume mount), use it directly (no download).
+3. **Configured HF** — if `FACES_HF_REPO` and `FACES_HF_<MODEL>_MODEL` are
+   set, download from that location into the cache directory.
+4. **Default HF** — fall back to `smegmarip/face-recognition` with the
+   default filenames and download into the cache directory.
+5. **Missing** — if all four steps fail, log an error. The service still
+   starts, but `/faces/health` returns HTTP 503 when the **required**
+   `occlusion_classifier.onnx` is missing. Optional models (topiq_nr,
+   clipiqa_plus) do not affect health.
+
+A `bootstrap_manifest.json` is written into the cache directory after
+each run listing which models were resolved, where they came from, and
+whether the required set is ready.
+
+### Retraining and re-exporting
+
+If you want to retrain the classifier on your own data and publish a
+replacement, a minimal distribution-safe copy of the ONNX export tooling
+is bundled under [`faces-service/training/`](../faces-service/training/):
+
+- `export_onnx.py` — `.pth → .onnx` converter
+- `models.py` — ResNet18 / ConvNeXt-Small factories with 2-class heads
+- `export_config.yaml` — minimal config naming the backbone architecture
+- `requirements.txt` — torch + torchvision + pyyaml (export-time only,
+  not pulled into the runtime image)
+
+The full training pipeline (dataset loaders, MAFA/ImageNet augmentation,
+thermal monitoring, training loop) is **not** bundled — it lives in a
+separate experiment repository. If you only need to convert a trained
+`.pth` checkpoint into a runtime-ready ONNX, the bundled tooling is
+self-contained:
+
 ```bash
-docker-compose -f docker/docker-compose.yml run --rm training \
-  python /workspace/training/export_onnx.py
+cd faces-service/training
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+python export_onnx.py \
+    --checkpoint /path/to/best_model.pth \
+    --output     /path/to/occlusion_classifier.onnx \
+    --config     export_config.yaml
 ```
 
-Output: `models/resnet18_mafa_trained.onnx` (42.6 MB)
+See [`faces-service/training/README.md`](../faces-service/training/README.md)
+for more detail on the bundled tooling and how to swap in a retrained ONNX.
 
-### Integration with stash-auto-vision
-Drop-in replacement for existing model:
-```bash
-cp models/resnet18_mafa_trained.onnx \
-   /path/to/stash-auto-vision/faces-service/models/occlusion_classifier.onnx
-```
+### Offline / air-gapped install
 
-No code changes required - same input/output format as previous model.
+For environments with no outbound network access to HuggingFace (air-gapped
+deployments, CI runners that can't hit huggingface.co, paranoid security
+policies that forbid runtime downloads), use the `FACES_LOCAL_*` env vars
+to point the bootstrap at a pre-downloaded file:
+
+1. On a machine that has network access, download the three ONNX files
+   from [smegmarip/face-recognition/models](https://huggingface.co/smegmarip/face-recognition/tree/main/models)
+   (the CLIP-IQA+ and TOPIQ-NR files are optional — only `occlusion_classifier.onnx`
+   is required by the current runtime):
+
+   ```bash
+   huggingface-cli download smegmarip/face-recognition \
+       models/occlusion_classifier.onnx \
+       --local-dir /tmp/face-recognition
+   ```
+
+2. Transfer the ONNX file(s) to the target host and place them somewhere
+   the container can see. Two common options:
+
+   - **Bind-mount a host directory** into `/app/models/` by editing
+     `docker-compose.yml` to replace the `faces_models_cache` named
+     volume with `./my-prebuilt-models:/app/models`.
+   - **Or use the named volume** and `docker cp` the file into the
+     running (or stopped) container: `docker cp occlusion_classifier.onnx
+     vision-faces-service:/app/models/`.
+
+3. Set the local override in `.env`:
+
+   ```bash
+   FACES_LOCAL_OCCLUSION_PATH=/app/models/occlusion_classifier.onnx
+   ```
+
+4. `docker compose up faces-service`. The bootstrap will detect the
+   local file, skip the HF download entirely, and `/faces/health` will
+   report `occlusion_model_loaded: true` and status `healthy`.
+
+To completely disable the HF fallback (useful to catch misconfiguration
+loudly in CI), set `FACES_HF_REPO=` (empty). With no HF repo configured
+**and** no local override matching on disk, the bootstrap will log an
+error and the health endpoint will return 503 on startup.
 
 ---
 

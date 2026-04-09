@@ -219,15 +219,24 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 
 ### Faces Service
 
-| Variable                            | Description                                                       | Default      |
-| ----------------------------------- | ----------------------------------------------------------------- | ------------ |
-| `FACES_DOCKERFILE`                  | `Dockerfile` (GPU) or `Dockerfile.cpu`                            | `Dockerfile` |
-| `INSIGHTFACE_MODEL`                 | Model pack: `buffalo_l` (recommended) / `buffalo_s`               | `buffalo_l`  |
-| `INSIGHTFACE_DEVICE`                | Inference device: `cuda` or `cpu`                                 | `cuda`       |
-| `INSIGHTFACE_COMPUTE_TYPE`          | Precision: `float16` (GPU), `int8` (CPU)                          | `float16`    |
-| `FACES_MIN_CONFIDENCE`              | Detection confidence threshold (0.0-1.0), per-request overridable | `0.9`        |
-| `FACES_MIN_QUALITY`                 | Minimum quality to retain a face (0.0-1.0, `0.0` = no filtering)  | `0.0`        |
-| `FACES_ENHANCEMENT_QUALITY_TRIGGER` | Quality threshold below which enhancement is triggered            | `0.5`        |
+| Variable                            | Description                                                                                               | Default                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `FACES_DOCKERFILE`                  | `Dockerfile` (GPU) or `Dockerfile.cpu`                                                                    | `Dockerfile`                       |
+| `INSIGHTFACE_MODEL`                 | Model pack: `buffalo_l` (recommended) / `buffalo_s`                                                       | `buffalo_l`                        |
+| `INSIGHTFACE_DEVICE`                | Inference device: `cuda` or `cpu`                                                                         | `cuda`                             |
+| `INSIGHTFACE_COMPUTE_TYPE`          | Precision: `float16` (GPU), `int8` (CPU)                                                                  | `float16`                          |
+| `FACES_MIN_CONFIDENCE`              | Detection confidence threshold (0.0-1.0), per-request overridable                                         | `0.9`                              |
+| `FACES_MIN_QUALITY`                 | Minimum quality to retain a face (0.0-1.0, `0.0` = no filtering)                                          | `0.0`                              |
+| `FACES_ENHANCEMENT_QUALITY_TRIGGER` | Quality threshold below which enhancement is triggered                                                    | `0.5`                              |
+| `FACES_HF_REPO`                     | HuggingFace repo hosting occlusion + IQA ONNX weights                                                     | `smegmarip/face-recognition`       |
+| `FACES_HF_OCCLUSION_MODEL`          | Path within the repo for the occlusion classifier (**required** — missing = 503 on `/faces/health`)      | `models/occlusion_classifier.onnx` |
+| `FACES_HF_TOPIQ_MODEL`              | Path within the repo for TOPIQ-NR IQA model (optional, best-effort)                                       | `models/topiq_nr.onnx`             |
+| `FACES_HF_CLIPIQA_MODEL`            | Path within the repo for CLIP-IQA+ IQA model (optional, best-effort)                                      | `models/clipiqa_plus.onnx`         |
+| `FACES_HF_TOKEN`                    | Optional HF token for gated / private forks                                                               | _(empty)_                          |
+| `FACES_LOCAL_OCCLUSION_PATH`        | Absolute in-container path to pre-downloaded occlusion ONNX (bypasses HF entirely — for air-gapped use)   | _(empty)_                          |
+| `FACES_LOCAL_TOPIQ_PATH`            | Absolute in-container path to pre-downloaded TOPIQ-NR ONNX                                                | _(empty)_                          |
+| `FACES_LOCAL_CLIPIQA_PATH`          | Absolute in-container path to pre-downloaded CLIP-IQA+ ONNX                                               | _(empty)_                          |
+| `FACES_MODEL_CACHE_DIR`             | Container-side cache directory — must match the `faces_models_cache` volume mount in `docker-compose.yml` | `/app/models`                      |
 
 ### Semantics Service — Classifier
 

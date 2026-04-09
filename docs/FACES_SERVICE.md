@@ -615,6 +615,19 @@ FACES_MIN_CONFIDENCE=0.9         # Detection confidence threshold (0.7 CPU, 0.9 
 FACES_MIN_QUALITY=0.0            # Minimum quality to keep (0.0 = no filtering)
 FACES_ENHANCEMENT_QUALITY_TRIGGER=0.5  # Trigger enhancement below this quality
 
+# ONNX model download (bootstrap.py at container start)
+# Required: occlusion_classifier.onnx (missing = 503 on /faces/health)
+# Optional (best-effort): topiq_nr.onnx, clipiqa_plus.onnx
+FACES_HF_REPO=smegmarip/face-recognition
+FACES_HF_OCCLUSION_MODEL=models/occlusion_classifier.onnx
+FACES_HF_TOPIQ_MODEL=models/topiq_nr.onnx
+FACES_HF_CLIPIQA_MODEL=models/clipiqa_plus.onnx
+FACES_HF_TOKEN=                  # Optional HF token for gated/private forks
+FACES_LOCAL_OCCLUSION_PATH=      # Absolute in-container path; bypasses HF download
+FACES_LOCAL_TOPIQ_PATH=          # Absolute in-container path; bypasses HF download
+FACES_LOCAL_CLIPIQA_PATH=        # Absolute in-container path; bypasses HF download
+FACES_MODEL_CACHE_DIR=/app/models  # Volume-backed cache, must match compose mount
+
 # Integration
 FRAME_SERVER_URL=http://frame-server:5001
 
@@ -768,63 +781,43 @@ Each face detection includes nested quality and occlusion objects:
 - Binary classification via softmax output
 - Argmax for class prediction (no manual threshold)
 
-### Building the Occlusion Model
+### The Occlusion Model
 
-The ResNet18 occlusion model was custom-trained on the MAFA dataset.
+The ResNet18 occlusion classifier was custom-trained on MAFA + FaceOcc +
+ImageNet-crop augmentation. The full training write-up — datasets,
+hyperparameters, results table, MAFA loader bug fix — lives in
+[`FACE_OCCLUSION.md`](FACE_OCCLUSION.md). The distribution-safe ONNX
+export tooling (`export_onnx.py` + `models.py`) is bundled under
+[`faces-service/training/`](../faces-service/training/).
 
-#### Training Details
+**At runtime:** the faces-service does **not** ship the ONNX file in the
+image. Instead, `faces-service/app/bootstrap.py` runs on every container
+start and downloads `occlusion_classifier.onnx` from
+[smegmarip/face-recognition](https://huggingface.co/smegmarip/face-recognition/tree/main/models)
+into the `faces_models_cache` named volume. The download happens once
+per volume lifetime; subsequent restarts are instant.
 
-**Dataset:** MAFA (Masked Faces) + augmented hand-occlusion samples
-
-- Total images: 30,000+
-- Categories: masks, sunglasses, hands, clean faces
-- Augmentation: rotation, flipping, brightness adjustment
-
-**Training Parameters:**
-
-- Architecture: ResNet18 (torchvision)
-- Optimizer: Adam
-- Learning rate: 0.001
-- Epochs: 50
-- Batch size: 32
-
-**Export to ONNX:**
-
-```python
-import torch
-import torch.onnx
-
-model = load_trained_model()
-model.eval()
-
-dummy_input = torch.randn(1, 3, 224, 224)
-torch.onnx.export(
-    model,
-    dummy_input,
-    "occlusion_classifier.onnx",
-    input_names=['input'],
-    output_names=['output'],
-    dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
-)
-```
-
-#### Verify Output
+**Model file at runtime:**
 
 ```bash
-file faces-service/models/occlusion_classifier.onnx
-# Expected: data (binary ONNX format)
-
-ls -lh faces-service/models/occlusion_classifier.onnx
-# Expected: ~42.6 MB
+# Inside the running container
+docker exec vision-faces-service ls -lh /app/models/
+# occlusion_classifier.onnx   ~353 MB   (ResNet18, opset 11)
+# bootstrap_manifest.json     <1 KB     (resolution audit trail)
 ```
 
-#### Integration
+**Health impact:** if the bootstrap fails to resolve the required
+`occlusion_classifier.onnx` (network down, misconfigured HF repo,
+corrupt local override), the service still starts but `/faces/health`
+returns HTTP 503 with `occlusion_model_loaded: false`. See
+[`FACE_OCCLUSION.md`](FACE_OCCLUSION.md) for the full deployment
+and offline-install story.
 
-The model is automatically loaded at service startup and used for all face detections:
+**Integration:**
 
 ```python
 # faces-service/app/occlusion_detector.py
-detector = OcclusionDetector()  # Loads ONNX model
+detector = OcclusionDetector()  # Loads ONNX from FACES_MODEL_CACHE_DIR
 occluded, probability = detector.detect(face_crop)
 ```
 
