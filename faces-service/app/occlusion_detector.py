@@ -25,15 +25,13 @@ class OcclusionDetector:
         Initialize occlusion detector
 
         Args:
-            model_path: Path to ONNX model file (default: models/occlusion_classifier.onnx)
+            model_path: Path to ONNX model file. When None, resolves to
+                FACES_MODEL_CACHE_DIR/occlusion_classifier.onnx (default cache
+                dir is /app/models, populated at container start by bootstrap.py).
         """
         if model_path is None:
-            model_path = os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                "models",
-                "occlusion_classifier.onnx"
-            )
+            cache_dir = os.environ.get("FACES_MODEL_CACHE_DIR", "/app/models")
+            model_path = os.path.join(cache_dir, "occlusion_classifier.onnx")
 
         self.model_path = model_path
         self.input_size = (224, 224)  # Standard input size for the model
@@ -60,6 +58,16 @@ class OcclusionDetector:
             logger.error(f"Failed to load occlusion model from {model_path}: {e}")
             logger.warning("Occlusion detection will be disabled")
             self.session = None
+
+    @property
+    def is_loaded(self) -> bool:
+        """True when the ONNX model was successfully loaded and is ready to serve.
+
+        The health endpoint reads this to decide whether the required
+        occlusion model is available; if False the service reports
+        unhealthy (HTTP 503).
+        """
+        return self.session is not None
 
     def preprocess(self, face_crop: np.ndarray) -> np.ndarray:
         """

@@ -698,22 +698,39 @@ async def get_job_results(job_id: str):
 
 @app.get("/faces/health", response_model=HealthResponse)
 async def health_check():
-    """Service health check"""
+    """Service health check.
+
+    Returns HTTP 503 when any required component is missing:
+    - occlusion classifier ONNX model failed to load (bootstrap failure
+      or corrupted file in the faces_models_cache volume)
+    """
     try:
         cache_size_mb = await cache_manager.get_cache_size()
         active_jobs = await cache_manager.count_active_jobs()
 
         gpu_available = INSIGHTFACE_DEVICE == "cuda"
 
-        return HealthResponse(
-            status="healthy",
+        occlusion_loaded = bool(
+            face_recognizer
+            and getattr(face_recognizer, "occlusion_detector", None)
+            and face_recognizer.occlusion_detector.is_loaded
+        )
+
+        status = "healthy" if occlusion_loaded else "unhealthy"
+        payload = HealthResponse(
+            status=status,
             service="faces-service",
             version="1.0.0",
             model=INSIGHTFACE_MODEL,
             gpu_available=gpu_available,
             active_jobs=active_jobs,
             cache_size_mb=cache_size_mb,
+            occlusion_model_loaded=occlusion_loaded,
         )
+
+        if not occlusion_loaded:
+            return JSONResponse(status_code=503, content=payload.model_dump())
+        return payload
 
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)

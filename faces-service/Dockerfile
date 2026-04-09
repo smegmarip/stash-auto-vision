@@ -23,9 +23,10 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ /app/app/
 
-# Create model directory and copy occlusion detection model
+# Create model directory (populated at container startup by bootstrap.py,
+# which downloads ONNX weights from HuggingFace into the faces_models_cache
+# named volume mounted here).
 RUN mkdir -p /app/models
-COPY models/occlusion_classifier.onnx /app/models/
 
 # Download InsightFace model on first run
 # This will be done at runtime to avoid bloating the image
@@ -33,5 +34,7 @@ COPY models/occlusion_classifier.onnx /app/models/
 # Expose port
 EXPOSE 5003
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5003"]
+# Run bootstrap (HF model download) before uvicorn. The bootstrap exit
+# code is intentionally ignored with `|| true` so that a failed required
+# model download surfaces via /faces/health (503) rather than a crash-loop.
+CMD ["sh", "-c", "python -m app.bootstrap || true && exec uvicorn app.main:app --host 0.0.0.0 --port 5003"]

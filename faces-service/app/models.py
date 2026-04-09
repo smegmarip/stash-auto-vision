@@ -207,6 +207,14 @@ class HealthResponse(BaseModel):
     gpu_available: bool
     active_jobs: int
     cache_size_mb: float
+    occlusion_model_loaded: bool = Field(
+        default=False,
+        description=(
+            "Whether the occlusion classifier ONNX model was successfully "
+            "loaded. When False the service returns HTTP 503 — the occlusion "
+            "detector is a required component."
+        ),
+    )
 
 
 class ErrorResponse(BaseModel):

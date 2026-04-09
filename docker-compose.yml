@@ -168,11 +168,21 @@ services:
       - FACES_MIN_QUALITY=${FACES_MIN_QUALITY:-0.0}
       - FACES_ENHANCEMENT_QUALITY_TRIGGER=${FACES_ENHANCEMENT_QUALITY_TRIGGER:-0.5}
       - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
+      # Model download / cache — bootstrap.py reads these at container start
+      - FACES_HF_REPO=${FACES_HF_REPO:-smegmarip/face-recognition}
+      - FACES_HF_OCCLUSION_MODEL=${FACES_HF_OCCLUSION_MODEL:-models/occlusion_classifier.onnx}
+      - FACES_HF_TOPIQ_MODEL=${FACES_HF_TOPIQ_MODEL:-models/topiq_nr.onnx}
+      - FACES_HF_CLIPIQA_MODEL=${FACES_HF_CLIPIQA_MODEL:-models/clipiqa_plus.onnx}
+      - FACES_HF_TOKEN=${FACES_HF_TOKEN:-}
+      - FACES_LOCAL_OCCLUSION_PATH=${FACES_LOCAL_OCCLUSION_PATH:-}
+      - FACES_LOCAL_TOPIQ_PATH=${FACES_LOCAL_TOPIQ_PATH:-}
+      - FACES_LOCAL_CLIPIQA_PATH=${FACES_LOCAL_CLIPIQA_PATH:-}
+      - FACES_MODEL_CACHE_DIR=${FACES_MODEL_CACHE_DIR:-/app/models}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
       - ./faces-service/app:/app/app
-      - ./faces-service/models:/app/models
+      - faces_models_cache:/app/models
       - frames_cache:/tmp/frames
       - sprites_cache:/tmp/sprites
       - downloads_cache:/tmp/downloads
@@ -497,3 +507,4 @@ volumes:
   codeformer_weights:
   insightface_models:
   huggingface_cache:
+  faces_models_cache:
