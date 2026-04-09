@@ -103,6 +103,8 @@ curl -X POST http://localhost:5010/vision/analyze/scenes \
 
 Tag classification, scene summary, and suggested title in one pipeline. Scene metadata (sprite URLs, promotional description, performers) is resolved from Stash via `source_id` — leave `source` empty to let the service fetch the video path from Stash as well.
 
+> **Tip:** the classifier scores each tag by encoding `"{name}: {description}"`, so adding descriptions to your Stash taxonomy — especially for ambiguous or jargony tags — produces noticeably better precision than relying on tag names alone. Descriptions are optional (the classifier falls back to the bare name) but strongly recommended. See [Semantics Service → Requirements](SEMANTICS_SERVICE.md#requirements) for details.
+
 ```bash
 curl -X POST http://localhost:5004/semantics/analyze \
   -H "Content-Type: application/json" \

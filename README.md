@@ -168,6 +168,8 @@ curl -X POST http://localhost:5010/vision/analyze \
 
 Scene metadata (sprite URLs, details, performers) is resolved from Stash via `source_id`.
 
+> **Tag descriptions matter.** The classifier builds each tag's text embedding from `"{name}: {description}"` and falls back to the bare name when no description is set. The fallback works, but descriptions — especially on ambiguous or jargony tags — noticeably improve precision. See [Semantics Service → Requirements](docs/SEMANTICS_SERVICE.md#requirements) for details.
+
 ```bash
 curl -X POST http://localhost:5010/vision/analyze \
   -H "Content-Type: application/json" \

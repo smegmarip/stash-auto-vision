@@ -35,13 +35,30 @@ The service runs a three-stage pipeline for each video:
 - **Asynchronous Job Processing:** Submit, poll, retrieve pattern with progress tracking
 - **Content-Based Caching:** Redis-based caching with SHA-256 keys
 
+### Requirements
+
+**Minimum taxonomy entry.** Every tag needs at least an `id`, a `name`, and its `parents` list. The taxonomy builder computes ancestor paths (`all_paths`) from parents automatically and tolerates missing `description` / `aliases` fields, so a skeletal Stash taxonomy will load and classify without error.
+
+**Tag descriptions are optional but strongly recommended.** The classifier is a bi-encoder that builds each tag's text embedding from `"{name}: {description}"` when a description is present, and falls back to the bare `name` when it isn't. The fallback works — the classifier was trained on a mix of annotated and unannotated tags — but the embedding carries noticeably more semantic signal when a description is provided. Concretely, the relevant code in `train/model.py` is:
+
+```python
+name, desc = tag.get("name", ""), tag.get("description", "")
+tag_texts[idx] = f"{name}: {desc}" if desc else name
+```
+
+**Where descriptions help most.** The accuracy gap between annotated and unannotated tags is largest for tags whose names are ambiguous — single-word adjectives, acronyms, site-specific jargon, or terms that mean different things in different domains. A tag literally named `Wet` with no description is a much weaker embedding than the same tag described as _"scenes featuring water, rain, or visibly wet surfaces."_ The 99.2% match-rate headline figure reflects the taxonomy as it was trained, annotations and all — your own precision on a sparsely-annotated taxonomy will be lower.
+
+**The highest-leverage annotation effort** is to add short, factual descriptions to your ambiguous or jargony tags first, and leave self-explanatory tags (e.g. proper nouns, unambiguous category names) for later. A one-sentence description is usually enough.
+
+**What about `aliases`?** The classifier does not currently consume the `aliases` field at inference time. Only `name`, `description`, and `all_paths` (derived from `parents`) feed the tag embedding. If you rely on aliases for human-facing search in Stash, keep them — they just don't affect classifier accuracy.
+
 ### VRAM Budget
 
-| Component | VRAM | Lifecycle |
-|-----------|------|-----------|
-| JoyCaption beta-one | ~8GB | Loaded/unloaded per job |
-| Llama 3.1 8B | External API | No local VRAM |
-| Tag classifier | ~1.4GB | Kept loaded |
+| Component           | VRAM         | Lifecycle               |
+| ------------------- | ------------ | ----------------------- |
+| JoyCaption beta-one | ~8GB         | Loaded/unloaded per job |
+| Llama 3.1 8B        | External API | No local VRAM           |
+| Tag classifier      | ~1.4GB       | Kept loaded             |
 
 ---
 
@@ -57,36 +74,36 @@ Submits an asynchronous tag classification job.
 
 **Request Body (`AnalyzeSemanticsRequest`):**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `source` | string | no | Video path or URL (resolved from Stash if empty) |
-| `source_id` | string | yes | Stash scene ID. Used to fetch scene data (sprites, details, performers). |
-| `job_id` | string | no | Custom job ID (auto-generated if omitted) |
-| `scenes_job_id` | string | no | Pre-computed scene boundaries job ID |
-| `frame_extraction_job_id` | string | no | Pre-computed frame extraction job ID |
-| `custom_taxonomy` | array/url | no | Override taxonomy (inline array or URL) |
-| `parameters` | SemanticsParameters | no | Processing parameters |
+| Field                     | Type                | Required | Description                                                              |
+| ------------------------- | ------------------- | -------- | ------------------------------------------------------------------------ |
+| `source`                  | string              | no       | Video path or URL (resolved from Stash if empty)                         |
+| `source_id`               | string              | yes      | Stash scene ID. Used to fetch scene data (sprites, details, performers). |
+| `job_id`                  | string              | no       | Custom job ID (auto-generated if omitted)                                |
+| `scenes_job_id`           | string              | no       | Pre-computed scene boundaries job ID                                     |
+| `frame_extraction_job_id` | string              | no       | Pre-computed frame extraction job ID                                     |
+| `custom_taxonomy`         | array/url           | no       | Override taxonomy (inline array or URL)                                  |
+| `parameters`              | SemanticsParameters | no       | Processing parameters                                                    |
 
 **SemanticsParameters:**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_variant` | string | text-only | Classifier model variant (`vision`, `text-only`, or checkpoint path) |
-| `min_confidence` | float | 0.75 | Minimum confidence for tag assignment |
-| `top_k_tags` | int | 30 | Maximum tags returned |
-| `generate_embeddings` | bool | false | Return 512-D scene embeddings |
-| `use_hierarchical_decoding` | bool | true | Apply taxonomy-consistent post-processing |
-| `frame_selection` | string | sprite_sheet | Frame selection method (`sprite_sheet`, `scene_based`, `interval`) |
-| `frames_per_scene` | int | 16 | Frames to extract (classifier trained on 16) |
-| `sampling_interval` | float | 2.0 | Seconds between frames (interval mode) |
-| `select_sharpest` | bool | true | Filter by sharpness (video frame modes) |
-| `sharpness_candidate_multiplier` | int | 3 | Extract N * frames_per_scene candidates for sharpness selection |
-| `min_frame_quality` | float | 0.05 | Minimum quality threshold (0-1) |
-| `use_quantization` | bool | true | Use 4-bit quantization for JoyCaption VLM |
-| `details` | string | - | Promotional/editorial description (overrides Stash data) |
-| `sprite_vtt_url` | string | - | URL to sprite VTT file (overrides Stash data) |
-| `sprite_image_url` | string | - | URL to sprite grid image (overrides Stash data) |
-| `scene_boundaries` | array | - | Pre-computed scene boundaries |
+| Parameter                        | Type   | Default      | Description                                                          |
+| -------------------------------- | ------ | ------------ | -------------------------------------------------------------------- |
+| `model_variant`                  | string | text-only    | Classifier model variant (`vision`, `text-only`, or checkpoint path) |
+| `min_confidence`                 | float  | 0.75         | Minimum confidence for tag assignment                                |
+| `top_k_tags`                     | int    | 30           | Maximum tags returned                                                |
+| `generate_embeddings`            | bool   | false        | Return 512-D scene embeddings                                        |
+| `use_hierarchical_decoding`      | bool   | true         | Apply taxonomy-consistent post-processing                            |
+| `frame_selection`                | string | sprite_sheet | Frame selection method (`sprite_sheet`, `scene_based`, `interval`)   |
+| `frames_per_scene`               | int    | 16           | Frames to extract (classifier trained on 16)                         |
+| `sampling_interval`              | float  | 2.0          | Seconds between frames (interval mode)                               |
+| `select_sharpest`                | bool   | true         | Filter by sharpness (video frame modes)                              |
+| `sharpness_candidate_multiplier` | int    | 3            | Extract N \* frames_per_scene candidates for sharpness selection     |
+| `min_frame_quality`              | float  | 0.05         | Minimum quality threshold (0-1)                                      |
+| `use_quantization`               | bool   | true         | Use 4-bit quantization for JoyCaption VLM                            |
+| `details`                        | string | -            | Promotional/editorial description (overrides Stash data)             |
+| `sprite_vtt_url`                 | string | -            | URL to sprite VTT file (overrides Stash data)                        |
+| `sprite_image_url`               | string | -            | URL to sprite grid image (overrides Stash data)                      |
+| `scene_boundaries`               | array  | -            | Pre-computed scene boundaries                                        |
 
 **Example:**
 
@@ -244,6 +261,7 @@ curl http://localhost:5004/semantics/health | jq .
 
 6. Tag Classification
    ├── Encode captions + summary + promo with bi-encoder
+   ├── Encode each tag as "{name}: {description}" (see Requirements section)
    ├── Score against taxonomy embeddings
    ├── Apply min_confidence threshold (default 0.75)
    ├── Return top_k_tags (default 30)
@@ -266,10 +284,10 @@ The tag classifier is a **custom-trained multi-view bi-encoder** hosted on Huggi
 
 The HF repo publishes two flavors of the classifier:
 
-| Variant | Backbone | Description |
-|---|---|---|
-| `text-only` (default) | Text-only bi-encoder | Uses JoyCaption frame captions + Llama 3.1 scene summary as the sole input. Smaller, faster, no vision tower at inference time. |
-| `vision` | Multi-view vision + text | Uses frame pixel features alongside captions. Larger, higher headroom on visual-signal tags. |
+| Variant               | Backbone                 | Description                                                                                                                     |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `text-only` (default) | Text-only bi-encoder     | Uses JoyCaption frame captions + Llama 3.1 scene summary as the sole input. Smaller, faster, no vision tower at inference time. |
+| `vision`              | Multi-view vision + text | Uses frame pixel features alongside captions. Larger, higher headroom on visual-signal tags.                                    |
 
 Each variant in the HF repo contains two files:
 
@@ -296,15 +314,15 @@ The download is skipped entirely if `CLASSIFIER_MODEL` is set to an absolute fil
 
 Every HF source path is overridable via environment variables, so you can point the service at a forked repo or at different file layouts without rebuilding the image:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `SEMANTICS_HF_REPO` | `smegmarip/tag-classifier` | HuggingFace repo ID |
-| `SEMANTICS_HF_TEXT_MODEL` | `text-only/best_model.pt` | Filename of the text-only checkpoint within the repo |
-| `SEMANTICS_HF_TEXT_TAG_MAPPING` | `text-only/tag_mapping.json` | Filename of the text-only tag mapping within the repo |
-| `SEMANTICS_HF_VISION_MODEL` | `vision/best_model.pt` | Filename of the vision checkpoint within the repo |
-| `SEMANTICS_HF_VISION_TAG_MAPPING` | `vision/tag_mapping.json` | Filename of the vision tag mapping within the repo |
-| `SEMANTICS_HF_TOKEN` | - | HuggingFace access token (mapped to `HF_TOKEN` inside the container; required for private repos) |
-| `MODEL_CACHE_DIR` | `models` | Local cache directory for downloaded checkpoints |
+| Variable                          | Default                      | Purpose                                                                                          |
+| --------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SEMANTICS_HF_REPO`               | `smegmarip/tag-classifier`   | HuggingFace repo ID                                                                              |
+| `SEMANTICS_HF_TEXT_MODEL`         | `text-only/best_model.pt`    | Filename of the text-only checkpoint within the repo                                             |
+| `SEMANTICS_HF_TEXT_TAG_MAPPING`   | `text-only/tag_mapping.json` | Filename of the text-only tag mapping within the repo                                            |
+| `SEMANTICS_HF_VISION_MODEL`       | `vision/best_model.pt`       | Filename of the vision checkpoint within the repo                                                |
+| `SEMANTICS_HF_VISION_TAG_MAPPING` | `vision/tag_mapping.json`    | Filename of the vision tag mapping within the repo                                               |
+| `SEMANTICS_HF_TOKEN`              | -                            | HuggingFace access token (mapped to `HF_TOKEN` inside the container; required for private repos) |
+| `MODEL_CACHE_DIR`                 | `models`                     | Local cache directory for downloaded checkpoints                                                 |
 
 ### Custom Checkpoints
 
@@ -335,22 +353,22 @@ Any value that is not `text-only` or `vision` is treated as a filesystem path an
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLASSIFIER_MODEL` | `text-only` | Classifier variant (`text-only`, `vision`, or checkpoint path) |
-| `CLASSIFIER_DEVICE` | `cuda` | Device for classifier (cuda/cpu) |
-| `STASH_URL` | `http://host.docker.internal:9999` | Stash instance URL |
-| `STASH_API_KEY` | - | Stash API key |
-| `SEMANTICS_TAG_ID` | - | Root tag ID for taxonomy tree |
-| `SEMANTICS_LLM_MODEL` | `RedHatAI/Llama-3.1-8B-Instruct` | Local LLM for scene summary generation |
-| `SEMANTICS_LLM_DEVICE` | `cpu` | Device for the summary model (`cpu` to avoid VRAM contention) |
-| `SEMANTICS_HF_TOKEN` | - | HuggingFace token (mapped to `HF_TOKEN` inside the container) |
-| `SEMANTICS_MODEL_IDLE_TIMEOUT` | `300` | Seconds before idle models are unloaded from memory |
-| `SEMANTICS_JOB_LOCK_TTL` | `3600` | Maximum seconds a job can hold the active queue lock |
-| `SEMANTICS_WORKER_ID` | auto | Stable worker identifier (used for crash recovery) |
-| `SEMANTICS_MIN_CONFIDENCE` | `0.75` | Default minimum confidence threshold |
-| `REDIS_URL` | `redis://vision-redis:6379/0` | Redis connection URL |
-| `LOG_LEVEL` | `INFO` | Logging level |
+| Variable                       | Default                            | Description                                                    |
+| ------------------------------ | ---------------------------------- | -------------------------------------------------------------- |
+| `CLASSIFIER_MODEL`             | `text-only`                        | Classifier variant (`text-only`, `vision`, or checkpoint path) |
+| `CLASSIFIER_DEVICE`            | `cuda`                             | Device for classifier (cuda/cpu)                               |
+| `STASH_URL`                    | `http://host.docker.internal:9999` | Stash instance URL                                             |
+| `STASH_API_KEY`                | -                                  | Stash API key                                                  |
+| `SEMANTICS_TAG_ID`             | -                                  | Root tag ID for taxonomy tree                                  |
+| `SEMANTICS_LLM_MODEL`          | `RedHatAI/Llama-3.1-8B-Instruct`   | Local LLM for scene summary generation                         |
+| `SEMANTICS_LLM_DEVICE`         | `cpu`                              | Device for the summary model (`cpu` to avoid VRAM contention)  |
+| `SEMANTICS_HF_TOKEN`           | -                                  | HuggingFace token (mapped to `HF_TOKEN` inside the container)  |
+| `SEMANTICS_MODEL_IDLE_TIMEOUT` | `300`                              | Seconds before idle models are unloaded from memory            |
+| `SEMANTICS_JOB_LOCK_TTL`       | `3600`                             | Maximum seconds a job can hold the active queue lock           |
+| `SEMANTICS_WORKER_ID`          | auto                               | Stable worker identifier (used for crash recovery)             |
+| `SEMANTICS_MIN_CONFIDENCE`     | `0.75`                             | Default minimum confidence threshold                           |
+| `REDIS_URL`                    | `redis://vision-redis:6379/0`      | Redis connection URL                                           |
+| `LOG_LEVEL`                    | `INFO`                             | Logging level                                                  |
 
 ### OpenAPI Schema
 
@@ -430,21 +448,21 @@ To override the taxonomy per-request, pass `custom_taxonomy` in the request body
 
 ### Estimated Processing Times (GPU)
 
-| Content | Frames | Approx. Time |
-|---------|--------|---------------|
-| 5 min video | 16 | ~30 seconds |
-| 10 min video | 16 | ~35 seconds |
-| 30 min video | 16 | ~40 seconds |
+| Content      | Frames | Approx. Time |
+| ------------ | ------ | ------------ |
+| 5 min video  | 16     | ~30 seconds  |
+| 10 min video | 16     | ~35 seconds  |
+| 30 min video | 16     | ~40 seconds  |
 
 Processing time is dominated by captioning (per-frame) and LLM summarization, not video length. More frames = more time.
 
 ### Memory Usage
 
-| Component | VRAM |
-|-----------|------|
-| JoyCaption beta-one (per job) | ~8GB |
-| Tag classifier (persistent) | ~1.4GB |
-| Peak during captioning | ~9.4GB |
+| Component                     | VRAM   |
+| ----------------------------- | ------ |
+| JoyCaption beta-one (per job) | ~8GB   |
+| Tag classifier (persistent)   | ~1.4GB |
+| Peak during captioning        | ~9.4GB |
 
 ---
 
