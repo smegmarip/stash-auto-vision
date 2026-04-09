@@ -44,7 +44,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 
 **Future Phases:**
 
-- **Phase 4:** YOLO-World open-vocabulary object detection
+- **Phase 4:** YOLO-World open-vocabulary object detection **and** Flash Attention 2 integration for the semantics runtimes (LlamaRuntime + JoyCaption) — lossless VRAM savings and 1.5–2× speedup
 - **Phase 5:** Production hardening (retries, metrics, stress tests)
 - **Phase 6:** Finalize `stash-compreface-plugin` video-path integration (end-to-end testing)
 
@@ -318,6 +318,34 @@ See [Future Work](#future-work) section below.
 - Custom object categories (user-defined)
 - Safety/content filtering based on objects
 - Action recognition via object interactions
+
+**Additional Phase 4 deliverable: Flash Attention 2 for the semantics runtimes**
+
+Enable the `flash_attention_2` kernel on both the shared `LlamaRuntime` (used for scene summary + suggested-title generation) and the JoyCaption `CaptionGenerator`. Flash-attention is a mathematically equivalent attention kernel, so there is no impact on model outputs or classifier accuracy — the win is entirely in memory layout and compute efficiency. This is the only known lossless VRAM optimization that does not require swapping models or retraining the classifier, so it is gated on the existing quality envelope and can ship without any of the model-swap caveats in "Future Work → Why not a smaller Llama?".
+
+**Deliverables:**
+
+- Pass `attn_implementation="flash_attention_2"` to `AutoModelForCausalLM.from_pretrained()` in `semantics-service/app/llama_runtime.py` (CUDA-only; fall back to PyTorch SDPA on CPU automatically via a conditional)
+- Pass the same flag to the JoyCaption load in `semantics-service/app/caption_generator.py`
+- Add the `flash-attn` wheel to the semantics-service GPU Dockerfile, pinned to the container's CUDA + PyTorch versions at build time
+- Re-measure and publish peak VRAM numbers in `docs/SEMANTICS_SERVICE.md` — expected: semantics-alone peak drops from ~11.4 GB (classifier + Llama 8-bit) to ~10 GB
+- Publish a "VRAM by workload" tier matrix in `README.md` and `docs/SEMANTICS_SERVICE.md` so constrained-GPU users can see what each card tier can comfortably run, rather than reading a single conservative 16 GB floor
+- Verify equivalence: run a small regression suite comparing pre- and post-flash-attention scene summaries + suggested titles + classifier outputs on a fixed test set; outputs should be bit-close (differences only at the level of floating-point accumulation order)
+
+**Benefits:**
+
+- **Lossless** — no classifier retrain, no quality regression, no change to JoyCaption caption style that would shift the classifier's input distribution
+- ~500 MB – 1.5 GB VRAM savings on the KV-cache during 1024-token summary generation on Llama 3.1 8B
+- 1.5–2× speedup on Llama summary generation and JoyCaption frame captioning
+- Lowers the effective semantics-alone VRAM floor into the 10–11 GB range, making 12 GB consumer GPUs (RTX 3080 Ti, 4070, 4070 Super) comfortable for semantics-only workloads
+- No-op on CPU mode — CPU runtime falls back to SDPA without errors
+
+**Use Cases:**
+
+- Users on 12 GB consumer GPUs who currently can't comfortably run the semantics pipeline
+- Faster batch processing on existing 16 GB deployments
+- More headroom for concurrent GPU usage (e.g. faces + semantics serialized through the resource-manager)
+- Unblocks a "real" VRAM tier documentation story (10 / 12 / 16 GB tiers) instead of a single scary 16 GB number that's driving user complaints
 
 ### Phase 5: Production Hardening
 

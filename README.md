@@ -25,6 +25,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 ### Phase 4+ (Planned)
 
 - **Object Detection** — YOLO-World open-vocabulary detection (service currently stubbed)
+- **Flash Attention 2** — Enable the `flash_attention_2` kernel on the `LlamaRuntime` and JoyCaption loads. Lossless ~500 MB – 1.5 GB VRAM savings and 1.5–2× speedup on the semantics pipeline, zero quality impact. Lowers the effective semantics-alone VRAM floor into the 10–11 GB range so 12 GB consumer GPUs become comfortable.
 - **Production Hardening** — Retry logic, metrics, stress testing
 - **Compreface Plugin Finalization** — Complete end-to-end testing of the partially-integrated [stash-compreface-plugin](https://github.com/smegmarip/stash-compreface-plugin) video recognition path
 
@@ -450,6 +451,16 @@ docker exec -it vision-redis redis-cli KEYS "*"
 - [ ] YOLO-World integration (medium variant)
 - [ ] Open-vocabulary detection with custom categories
 - [ ] Object tracking across frames
+
+**Semantics runtime optimization (ships alongside Phase 4):**
+
+- [ ] Enable `attn_implementation="flash_attention_2"` on the `LlamaRuntime` load (scene summary + suggested-title generation)
+- [ ] Enable `flash_attention_2` on the JoyCaption `CaptionGenerator` load
+- [ ] Bundle the `flash-attn` wheel into the semantics-service GPU Dockerfile
+- [ ] Re-measure and publish updated VRAM peaks in `docs/SEMANTICS_SERVICE.md` (expected: semantics-alone floor drops from ~11.4 GB to ~10 GB)
+- [ ] Publish a "VRAM by workload" tier matrix so 12 GB-card users know semantics-alone is comfortable
+- Lossless (no classifier retrain, no quality impact) — flash-attention is a mathematically equivalent attention kernel
+- CUDA-only; CPU mode falls back to PyTorch SDPA
 
 ### Phase 5: Production Hardening 🔄
 
