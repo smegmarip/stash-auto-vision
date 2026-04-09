@@ -1,0 +1,15 @@
+# Dependencies for export_onnx.py only — NOT required by the faces-service
+# runtime. The faces-service uses onnxruntime for inference and intentionally
+# avoids pulling in torch/torchvision (~500 MB of wheels).
+#
+# Install into a dedicated venv when you want to re-export a custom
+# occlusion classifier checkpoint:
+#
+#   cd faces-service/training
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#   python export_onnx.py --checkpoint /path/to/best_model.pth \
+#                         --output     /path/to/occlusion_classifier.onnx
+torch>=2.0
+torchvision>=0.15
+pyyaml>=6.0

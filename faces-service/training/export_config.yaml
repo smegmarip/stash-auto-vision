@@ -1,0 +1,13 @@
+# Minimal export-only config for export_onnx.py.
+#
+# The only field the export script actually reads is `training.model` —
+# it tells the script which torchvision backbone to instantiate before
+# loading your .pth checkpoint. Must match the backbone the checkpoint
+# was trained with, or `load_state_dict` will fail with a shape mismatch.
+#
+# The published `smegmarip/face-recognition/occlusion_classifier.onnx`
+# was trained with `resnet18` — keep this default unless you're exporting
+# a custom checkpoint that used `convnext_small`.
+
+training:
+  model: resnet18   # one of: resnet18, convnext_small
