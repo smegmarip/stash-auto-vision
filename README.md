@@ -211,6 +211,7 @@ Jobs from every service (vision, faces, scenes, semantics, objects) are aggregat
 ## Documentation
 
 - **[How to Use](docs/HOW_TO_USE.md)** — Quick start, API examples, troubleshooting
+- **[Environment Variables](docs/HOW_TO_USE.md#environment-variables)** — Full reference of every `.env` setting, grouped by service
 - **[Vision API](docs/VISION_API.md)** — Orchestrator request shape, aggregated results, job listing
 - **[Project Specification](CLAUDE.md)** — Architecture, status, development notes
 - **[Frame Server](docs/FRAME_SERVER.md)** — Frame extraction, sprite parsing, on-demand serving
