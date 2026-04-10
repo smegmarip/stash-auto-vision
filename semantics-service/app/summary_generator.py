@@ -13,12 +13,15 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-from .llama_runtime import LlamaRuntime
+from .llama_runtime import LlamaRuntime, is_llm_refusal
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.3
+MAX_REFUSAL_RETRIES = 3
+# A real 2-4 paragraph summary should comfortably exceed this.
+MIN_SUMMARY_LENGTH = 200
 
 SYSTEM_PROMPT = """You are a scene summarizer. Given structured data about a video scene (metadata, participants, and frame-by-frame descriptions), generate a coherent narrative summary.
 
@@ -175,13 +178,18 @@ class SummaryGenerator:
             {"role": "user", "content": prompt},
         ]
 
-        summary = self.llm.generate(
-            messages=messages,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            top_p=0.9,
-            progress_callback=progress_callback,
-        )
+        for attempt in range(1, MAX_REFUSAL_RETRIES + 1):
+            summary = self.llm.generate(
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                top_p=0.9,
+                progress_callback=progress_callback,
+            )
+            if not is_llm_refusal(summary, min_length=MIN_SUMMARY_LENGTH):
+                logger.debug("Generated summary (%d chars, attempt %d)", len(summary), attempt)
+                return summary
+            logger.warning("Summary generation refused (attempt %d/%d): %s", attempt, MAX_REFUSAL_RETRIES, summary[:120])
 
-        logger.debug("Generated summary (%d chars)", len(summary))
+        logger.error("Summary generation refused after %d attempts, returning last output", MAX_REFUSAL_RETRIES)
         return summary

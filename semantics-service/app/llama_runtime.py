@@ -10,6 +10,7 @@ directly — consumers do not own the model lifecycle.
 import gc
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -19,6 +20,40 @@ import torch
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "RedHatAI/Llama-3.1-8B-Instruct"
+
+# Regex patterns that signal the model refused to generate the requested
+# content.  Patterns use flexible verb forms so we don't need to enumerate
+# every conjugation (e.g. "creat[a-z]+" matches create/creating/created).
+_REFUSAL_PATTERNS = [
+    re.compile(r"can'?t\s+creat[a-z]+\s+explicit\s+content", re.I),
+    re.compile(r"cannot\s+creat[a-z]+\s+explicit\s+content", re.I),
+    re.compile(r"can'?t\s+(assist|help|provide|produce|generate|fulfill|write)\b", re.I),
+    re.compile(r"cannot\s+(assist|help|provide|produce|generate|fulfill|write)\b", re.I),
+    re.compile(r"(unable|not able)\s+to\s+(assist|help|provide|produce|generate|create|fulfill|write)\b", re.I),
+    re.compile(r"anything else i can help", re.I),
+    re.compile(r"(against|violat[a-z]+)\s+(my|the)\s+guidelines", re.I),
+    re.compile(r"\bas an ai\b", re.I),
+    re.compile(r"explicit\s+(content|material)\b.*\bnot\b", re.I),
+]
+
+
+def is_llm_refusal(text: str, min_length: Optional[int] = None) -> bool:
+    """Detect whether LLM output is a content refusal rather than real output.
+
+    Args:
+        text: The generated text to check.
+        min_length: If set, output shorter than this many characters is also
+            treated as a refusal (catches terse refusals that dodge keyword
+            detection).  Ignored when *None*.
+    """
+    if not text or not text.strip():
+        return True
+    for pattern in _REFUSAL_PATTERNS:
+        if pattern.search(text):
+            return True
+    if min_length is not None and len(text.strip()) < min_length:
+        return True
+    return False
 
 
 class LlamaRuntime:

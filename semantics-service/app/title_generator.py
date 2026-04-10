@@ -11,7 +11,7 @@ import logging
 import re
 from typing import List, Optional
 
-from .llama_runtime import LlamaRuntime
+from .llama_runtime import LlamaRuntime, is_llm_refusal
 from .summary_generator import format_duration, format_participants
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOKENS = 60
 DEFAULT_TEMPERATURE = 0.85
 DEFAULT_TOP_P = 0.95
+MAX_REFUSAL_RETRIES = 3
 
 SYSTEM_PROMPT = """You are a hybrid pornography marketing prodigy and seasoned wordsmith and screenwriter for the adult film industry. Your specialty is distilling a scene into a single punchy, catchy, salacious title that grabs attention on a thumbnail grid.
 
@@ -163,12 +164,18 @@ class TitleGenerator:
             {"role": "user", "content": prompt},
         ]
 
-        raw = self.llm.generate(
-            messages=messages,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,
-        )
-        title = _clean_title(raw)
-        logger.debug("Generated title: %r (raw: %r)", title, raw)
+        for attempt in range(1, MAX_REFUSAL_RETRIES + 1):
+            raw = self.llm.generate(
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                top_p=self.top_p,
+            )
+            title = _clean_title(raw)
+            if not is_llm_refusal(raw):
+                logger.debug("Generated title: %r (raw: %r, attempt %d)", title, raw, attempt)
+                return title
+            logger.warning("Title generation refused (attempt %d/%d): %s", attempt, MAX_REFUSAL_RETRIES, raw[:120])
+
+        logger.error("Title generation refused after %d attempts, returning last output", MAX_REFUSAL_RETRIES)
         return title
