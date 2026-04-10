@@ -37,4 +37,4 @@ EXPOSE 5003
 # Run bootstrap (HF model download) before uvicorn. The bootstrap exit
 # code is intentionally ignored with `|| true` so that a failed required
 # model download surfaces via /faces/health (503) rather than a crash-loop.
-CMD ["sh", "-c", "python -m app.bootstrap || true && exec uvicorn app.main:app --host 0.0.0.0 --port 5003"]
+CMD ["sh", "-c", "python3 -m app.bootstrap || true && exec uvicorn app.main:app --host 0.0.0.0 --port 5003"]
