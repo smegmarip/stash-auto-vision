@@ -127,10 +127,11 @@ app.post('/api/admin/clear-cache', async (req, res) => {
       // Job-specific clear: delete job keys and find cache entries pointing to this job
       await scanAndDelete(`${service}:job:${job_id}:*`)
 
-      // Scan cache-key→job_id mappings and delete ones that reference this job_id
+      // Scan cache-key→job_id mappings and delete ones that reference this job_id.
+      // Keys are shaped: {service}:cache:{sha256_hash} with the job_id as the value.
       let cursor = '0'
       let cacheCount = 0
-      const cachePattern = `${service}:cache:*:job_id`
+      const cachePattern = `${service}:cache:*`
       do {
         const [next, keys] = await redis.scan(cursor, 'MATCH', cachePattern, 'COUNT', 500)
         cursor = next
