@@ -23,6 +23,9 @@ const redis = new Redis(REDIS_URL, {
 })
 redis.on('error', (err) => console.error('[Redis Error]', err.message))
 
+// Parse JSON bodies for admin endpoints
+app.use(express.json())
+
 // Logging middleware
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`)
@@ -95,23 +98,17 @@ app.get('/api/config', (_req, res) => {
   res.json({ stashUrl: STASH_URL })
 })
 
-// Clear job-related Redis keys across all services.
-// Deletes job metadata, results, queue state, and caches for:
-// vision, semantics, faces, scenes, objects, frames
-app.post('/api/admin/clear-cache', async (_req, res) => {
+// Clear job-related Redis keys.
+// Without body params: clears ALL services (vision, semantics, faces, scenes, objects, frames).
+// With { service, job_id }: clears only keys for that specific job, including any
+// cache-key→job_id mappings that reference it.
+app.post('/api/admin/clear-cache', async (req, res) => {
   try {
-    const patterns = [
-      'vision:*',
-      'semantics:*',
-      'faces:*',
-      'scenes:*',
-      'objects:*',
-      'frames:*',
-    ]
+    const { service, job_id } = req.body || {}
     const deletedByPattern: Record<string, number> = {}
     let total = 0
 
-    for (const pattern of patterns) {
+    const scanAndDelete = async (pattern: string) => {
       let cursor = '0'
       let patternCount = 0
       do {
@@ -126,7 +123,47 @@ app.post('/api/admin/clear-cache', async (_req, res) => {
       deletedByPattern[pattern] = patternCount
     }
 
-    console.log(`[Cache Clear] Deleted ${total} keys:`, deletedByPattern)
+    if (service && job_id) {
+      // Job-specific clear: delete job keys and find cache entries pointing to this job
+      await scanAndDelete(`${service}:job:${job_id}:*`)
+
+      // Scan cache-key→job_id mappings and delete ones that reference this job_id
+      let cursor = '0'
+      let cacheCount = 0
+      const cachePattern = `${service}:cache:*:job_id`
+      do {
+        const [next, keys] = await redis.scan(cursor, 'MATCH', cachePattern, 'COUNT', 500)
+        cursor = next
+        for (const key of keys) {
+          const val = await redis.get(key)
+          if (val === job_id) {
+            await redis.del(key)
+            cacheCount++
+            total++
+          }
+        }
+      } while (cursor !== '0')
+      if (cacheCount > 0) {
+        deletedByPattern[cachePattern] = cacheCount
+      }
+
+      console.log(`[Cache Clear] Job ${service}:${job_id} — deleted ${total} keys:`, deletedByPattern)
+    } else {
+      // Full clear: wipe all service keys
+      const patterns = [
+        'vision:*',
+        'semantics:*',
+        'faces:*',
+        'scenes:*',
+        'objects:*',
+        'frames:*',
+      ]
+      for (const pattern of patterns) {
+        await scanAndDelete(pattern)
+      }
+      console.log(`[Cache Clear] Deleted ${total} keys:`, deletedByPattern)
+    }
+
     res.json({ success: true, total, deleted: deletedByPattern })
   } catch (err) {
     console.error('[Cache Clear Error]', err)
