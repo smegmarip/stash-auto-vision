@@ -157,6 +157,13 @@ class CacheManager:
             job_id = await self.redis.get(mapping_key)
 
             if job_id:
+                # Verify the job's metadata still exists; if it was cleared
+                # the mapping is stale — treat as a cache miss and clean up.
+                metadata_key = f"{self.module}:job:{job_id}:metadata"
+                if not await self.redis.exists(metadata_key):
+                    logger.warning(f"Stale cache mapping for key: {cache_key[:16]}... → job: {job_id} (metadata gone), removing")
+                    await self.redis.delete(mapping_key)
+                    return None
                 logger.info(f"Cache hit for key: {cache_key[:16]}... → job: {job_id}")
             else:
                 logger.debug(f"Cache miss for key: {cache_key[:16]}...")
