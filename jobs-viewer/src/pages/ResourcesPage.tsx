@@ -37,6 +37,23 @@ interface MetricsResponse {
   interval_seconds: number
 }
 
+interface GpuLease {
+  lease_id: string
+  service_name: string
+  vram_allocated_mb: number
+  perpetual: boolean
+}
+
+interface GpuStatusResponse {
+  total_vram_mb: number
+  available_vram_mb: number
+  allocated_vram_mb: number
+  leased_vram_mb: number
+  unaccounted_vram_mb: number
+  actual_used_vram_mb: number | null
+  active_leases: GpuLease[]
+}
+
 const POLL_INTERVAL = 5000
 
 function formatTime(timestamp: number): string {
@@ -217,19 +234,128 @@ function OverviewCard({
 }
 
 // ---------------------------------------------------------------------------
+// VRAM allocation bar
+// ---------------------------------------------------------------------------
+
+const LEASE_COLORS: Record<string, string> = {
+  'semantics-service': '#8b5cf6',
+  'faces-service': '#f59e0b',
+  'frame-server': '#3b82f6',
+  'objects-service': '#ec4899',
+}
+
+function getLeaseColor(service: string): string {
+  return LEASE_COLORS[service] || '#6b7280'
+}
+
+interface VramSegment {
+  label: string
+  mb: number
+  color: string
+  perpetual?: boolean
+}
+
+function VramAllocationBar({ status }: { status: GpuStatusResponse }) {
+  const total = status.total_vram_mb
+  if (total <= 0) return null
+
+  const segments: VramSegment[] = []
+
+  // Active leases
+  for (const lease of status.active_leases) {
+    segments.push({
+      label: lease.service_name,
+      mb: lease.vram_allocated_mb,
+      color: getLeaseColor(lease.service_name),
+      perpetual: lease.perpetual,
+    })
+  }
+
+  // Unaccounted
+  if (status.unaccounted_vram_mb > 50) {
+    segments.push({
+      label: 'Unaccounted',
+      mb: status.unaccounted_vram_mb,
+      color: '#ef4444',
+    })
+  }
+
+  // Free
+  const used = segments.reduce((s, seg) => s + seg.mb, 0)
+  const free = Math.max(0, total - used)
+  segments.push({
+    label: 'Free',
+    mb: free,
+    color: '#1f2937',
+  })
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium text-sm">VRAM Allocation</h3>
+          <span className="text-xs text-muted-foreground">{formatMB(total)} total</span>
+        </div>
+
+        {/* Segmented bar */}
+        <div className="flex h-6 rounded-md overflow-hidden border border-border">
+          {segments.map((seg, i) => {
+            const pct = (seg.mb / total) * 100
+            if (pct < 0.5) return null
+            return (
+              <div
+                key={i}
+                className="relative group"
+                style={{ width: `${pct}%`, backgroundColor: seg.color }}
+                title={`${seg.label}: ${formatMB(seg.mb)} (${pct.toFixed(1)}%)`}
+              >
+                {pct > 8 && (
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white truncate px-1">
+                    {seg.label === 'Free' ? '' : formatMB(seg.mb)}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Legend */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {segments.map((seg, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs">
+              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: seg.color }} />
+              <span className="text-muted-foreground">
+                {seg.label}
+                {seg.perpetual ? ' \u221e' : ''}
+              </span>
+              <span className="font-medium">{formatMB(seg.mb)}</span>
+              <span className="text-muted-foreground">({((seg.mb / total) * 100).toFixed(1)}%)</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export function ResourcesPage() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
+  const [gpuStatus, setGpuStatus] = useState<GpuStatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const res = await fetch('/api/resources/metrics')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data: MetricsResponse = await res.json()
-      setMetrics(data)
+      const [metricsRes, statusRes] = await Promise.all([
+        fetch('/api/resources/metrics'),
+        fetch('/api/resources/gpu/status'),
+      ])
+      if (!metricsRes.ok) throw new Error(`Metrics HTTP ${metricsRes.status}`)
+      setMetrics(await metricsRes.json())
+      if (statusRes.ok) setGpuStatus(await statusRes.json())
       setError(null)
     } catch (err) {
       setError((err as Error).message)
@@ -321,6 +447,9 @@ export function ResourcesPage() {
           color="#10b981"
         />
       </div>
+
+      {/* VRAM allocation bar */}
+      {gpuStatus && <VramAllocationBar status={gpuStatus} />}
 
       {/* Detail charts */}
       <div className="grid gap-4 md:grid-cols-2">
