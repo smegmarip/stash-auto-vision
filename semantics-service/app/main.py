@@ -45,10 +45,9 @@ from .summary_generator import SummaryGenerator
 from .title_generator import TitleGenerator
 from .taxonomy_builder import TaxonomyBuilder
 from .frame_client import FrameServerClient
-from .resource_client import ResourceManagerClient
+from .gpu_client import GPUClient
 from .scenes_client import ScenesServerClient
 from .model_manager import ModelManager
-from .gpu_subprocess import run_gpu_pipeline
 from .job_queue import JobQueue
 from .worker import SemanticsWorker
 
@@ -79,7 +78,8 @@ logger = logging.getLogger(__name__)
 cache_manager: Optional[CacheManager] = None
 tag_classifier: Optional[TagClassifier] = None
 frame_client: Optional[FrameServerClient] = None
-resource_client: Optional[ResourceManagerClient] = None
+gpu_client: Optional[GPUClient] = None
+_classifier_lease_id: Optional[str] = None
 llama_runtime: Optional[LlamaRuntime] = None
 summary_generator: Optional[SummaryGenerator] = None
 title_generator: Optional[TitleGenerator] = None
@@ -128,10 +128,12 @@ async def _load_taxonomy_background():
         taxonomy_status.source = f"error: {str(e)[:100]}"
 
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: initialize services on startup, cleanup on shutdown."""
-    global cache_manager, tag_classifier, frame_client, resource_client
+    global cache_manager, tag_classifier, frame_client, gpu_client, _classifier_lease_id, model_manager
     global llama_runtime, summary_generator, title_generator, caption_generator, model_manager
     global job_queue, worker
 
@@ -150,9 +152,13 @@ async def lifespan(app: FastAPI):
     frame_client = FrameServerClient(FRAME_SERVER_URL)
     logger.info("Frame server client initialized")
 
-    # Resource manager client
-    resource_client = ResourceManagerClient(RESOURCE_MANAGER_URL, service_name="semantics-service")
-    logger.info("Resource manager client initialized")
+    # GPU client for lease management
+    gpu_client = GPUClient(
+        resource_manager_url=RESOURCE_MANAGER_URL,
+        service_name="semantics-service",
+        service_url=f"http://semantics-service:{os.getenv('SEMANTICS_PORT', '5004')}",
+    )
+    logger.info("GPU client initialized")
 
     # Caption generator (JoyCaption, 4-bit NF4 — fits 15.6GB VRAM alongside classifier)
     # Training pipeline used bfloat16 on H100 (80GB), we must quantize on 16GB cards.
@@ -167,7 +173,16 @@ async def lifespan(app: FastAPI):
     title_generator = TitleGenerator(llm=llama_runtime)
     logger.info(f"Llama runtime initialized (model={llama_runtime.model_name}, device={llama_runtime.device})")
 
-    # Tag classifier (lightweight, ~1.4GB — kept loaded)
+    # Reserve VRAM for the classifier before loading it (perpetual — never evicted)
+    CLASSIFIER_VRAM_MB = 3800
+    try:
+        _classifier_lease_id = await gpu_client.lease(vram_mb=CLASSIFIER_VRAM_MB, priority=1, perpetual=True)
+        if _classifier_lease_id:
+            logger.info(f"Perpetual GPU lease acquired for classifier ({CLASSIFIER_VRAM_MB} MB)")
+    except Exception as e:
+        logger.warning(f"Could not acquire perpetual GPU lease: {e}")
+
+    # Tag classifier (~3.8GB with BGE backbone — kept loaded)
     tag_classifier = TagClassifier(model_variant=CLASSIFIER_MODEL, device=CLASSIFIER_DEVICE)
     try:
         tag_classifier.load_model()
@@ -175,13 +190,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to load classifier model: {e}", exc_info=True)
         logger.warning("Classifier will be unavailable until model is loaded")
-
-    # Request perpetual GPU lease for the classifier (always loaded)
-    try:
-        await resource_client.request_gpu(vram_mb=1400, priority=1, perpetual=True)
-        logger.info("Perpetual GPU lease acquired for classifier")
-    except Exception as e:
-        logger.warning(f"Could not acquire perpetual GPU lease: {e}")
 
     # Model manager with idle-timeout unloading
     model_manager = ModelManager(idle_timeout=MODEL_IDLE_TIMEOUT)
@@ -215,6 +223,8 @@ async def lifespan(app: FastAPI):
         await cache_manager.disconnect()
     if tag_classifier:
         tag_classifier.unload()
+    if gpu_client:
+        await gpu_client.close()
     logger.info("Semantics Service stopped")
 
 
@@ -460,10 +470,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
         if not active_taxonomy or not active_taxonomy.get("tags"):
             raise RuntimeError("No taxonomy available. Set STASH_URL or provide custom_taxonomy.")
 
-        # Ensure classifier has this taxonomy loaded.
-        # Only reload if the taxonomy actually differs — load_taxonomy
-        # re-creates the classifier model, which is expensive and allocates
-        # fresh VRAM. Skip it when the existing taxonomy matches.
+        # Ensure classifier has this taxonomy loaded
         if tag_classifier and tag_classifier.is_loaded:
             existing = tag_classifier.taxonomy
             if existing is not active_taxonomy:
@@ -473,10 +480,9 @@ async def _run_pipeline(job_id: str, request_payload: dict):
                     logger.info(f"Taxonomy changed ({len(existing_ids)} → {len(new_ids)} tags), reloading classifier")
                     tag_classifier.load_taxonomy(active_taxonomy)
         elif tag_classifier and tag_classifier.is_checkpoint_ready:
-            # First job: taxonomy wasn't loaded at startup (no STASH_URL), load now
             tag_classifier.load_taxonomy(active_taxonomy)
-        else:
-            raise RuntimeError("Tag classifier not loaded")
+        elif not tag_classifier or not tag_classifier.is_checkpoint_ready:
+            raise RuntimeError("Tag classifier checkpoint not ready")
 
         # --- Step 1: Resolve scene context from Stash ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.03, stage="fetching_scene", message="Fetching scene data from Stash")
@@ -521,60 +527,71 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             frame_timestamps = [frame_timestamps[i] for i in indices]
             frame_paths = [frame_paths[i] for i in indices]
 
-        # --- Step 3: Request GPU ---
+        # --- Step 3: Request GPU lease ---
         await cache_manager.update_job_status(job_id, JobStatus.WAITING_FOR_GPU.value, progress=0.10, stage="requesting_gpu", message="Requesting GPU access")
         try:
-            gpu_result = await resource_client.request_gpu(vram_mb=8000, priority=3)
-            if gpu_result.get("granted"):
-                lease_id = gpu_result.get("lease_id")
-            else:
-                request_id = gpu_result.get("request_id")
-                if request_id:
-                    wait_result = await resource_client.wait_for_gpu(request_id, max_wait=300)
-                    lease_id = wait_result.get("lease_id")
-        except Exception as e:
-            logger.warning(f"GPU resource manager unavailable: {e}. Proceeding without lease.")
-
-        # --- Steps 4-6: GPU subprocess (captioning + summary + title) ---
-        # Run all bitsandbytes model work in an isolated subprocess so the
-        # CUDA context is fully destroyed on exit, reclaiming all VRAM.
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Starting GPU subprocess for captioning + summarization")
-
-        # Heartbeat the lease during subprocess execution via progress callback
-        async def _gpu_progress(progress: float, message: str):
-            await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=progress, stage="gpu_processing", message=message)
+            lease_id = await gpu_client.lease(vram_mb=9000, priority=3, timeout_seconds=600)
             if lease_id:
-                try:
-                    await resource_client.heartbeat(lease_id)
-                except Exception:
-                    pass
+                gpu_client.mark_busy(lease_id)
+        except Exception as e:
+            logger.warning(f"GPU lease request failed: {e}. Proceeding without lease.")
 
-        gpu_result = await run_gpu_pipeline(
-            frame_paths=frame_paths,
-            frame_timestamps=frame_timestamps,
-            promo_desc=ctx.promo_desc,
-            duration=ctx.duration,
-            performer_count=ctx.performer_count,
-            performer_genders=ctx.performer_genders,
-            resolution=ctx.resolution,
-            source=request.source,
-            llm_device=CLASSIFIER_DEVICE,
-            progress_callback=_gpu_progress,
-        )
+        # --- Step 4: Generate captions ---
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Generating frame captions with JoyCaption")
 
-        fixed_captions = gpu_result["captions"]
-        scene_summary = gpu_result["summary"]
-        suggested_title = gpu_result["title"]
+        def _generate_captions():
+            with model_manager.using("caption"):
+                return caption_generator.generate_captions(frame_images)
 
-        logger.info(f"GPU subprocess complete: {len(fixed_captions)} captions, summary={len(scene_summary)} chars, title={suggested_title!r}")
+        raw_captions = await asyncio.to_thread(_generate_captions)
+        fixed_captions = [CaptionGenerator.fix_caption(c, i) for i, c in enumerate(raw_captions)]
+        logger.info(f"Generated {len(fixed_captions)} captions")
 
-        # Release GPU lease now — subprocess has exited, VRAM is freed
+        # --- Step 5: Generate scene summary ---
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.60, stage="summarizing", message="Generating scene summary")
+
+        frame_caption_dicts = [{"frame_index": i, "timestamp": frame_timestamps[i], "caption": c} for i, c in enumerate(fixed_captions)]
+
+        def _generate_summary():
+            with model_manager.using("llm"):
+                return summary_generator.generate_summary(
+                    frame_caption_dicts, ctx.promo_desc, ctx.duration,
+                    ctx.performer_count, ctx.performer_genders, ctx.resolution,
+                )
+
+        try:
+            scene_summary = await asyncio.to_thread(_generate_summary)
+        except Exception as e:
+            logger.warning(f"Summary generation failed: {e}. Using concatenated captions as fallback.", exc_info=True)
+            scene_summary = " ".join(c for c in fixed_captions)
+
+        logger.info(f"Summary generated ({len(scene_summary)} chars)")
+
+        # --- Step 6: Generate suggested title ---
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="titling", message="Generating scene title")
+
+        def _generate_title():
+            with model_manager.using("llm"):
+                return title_generator.generate_title(
+                    scene_source=request.source, scene_summary=scene_summary,
+                    promo_desc=ctx.promo_desc, duration=ctx.duration,
+                    performer_count=ctx.performer_count,
+                    performer_genders=ctx.performer_genders,
+                    resolution=ctx.resolution,
+                )
+
+        suggested_title: Optional[str] = None
+        try:
+            suggested_title = await asyncio.to_thread(_generate_title)
+        except Exception as e:
+            logger.warning(f"Title generation failed: {e}. Continuing without suggested_title.", exc_info=True)
+
+        if suggested_title:
+            logger.info(f"Suggested title: {suggested_title!r}")
+
+        # Mark GPU lease idle (models stay loaded with idle timeout)
         if lease_id:
-            try:
-                await resource_client.release_gpu(lease_id)
-                lease_id = None  # prevent double-release in finally block
-            except Exception:
-                pass
+            gpu_client.mark_idle(lease_id)
 
         # --- Step 7: Run tag classifier ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
@@ -674,9 +691,10 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             pass
 
     finally:
-        if lease_id:
+        if lease_id and gpu_client:
+            gpu_client.mark_released(lease_id)
             try:
-                await resource_client.release_gpu(lease_id)
+                await gpu_client.release(lease_id)
             except Exception:
                 pass
         gc.collect()
@@ -797,6 +815,33 @@ async def get_job_results(job_id: str):
     except Exception as e:
         logger.error(f"Error getting job results: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/resources/{lease_id}/status")
+async def get_lease_status(lease_id: str):
+    """Return internal lease state for resource-manager revocation protocol."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"lease_id": lease_id, "state": "unknown"}
+    return rec.to_dict()
+
+
+@app.post("/resources/{lease_id}/release")
+async def release_lease(lease_id: str):
+    """Attempt to release a lease (called by resource-manager for eviction)."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"accepted": False, "reason": "Lease not found"}
+    if gpu_client.is_busy(lease_id):
+        return {"accepted": False, "reason": "Lease is busy"}
+    if rec.perpetual:
+        return {"accepted": False, "reason": "Cannot evict perpetual lease"}
+    asyncio.create_task(gpu_client.evict(lease_id))
+    return {"accepted": True}
 
 
 @app.get("/semantics/health", response_model=HealthResponse)

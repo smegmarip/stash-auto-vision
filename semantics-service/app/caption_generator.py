@@ -122,6 +122,11 @@ class CaptionGenerator:
                     low_cpu_mem_usage=True,
                     **model_kwargs,
                 )
+
+                # Clean up materialization bloat from transformers v5 loader
+                import gc as _gc
+                _gc.collect()
+                torch.cuda.empty_cache()
             else:
                 dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
                 self.model = LlavaForConditionalGeneration.from_pretrained(

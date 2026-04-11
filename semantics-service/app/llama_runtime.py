@@ -121,6 +121,12 @@ class LlamaRuntime:
                 )
 
             self.model.eval()
+
+            # Clean up materialization bloat from transformers v5 loader
+            # (v5 may temporarily materialize full-precision tensors before quantizing)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             self._loaded = True
 
             if self.device == "cuda":
