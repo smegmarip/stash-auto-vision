@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI):
     logger.info("Frame server client initialized")
 
     # Resource manager client
-    resource_client = ResourceManagerClient(RESOURCE_MANAGER_URL)
+    resource_client = ResourceManagerClient(RESOURCE_MANAGER_URL, service_name="semantics-service")
     logger.info("Resource manager client initialized")
 
     # Caption generator (JoyCaption, 4-bit NF4 — fits 15.6GB VRAM alongside classifier)
@@ -504,13 +504,13 @@ async def _run_pipeline(job_id: str, request_payload: dict):
         # --- Step 3: Request GPU ---
         await cache_manager.update_job_status(job_id, JobStatus.WAITING_FOR_GPU.value, progress=0.10, stage="requesting_gpu", message="Requesting GPU access")
         try:
-            gpu_result = await resource_client.request_gpu(service_name="semantics-service", vram_required_mb=8000, priority=3, job_id=job_id)
+            gpu_result = await resource_client.request_gpu(vram_mb=8000, priority=3)
             if gpu_result.get("granted"):
                 lease_id = gpu_result.get("lease_id")
             else:
                 request_id = gpu_result.get("request_id")
                 if request_id:
-                    wait_result = await resource_client.wait_for_gpu(request_id, timeout=300)
+                    wait_result = await resource_client.wait_for_gpu(request_id, max_wait=300)
                     lease_id = wait_result.get("lease_id")
         except Exception as e:
             logger.warning(f"GPU resource manager unavailable: {e}. Proceeding without lease.")
