@@ -352,18 +352,24 @@ class GPUClient:
                         logger.info(f"Lease {rec.lease_id} expired locally")
                         continue
                     try:
-                        resp = await client.post(
-                            f"{self.resource_manager_url}/resources/gpu/heartbeat",
-                            json={"lease_id": rec.lease_id},
-                        )
-                        data = resp.json()
-                        if data.get("success"):
-                            rec.last_heartbeat = time.monotonic()
-                            if rec.expires_at is not None:
-                                rec.expires_at = time.monotonic() + self.lease_ttl
-                        else:
-                            # Lease lost on manager side — re-request
-                            logger.warning(f"Heartbeat failed for lease {rec.lease_id}: {data.get('message')}")
+                        success = False
+                        for attempt in range(2):  # 1 retry
+                            resp = await client.post(
+                                f"{self.resource_manager_url}/resources/gpu/heartbeat",
+                                json={"lease_id": rec.lease_id},
+                            )
+                            data = resp.json()
+                            if data.get("success"):
+                                rec.last_heartbeat = time.monotonic()
+                                if rec.expires_at is not None:
+                                    rec.expires_at = time.monotonic() + self.lease_ttl
+                                success = True
+                                break
+                            if attempt == 0:
+                                logger.debug(f"Heartbeat missed for {rec.lease_id}, retrying in 2s")
+                                await asyncio.sleep(2.0)
+                        if not success:
+                            logger.warning(f"Heartbeat failed for lease {rec.lease_id} after retry: {data.get('message')}")
                             rec.state = LeaseState.EXPIRED
                     except Exception as e:
                         logger.debug(f"Heartbeat error for {rec.lease_id}: {e}")

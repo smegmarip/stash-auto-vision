@@ -30,7 +30,7 @@ from .metrics_collector import MetricsCollector
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 TOTAL_VRAM_MB = float(os.getenv("TOTAL_VRAM_MB", "16384"))  # 16GB default
 LEASE_DURATION_SECONDS = float(os.getenv("LEASE_DURATION_SECONDS", "600"))
-HEARTBEAT_TIMEOUT_SECONDS = float(os.getenv("HEARTBEAT_TIMEOUT_SECONDS", "60"))
+HEARTBEAT_TIMEOUT_SECONDS = float(os.getenv("HEARTBEAT_TIMEOUT_SECONDS", "90"))
 # Force a specific device type (cuda, mps, cpu, virtual)
 FORCE_DEVICE_TYPE = os.getenv("FORCE_DEVICE_TYPE", "").lower()
 
