@@ -4,3 +4,6 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 
 # No torch - runs in virtual mode using TOTAL_VRAM_MB env var
+
+# System metrics (CPU/RAM)
+psutil==5.9.7

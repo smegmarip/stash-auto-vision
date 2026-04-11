@@ -5,3 +5,7 @@ pydantic==2.5.0
 
 # GPU detection (CUDA)
 torch==2.1.1
+
+# System metrics (CPU/RAM/GPU)
+psutil==5.9.7
+pynvml==11.5.0

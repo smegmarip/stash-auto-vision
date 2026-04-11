@@ -24,6 +24,7 @@ from .models import (
     ResourceStatus
 )
 from .gpu_manager import GPUManager
+from .metrics_collector import MetricsCollector
 
 # Environment configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Global GPU manager
 gpu_manager: Optional[GPUManager] = None
 gpu_info: Optional[GPUInfo] = None
+metrics_collector: Optional[MetricsCollector] = None
 
 
 def detect_compute_device() -> tuple[Optional[GPUInfo], float]:
@@ -174,7 +176,7 @@ def _get_cpu_info() -> tuple[GPUInfo, float]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global gpu_manager, gpu_info
+    global gpu_manager, gpu_info, metrics_collector
 
     logger.info("Starting Resource Manager Service...")
 
@@ -194,10 +196,17 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Resource Manager initialized with {total_memory:.0f}MB memory budget")
 
+    # Start metrics collector
+    metrics_interval = float(os.getenv("METRICS_INTERVAL_SECONDS", "5"))
+    metrics_collector = MetricsCollector(interval=metrics_interval)
+    await metrics_collector.start()
+
     yield
 
     # Cleanup
     logger.info("Shutting down Resource Manager Service...")
+    if metrics_collector:
+        await metrics_collector.stop()
     if gpu_manager:
         await gpu_manager.stop()
     logger.info("Resource Manager Service stopped")
@@ -356,6 +365,14 @@ async def get_gpu_status():
     except Exception as e:
         logger.error(f"Error getting GPU status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/resources/metrics")
+async def get_metrics():
+    """Get current and historical system metrics (GPU, VRAM, CPU, RAM)."""
+    if not metrics_collector:
+        raise HTTPException(status_code=503, detail="Metrics collector not initialized")
+    return metrics_collector.get_metrics()
 
 
 @app.get("/resources/health", response_model=HealthResponse)

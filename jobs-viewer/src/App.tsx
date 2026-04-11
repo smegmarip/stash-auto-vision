@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MainLayout } from './components/layout/MainLayout'
 import { JobsListPage } from './pages/JobsListPage'
 import { JobDetailPage } from './pages/JobDetailPage'
+import { ResourcesPage } from './pages/ResourcesPage'
 import { useWebSocket } from './hooks/useWebSocket'
 
 const queryClient = new QueryClient({
@@ -31,6 +32,7 @@ export function App() {
             <Route path="/jobs" element={<JobsListPage />} />
             <Route path="/jobs/:jobId" element={<JobDetailPage />} />
             <Route path="/jobs/:jobId/:service" element={<JobDetailPage />} />
+            <Route path="/resources" element={<ResourcesPage />} />
           </Routes>
         </MainLayout>
       </BrowserRouter>

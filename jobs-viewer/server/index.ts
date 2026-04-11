@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 5020
 const VISION_API_URL = process.env.VISION_API_URL || 'http://vision-api:5010'
 const FRAME_SERVER_URL = process.env.FRAME_SERVER_URL || 'http://frame-server:5001'
 const STASH_URL = process.env.STASH_URL || ''
+const RESOURCE_MANAGER_URL = process.env.RESOURCE_MANAGER_URL || 'http://resource-manager:5007'
 const REDIS_URL = process.env.REDIS_URL || 'redis://vision-redis:6379/0'
 
 // Redis client for admin operations (cache clearing)
@@ -53,6 +54,20 @@ app.use('/api/frames', createProxyMiddleware({
   pathRewrite: { '^/api/frames': '/frames' },
   onProxyReq: (proxyReq, req) => {
     console.log(`[Proxy] ${req.method} ${req.url} -> ${FRAME_SERVER_URL}`)
+  },
+  onError: (err, _req, res) => {
+    console.error('[Proxy Error]', err.message)
+    res.status(502).json({ error: 'Proxy error', message: err.message })
+  }
+}))
+
+// Proxy /api/resources/* to resource-manager
+app.use('/api/resources', createProxyMiddleware({
+  target: RESOURCE_MANAGER_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api/resources': '/resources' },
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[Proxy] ${req.method} ${req.url} -> ${RESOURCE_MANAGER_URL}`)
   },
   onError: (err, _req, res) => {
     console.error('[Proxy Error]', err.message)

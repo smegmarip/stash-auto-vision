@@ -16,6 +16,12 @@ export function Header() {
           >
             Jobs
           </Link>
+          <Link
+            to="/resources"
+            className="transition-colors hover:text-foreground/80 text-foreground"
+          >
+            Resources
+          </Link>
         </nav>
         <div className="ml-auto flex items-center space-x-4">
           <span className="text-xs text-muted-foreground">
