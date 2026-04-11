@@ -7,3 +7,6 @@ pydantic==2.5.0
 
 # System metrics (CPU/RAM)
 psutil==5.9.7
+
+# HTTP client for service callbacks (lease eviction)
+httpx==0.25.2

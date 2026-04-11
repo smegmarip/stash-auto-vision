@@ -57,6 +57,10 @@ class GPURequestInput(BaseModel):
         default=False,
         description="Perpetual lease that never expires (for always-loaded models)"
     )
+    callback_url: Optional[str] = Field(
+        default=None,
+        description="Service base URL for revocation callbacks (e.g. http://faces-service:5003)"
+    )
 
 
 class GPURequestResponse(BaseModel):
@@ -108,6 +112,7 @@ class GPULease(BaseModel):
     expires_at: str
     last_heartbeat: str
     job_id: Optional[str] = None
+    perpetual: bool = False
 
 
 class GPUQueueEntry(BaseModel):
@@ -127,6 +132,9 @@ class GPUStatusResponse(BaseModel):
     total_vram_mb: float
     available_vram_mb: float
     allocated_vram_mb: float
+    leased_vram_mb: float = 0
+    unaccounted_vram_mb: float = 0
+    actual_used_vram_mb: Optional[float] = None
     active_leases: List[GPULease]
     queue_length: int
     queue: List[GPUQueueEntry]

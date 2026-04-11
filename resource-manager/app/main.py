@@ -238,6 +238,7 @@ async def request_gpu(request: GPURequestInput):
             timeout_seconds=request.timeout_seconds,
             job_id=request.job_id,
             perpetual=request.perpetual,
+            callback_url=request.callback_url,
         )
 
         return GPURequestResponse(
@@ -359,6 +360,9 @@ async def get_gpu_status():
             total_vram_mb=status["total_vram_mb"],
             available_vram_mb=status["available_vram_mb"],
             allocated_vram_mb=status["allocated_vram_mb"],
+            leased_vram_mb=status.get("leased_vram_mb", 0),
+            unaccounted_vram_mb=status.get("unaccounted_vram_mb", 0),
+            actual_used_vram_mb=status.get("actual_used_vram_mb"),
             active_leases=status["active_leases"],
             queue_length=status["queue_length"],
             queue=status["queue"]

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
 import heapq
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class GPULease:
     last_heartbeat: datetime
     job_id: Optional[str] = None
     perpetual: bool = False  # Perpetual leases never expire (for always-loaded models)
+    callback_url: Optional[str] = None  # Service base URL for revocation callbacks
 
     def is_expired(self) -> bool:
         if self.perpetual:
@@ -183,6 +185,7 @@ class GPUManager:
         timeout_seconds: float = 300.0,
         job_id: Optional[str] = None,
         perpetual: bool = False,
+        callback_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Request GPU access
@@ -198,12 +201,14 @@ class GPUManager:
             Dict with request_id, granted status, lease info
         """
         request_id = str(uuid.uuid4())
+        evictable = []
 
         async with self._lock:
             # Check if request can be immediately granted
             if vram_required_mb <= self.available_vram_mb:
                 lease = await self._create_lease(
-                    service_name, vram_required_mb, job_id, perpetual=perpetual
+                    service_name, vram_required_mb, job_id,
+                    perpetual=perpetual, callback_url=callback_url,
                 )
                 lease_type = "perpetual " if perpetual else ""
                 logger.info(
@@ -219,7 +224,38 @@ class GPUManager:
                     "message": "GPU access granted"
                 }
 
-            # Queue the request
+            # Not enough VRAM — try to evict idle non-perpetual leases
+            evictable = [
+                lease for lease in self.active_leases.values()
+                if not lease.perpetual and lease.callback_url
+            ]
+            if evictable:
+                # Release the lock during eviction (HTTP calls are slow)
+                # We'll re-check availability after
+                pass  # fall through to eviction attempt below
+
+        # --- Eviction attempt (outside lock) ---
+        if evictable:
+            freed = await self._attempt_eviction(evictable, vram_required_mb)
+            if freed:
+                async with self._lock:
+                    if vram_required_mb <= self.available_vram_mb:
+                        lease = await self._create_lease(
+                            service_name, vram_required_mb, job_id,
+                            perpetual=perpetual, callback_url=callback_url,
+                        )
+                        logger.info(f"GPU request granted after eviction: {service_name} ({vram_required_mb:.0f}MB)")
+                        return {
+                            "request_id": request_id,
+                            "granted": True,
+                            "lease_id": lease.lease_id,
+                            "queue_position": None,
+                            "estimated_wait_seconds": None,
+                            "message": "GPU access granted (after eviction)"
+                        }
+
+        # Queue the request
+        async with self._lock:
             timeout_at = datetime.utcnow() + timedelta(seconds=timeout_seconds)
             request = GPURequest(
                 priority=priority,
@@ -408,6 +444,7 @@ class GPUManager:
         vram_mb: float,
         job_id: Optional[str] = None,
         perpetual: bool = False,
+        callback_url: Optional[str] = None,
     ) -> GPULease:
         """Create a new GPU lease"""
         now = datetime.utcnow()
@@ -420,9 +457,67 @@ class GPUManager:
             last_heartbeat=now,
             job_id=job_id,
             perpetual=perpetual,
+            callback_url=callback_url,
         )
         self.active_leases[lease.lease_id] = lease
         return lease
+
+    async def _attempt_eviction(self, evictable: List[GPULease], vram_needed: float) -> bool:
+        """Try to evict idle leases to free enough VRAM.
+
+        Calls each evictable lease's service release endpoint, then polls
+        the status endpoint to confirm release. Removes released leases.
+
+        Returns True if enough VRAM was freed.
+        """
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for lease in evictable:
+                if not lease.callback_url:
+                    continue
+
+                base = lease.callback_url.rstrip("/")
+
+                # Check if lease is busy before attempting release
+                try:
+                    status_resp = await client.get(f"{base}/resources/{lease.lease_id}/status")
+                    status_data = status_resp.json()
+                    if status_data.get("state") == "busy":
+                        logger.debug(f"Lease {lease.lease_id} ({lease.service_name}) is busy, skipping")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Cannot query lease status for {lease.lease_id}: {e}")
+                    continue
+
+                # Request release
+                try:
+                    release_resp = await client.post(f"{base}/resources/{lease.lease_id}/release")
+                    release_data = release_resp.json()
+                    if not release_data.get("accepted"):
+                        logger.debug(f"Release rejected for {lease.lease_id}: {release_data.get('reason')}")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Release request failed for {lease.lease_id}: {e}")
+                    continue
+
+                # Poll status until released or timeout (30s)
+                for _ in range(15):
+                    await asyncio.sleep(2.0)
+                    try:
+                        poll_resp = await client.get(f"{base}/resources/{lease.lease_id}/status")
+                        poll_data = poll_resp.json()
+                        if poll_data.get("state") == "released":
+                            async with self._lock:
+                                self.active_leases.pop(lease.lease_id, None)
+                            logger.info(f"Evicted lease {lease.lease_id} ({lease.service_name}, {lease.vram_allocated_mb:.0f}MB)")
+                            break
+                    except Exception:
+                        pass
+
+                # Check if we now have enough
+                if self.available_vram_mb >= vram_needed:
+                    return True
+
+        return self.available_vram_mb >= vram_needed
 
     async def _process_queue(self):
         """Process pending requests in queue"""
