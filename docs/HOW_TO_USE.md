@@ -237,6 +237,8 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 | `FACES_LOCAL_TOPIQ_PATH`            | Absolute in-container path to pre-downloaded TOPIQ-NR ONNX                                                | _(empty)_                          |
 | `FACES_LOCAL_CLIPIQA_PATH`          | Absolute in-container path to pre-downloaded CLIP-IQA+ ONNX                                               | _(empty)_                          |
 | `FACES_MODEL_CACHE_DIR`             | Container-side cache directory — must match the `faces_models_cache` volume mount in `docker-compose.yml` | `/app/models`                      |
+| `FACES_MODEL_IDLE_TIMEOUT`          | Seconds before idle ONNX models are unloaded from VRAM                                                    | `300`                              |
+| `FACES_VRAM_MB`                     | VRAM budget (MB) for GPU lease request to the resource-manager                                            | `2600`                             |
 
 ### Semantics Service — Classifier
 

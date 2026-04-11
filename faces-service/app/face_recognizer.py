@@ -61,7 +61,7 @@ class FaceRecognizer:
         # If recognition_manager provided, use it; otherwise create single instance
         if self.recognition_manager:
             self.app = None  # Will be selected per-image
-            logger.info(f"FaceRecognizer using RecognitionManager with {len(recognition_manager.apps)} instances")
+            logger.info(f"FaceRecognizer using RecognitionManager (deferred loading)")
         else:
             # Initialize single InsightFace instance (backward compatibility)
             providers = (
@@ -71,11 +71,31 @@ class FaceRecognizer:
             self.app.prepare(ctx_id=0 if device == "cuda" else -1, det_size=det_size)
             logger.info(f"InsightFace initialized: {model_name} on {device} with det_size={det_size}")
 
-        # Initialize occlusion detector
+        # Initialize occlusion detector (deferred loading)
         self.occlusion_detector = OcclusionDetector()
 
-        # Initialize face quality assessor
+        # Initialize face quality assessor (CPU-only, always available)
         self.face_quality = FaceQuality()
+
+    def load(self) -> None:
+        """Load all GPU models (RecognitionManager + OcclusionDetector)."""
+        if self.recognition_manager:
+            self.recognition_manager.load()
+        self.occlusion_detector.load()
+        logger.info("FaceRecognizer models loaded")
+
+    def unload(self) -> None:
+        """Unload all GPU models and free VRAM."""
+        if self.recognition_manager:
+            self.recognition_manager.unload()
+        self.occlusion_detector.unload()
+        logger.info("FaceRecognizer models unloaded")
+
+    @property
+    def is_loaded(self) -> bool:
+        if self.recognition_manager:
+            return self.recognition_manager.is_loaded and self.occlusion_detector.is_loaded
+        return self.app is not None and self.occlusion_detector.is_loaded
 
     async def detect_faces(self, image: np.ndarray, face_min_confidence: float = 0.9) -> List[Dict]:
         """
@@ -104,6 +124,32 @@ class FaceRecognizer:
             )
             for i, face in enumerate(faces):
                 logger.debug(f"  Face {i}: confidence={face.det_score:.3f}")
+
+            valid_faces = [face for face in faces if face.det_score >= face_min_confidence]
+            valid_ratio = len(valid_faces) / len(faces) if faces else 0
+            logger.debug(f"InsightFace filtered detection: {len(valid_faces)} faces meet confidence threshold")
+
+            if valid_ratio < 0.5:
+                logger.warning(
+                    f"Low confidence detections: {len(valid_faces)}/{len(faces)} faces meet confidence threshold "
+                    f"{face_min_confidence:.2f} - consider lowering threshold or checking image quality"
+                )
+                detect_large = (type(det_size) == tuple and det_size[0] > 640) or (type(det_size) == int and det_size > 640)
+                if self.recognition_manager and detect_large:
+                    logger.info(f"Retrying with smaller det_size for better detection on small faces")
+                    app, det_size = self.recognition_manager.select_app(image, size_override=640)
+                    new_faces = app.get(image)
+                    valid_faces = [face for face in new_faces if face.det_score >= face_min_confidence]
+                    logger.debug(
+                        f"Retry detection: found {len(new_faces)} faces, {len(valid_faces)} meet confidence threshold "
+                        f"{face_min_confidence:.2f} with det_size={det_size}"
+                    )
+                    new_ratio = len(valid_faces) / len(new_faces) if new_faces else 0
+                    if new_ratio > valid_ratio:
+                        faces = new_faces
+                        logger.info(f"Switched to det_size={det_size} for improved detection")
+                    else:
+                        logger.info(f"Smaller det_size did not improve valid detection ratio, keeping original detections")
 
             # Filter by confidence and convert to dict format
             results = []

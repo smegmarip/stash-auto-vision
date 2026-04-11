@@ -1,8 +1,13 @@
 """
 Faces Service - Recognition Manager
-Manages multiple InsightFace instances with different det_sizes for optimal detection
+Manages multiple InsightFace instances with different det_sizes for optimal detection.
+
+Supports deferred loading: call load() to allocate ONNX models on GPU, and
+unload() to release them. This lets the resource-manager coordinate VRAM
+across services.
 """
 
+import gc
 import logging
 import numpy as np
 from typing import Dict, Tuple
@@ -37,7 +42,7 @@ class RecognitionManager:
         device: str = "cuda"
     ):
         """
-        Initialize recognition manager with multiple FaceAnalysis instances
+        Initialize recognition manager (deferred loading — call load() to allocate models).
 
         Args:
             model_name: InsightFace model (buffalo_l, buffalo_s, buffalo_sc)
@@ -49,18 +54,47 @@ class RecognitionManager:
         self.model_name = model_name
         self.device = device
         self.apps: Dict[int, FaceAnalysis] = {}
+        self._loaded = False
 
-        # Determine providers and context
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
-        ctx_id = 0 if device == 'cuda' else -1
+        logger.info(f"RecognitionManager created: {model_name} on {device} (not yet loaded)")
 
-        # Load instances based on device
-        self._load_instances(model_name, providers, ctx_id)
+    def load(self) -> None:
+        """Load all FaceAnalysis ONNX models onto the configured device."""
+        if self._loaded:
+            return
+
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device == 'cuda' else ['CPUExecutionProvider']
+        ctx_id = 0 if self.device == 'cuda' else -1
+
+        self._load_instances(self.model_name, providers, ctx_id)
+        self._loaded = True
 
         logger.info(
-            f"RecognitionManager initialized: {model_name} on {device} "
+            f"RecognitionManager loaded: {self.model_name} on {self.device} "
             f"with {len(self.apps)} det_size instances {list(self.apps.keys())}"
         )
+
+    def unload(self) -> None:
+        """Release all FaceAnalysis instances and free GPU memory."""
+        if not self._loaded:
+            return
+
+        self.apps.clear()
+        self._loaded = False
+
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+        logger.info("RecognitionManager unloaded")
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
 
     def _load_instances(self, model_name: str, providers: list, ctx_id: int):
         """
@@ -90,7 +124,7 @@ class RecognitionManager:
             app_1024.prepare(ctx_id=ctx_id, det_size=(1024, 1024))
             self.apps[1024] = app_1024
 
-    def select_app(self, image: np.ndarray) -> Tuple[FaceAnalysis, int]:
+    def select_app(self, image: np.ndarray, size_override: int = 0) -> Tuple[FaceAnalysis, int]:
         """
         Select appropriate FaceAnalysis instance based on image dimensions
 
@@ -103,12 +137,16 @@ class RecognitionManager:
 
         Args:
             image: Input image array (H, W, C)
-
+            size_override: Optional det_size override
         Returns:
             Tuple of (FaceAnalysis instance, det_size used)
         """
         height, width = image.shape[:2]
         min_dim = min(height, width)
+
+        if size_override and size_override > 0:
+            min_dim = size_override
+            logger.debug(f"Size override provided: using min_dim={min_dim} for selection")
 
         # Selection logic
         if min_dim < 500:

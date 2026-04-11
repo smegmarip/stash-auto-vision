@@ -40,6 +40,7 @@ from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
 from .recognition_manager import RecognitionManager
 from .frame_client import FrameServerClient
+from .resource_client import ResourceManagerClient
 from .image_utils import normalize_image_if_needed, get_image_area
 
 # Environment configuration
@@ -47,9 +48,12 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 INSIGHTFACE_MODEL = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
 INSIGHTFACE_DEVICE = os.getenv("INSIGHTFACE_DEVICE", "cuda")
 FRAME_SERVER_URL = os.getenv("FRAME_SERVER_URL", "http://frame-server:5001")
+RESOURCE_MANAGER_URL = os.getenv("RESOURCE_MANAGER_URL", "http://resource-manager:5007")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 MAX_ENHANCEMENT_PIXELS = int(os.getenv("MAX_ENHANCEMENT_PIXELS", "2073600"))  # 1920*1080
+MODEL_IDLE_TIMEOUT = float(os.getenv("FACES_MODEL_IDLE_TIMEOUT", "300"))  # 5 minutes
+MODEL_VRAM_MB = float(os.getenv("FACES_VRAM_MB", "2600"))  # measured ~2550 MB
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -59,15 +63,101 @@ logger = logging.getLogger(__name__)
 cache_manager: Optional[CacheManager] = None
 face_recognizer: Optional[FaceRecognizer] = None
 frame_client: Optional[FrameServerClient] = None
+resource_client: Optional[ResourceManagerClient] = None
+
+# GPU model lifecycle state
+_models_last_used: float = 0.0
+_models_busy: int = 0
+_cleanup_task: Optional[asyncio.Task] = None
+_heartbeat_task: Optional[asyncio.Task] = None
+
+
+async def _gpu_heartbeat_loop(interval: float = 30.0):
+    """Send periodic heartbeats to keep the GPU lease alive."""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            if resource_client and resource_client.has_gpu_lease:
+                result = await resource_client.heartbeat()
+                if not result.get("success"):
+                    logger.warning(f"GPU heartbeat failed: {result.get('message')}")
+            else:
+                break
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"GPU heartbeat error: {e}")
+
+
+async def _idle_cleanup_loop(check_interval: float = 30.0):
+    """Periodically check for idle models and unload them to free VRAM."""
+    while True:
+        try:
+            await asyncio.sleep(check_interval)
+            if _models_busy > 0 or not face_recognizer or not face_recognizer.is_loaded:
+                continue
+            idle_time = time.monotonic() - _models_last_used
+            if _models_last_used > 0 and idle_time > MODEL_IDLE_TIMEOUT:
+                logger.info(f"Unloading idle face models (idle {idle_time:.0f}s > {MODEL_IDLE_TIMEOUT}s)")
+                face_recognizer.unload()
+                if resource_client and resource_client.has_gpu_lease:
+                    try:
+                        await resource_client.release_gpu()
+                        logger.info("GPU lease released after idle unload")
+                    except Exception as e:
+                        logger.warning(f"Failed to release GPU lease: {e}")
+                # Stop heartbeat since lease is released
+                global _heartbeat_task
+                if _heartbeat_task and not _heartbeat_task.done():
+                    _heartbeat_task.cancel()
+                    _heartbeat_task = None
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Idle cleanup error: {e}")
+
+
+async def ensure_models_loaded():
+    """Acquire GPU lease (if needed) and load face models on demand."""
+    global _models_last_used, _heartbeat_task
+
+    if face_recognizer.is_loaded:
+        _models_last_used = time.monotonic()
+        return
+
+    # Request GPU lease from resource manager
+    if resource_client and not resource_client.has_gpu_lease:
+        try:
+            gpu_result = await resource_client.request_gpu(vram_mb=MODEL_VRAM_MB, priority=3)
+            if gpu_result.get("granted"):
+                logger.info(f"GPU lease acquired: {resource_client.current_lease_id}")
+            else:
+                request_id = gpu_result.get("request_id")
+                if request_id:
+                    wait_result = await resource_client.wait_for_gpu(request_id, max_wait=300.0)
+                    if wait_result.get("granted"):
+                        logger.info(f"GPU lease acquired after wait: {resource_client.current_lease_id}")
+            # Start heartbeat if we got a lease
+            if resource_client.has_gpu_lease:
+                _heartbeat_task = asyncio.create_task(_gpu_heartbeat_loop())
+        except Exception as e:
+            logger.warning(f"Resource manager unavailable: {e}. Proceeding without GPU lease.")
+
+    face_recognizer.load()
+    _models_last_used = time.monotonic()
+    logger.info("Face models loaded on demand")
+
+
+def mark_models_done():
+    """Mark models as no longer busy, starting the idle timer."""
+    global _models_last_used
+    _models_last_used = time.monotonic()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan manager
-    Initialize services on startup, cleanup on shutdown
-    """
-    global cache_manager, face_recognizer, frame_client
+    """Application lifespan: create components (deferred model loading), cleanup on shutdown."""
+    global cache_manager, face_recognizer, frame_client, resource_client, _cleanup_task
 
     logger.info("Starting Faces Service...")
 
@@ -76,27 +166,49 @@ async def lifespan(app: FastAPI):
     await cache_manager.connect()
     logger.info("Cache manager initialized")
 
-    # Initialize recognition manager with multi-size support
+    # Create recognition manager (deferred loading — models loaded on first job)
     recognition_manager = RecognitionManager(model_name=INSIGHTFACE_MODEL, device=INSIGHTFACE_DEVICE)
-    logger.info(f"Recognition manager initialized: {recognition_manager.get_model_info()}")
 
-    # Initialize face recognizer with recognition manager
+    # Create face recognizer (deferred loading)
     face_recognizer = FaceRecognizer(
         model_name=INSIGHTFACE_MODEL,
         device=INSIGHTFACE_DEVICE,
         max_enhancement_pixels=MAX_ENHANCEMENT_PIXELS,
         recognition_manager=recognition_manager,
     )
-    model_info = face_recognizer.get_model_info()
-    logger.info(f"Face recognizer initialized: {model_info}")
 
     # Initialize frame-server client for enhancement
     frame_client = FrameServerClient(FRAME_SERVER_URL)
 
+    # Initialize resource manager client
+    resource_client = ResourceManagerClient(resource_manager_url=RESOURCE_MANAGER_URL, service_name="faces-service")
+
+    # Start idle cleanup loop
+    _cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+    logger.info(f"Faces Service ready (models deferred, idle_timeout={MODEL_IDLE_TIMEOUT}s)")
+
     yield
 
-    # Cleanup
+    # Shutdown
     logger.info("Shutting down Faces Service...")
+
+    # Cancel background tasks
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+    if _heartbeat_task and not _heartbeat_task.done():
+        _heartbeat_task.cancel()
+
+    # Unload models and release GPU lease
+    if face_recognizer and face_recognizer.is_loaded:
+        face_recognizer.unload()
+    if resource_client:
+        if resource_client.has_gpu_lease:
+            try:
+                await resource_client.release_gpu()
+            except Exception:
+                pass
+        await resource_client.close()
+
     if cache_manager:
         await cache_manager.disconnect()
     if frame_client:
@@ -277,6 +389,8 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
         cache_key: Content-based cache key
         request: Analysis request parameters
     """
+    global _models_busy
+
     try:
         logger.info(f"Starting job {job_id}")
 
@@ -297,6 +411,10 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
         total_frames = len(frames)
 
         logger.info(f"Processing {total_frames} frames for job {job_id}")
+
+        # Ensure GPU models are loaded (acquires lease on first call)
+        await ensure_models_loaded()
+        _models_busy += 1
 
         await cache_manager.update_job_status(
             job_id, status=JobStatus.PROCESSING.value, progress=0.1, stage="detecting_faces"
@@ -563,6 +681,10 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
 
         await cache_manager.update_job_status(job_id, status=JobStatus.FAILED.value, progress=0.0, error=str(e))
 
+    finally:
+        _models_busy = max(0, _models_busy - 1)
+        mark_models_done()
+
 
 @app.post("/faces/analyze", response_model=AnalyzeJobResponse, status_code=202)
 async def analyze_faces(request: AnalyzeFacesRequest, background_tasks: BackgroundTasks):
@@ -710,13 +832,15 @@ async def health_check():
 
         gpu_available = INSIGHTFACE_DEVICE == "cuda"
 
-        occlusion_loaded = bool(
+        # With deferred loading, check model file availability rather than
+        # loaded-in-memory state. Models load on first job, not at startup.
+        occlusion_model_available = bool(
             face_recognizer
             and getattr(face_recognizer, "occlusion_detector", None)
-            and face_recognizer.occlusion_detector.is_loaded
+            and os.path.exists(face_recognizer.occlusion_detector.model_path)
         )
 
-        status = "healthy" if occlusion_loaded else "unhealthy"
+        status = "healthy" if occlusion_model_available else "unhealthy"
         payload = HealthResponse(
             status=status,
             service="faces-service",
@@ -725,10 +849,10 @@ async def health_check():
             gpu_available=gpu_available,
             active_jobs=active_jobs,
             cache_size_mb=cache_size_mb,
-            occlusion_model_loaded=occlusion_loaded,
+            occlusion_model_loaded=occlusion_model_available,
         )
 
-        if not occlusion_loaded:
+        if not occlusion_model_available:
             return JSONResponse(status_code=503, content=payload.model_dump())
         return payload
 

@@ -22,7 +22,7 @@ class OcclusionDetector:
 
     def __init__(self, model_path: str = None):
         """
-        Initialize occlusion detector
+        Initialize occlusion detector (deferred loading — call load() to allocate model).
 
         Args:
             model_path: Path to ONNX model file. When None, resolves to
@@ -35,29 +35,44 @@ class OcclusionDetector:
 
         self.model_path = model_path
         self.input_size = (224, 224)  # Standard input size for the model
+        self.session = None
+        self.input_name = None
+        self.output_name = None
 
-        # Get device from environment (same as face_recognizer)
+        logger.info(f"Occlusion detector created: {model_path} (not yet loaded)")
+
+    def load(self) -> None:
+        """Load the ONNX model onto the configured device."""
+        if self.session is not None:
+            return
+
         device = os.environ.get('INSIGHTFACE_DEVICE', 'cpu').lower()
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
 
-        # Configure ONNX Runtime providers
-        if device == 'cuda':
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        else:
-            providers = ['CPUExecutionProvider']
-
-        # Load ONNX model
         try:
-            self.session = ort.InferenceSession(
-                model_path,
-                providers=providers
-            )
+            self.session = ort.InferenceSession(self.model_path, providers=providers)
             self.input_name = self.session.get_inputs()[0].name
             self.output_name = self.session.get_outputs()[0].name
-            logger.info(f"Occlusion detector initialized: {model_path} (device: {device}, providers: {providers})")
+            logger.info(f"Occlusion detector loaded: {self.model_path} (device: {device}, providers: {providers})")
         except Exception as e:
-            logger.error(f"Failed to load occlusion model from {model_path}: {e}")
+            logger.error(f"Failed to load occlusion model from {self.model_path}: {e}")
             logger.warning("Occlusion detection will be disabled")
             self.session = None
+
+    def unload(self) -> None:
+        """Release the ONNX session and free GPU memory."""
+        if self.session is None:
+            return
+
+        del self.session
+        self.session = None
+        self.input_name = None
+        self.output_name = None
+
+        import gc
+        gc.collect()
+
+        logger.info("Occlusion detector unloaded")
 
     @property
     def is_loaded(self) -> bool:

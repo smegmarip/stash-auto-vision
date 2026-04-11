@@ -178,6 +178,9 @@ services:
       - FACES_LOCAL_TOPIQ_PATH=${FACES_LOCAL_TOPIQ_PATH:-}
       - FACES_LOCAL_CLIPIQA_PATH=${FACES_LOCAL_CLIPIQA_PATH:-}
       - FACES_MODEL_CACHE_DIR=${FACES_MODEL_CACHE_DIR:-/app/models}
+      - RESOURCE_MANAGER_URL=http://resource-manager:5007
+      - FACES_MODEL_IDLE_TIMEOUT=${FACES_MODEL_IDLE_TIMEOUT:-300}
+      - FACES_VRAM_MB=${FACES_VRAM_MB:-2600}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -193,6 +196,8 @@ services:
       redis:
         condition: service_healthy
       frame-server:
+        condition: service_started
+      resource-manager:
         condition: service_started
     restart: unless-stopped
     healthcheck:
