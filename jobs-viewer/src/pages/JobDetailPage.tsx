@@ -108,7 +108,7 @@ export function JobDetailPage() {
           className="text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           <Trash2 className={`h-4 w-4 mr-2 ${clearing ? 'animate-pulse' : ''}`} />
-          {clearing ? 'Clearing...' : 'Clear Cache'}
+          {clearing ? 'Removing...' : 'Delete Job'}
         </Button>
       </div>
       {renderContent()}
