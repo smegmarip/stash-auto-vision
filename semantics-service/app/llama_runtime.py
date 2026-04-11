@@ -143,6 +143,11 @@ class LlamaRuntime:
             return
 
         logger.info("Unloading Llama runtime")
+        if self.model is not None:
+            try:
+                self.model.to("cpu")
+            except Exception:
+                pass
         del self.model
         del self.tokenizer
         self.model = None

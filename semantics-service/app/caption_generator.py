@@ -156,6 +156,11 @@ class CaptionGenerator:
             return
 
         logger.info("Unloading JoyCaption model")
+        if self.model is not None:
+            try:
+                self.model.to("cpu")
+            except Exception:
+                pass
         del self.model
         del self.processor
         self.model = None
