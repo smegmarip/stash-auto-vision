@@ -53,6 +53,10 @@ class GPURequestInput(BaseModel):
         default=None,
         description="Associated job ID for tracking"
     )
+    perpetual: bool = Field(
+        default=False,
+        description="Perpetual lease that never expires (for always-loaded models)"
+    )
 
 
 class GPURequestResponse(BaseModel):

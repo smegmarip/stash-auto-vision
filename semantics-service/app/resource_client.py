@@ -95,7 +95,8 @@ class ResourceManagerClient:
         self,
         vram_mb: float,
         priority: int = 5,
-        timeout_seconds: float = 300.0
+        timeout_seconds: float = 300.0,
+        perpetual: bool = False,
     ) -> Dict[str, Any]:
         """
         Request GPU access from resource manager
@@ -104,11 +105,13 @@ class ResourceManagerClient:
             vram_mb: Required VRAM in MB
             priority: Priority level (1=highest, 10=lowest)
             timeout_seconds: Maximum wait time for GPU access
+            perpetual: If True, lease never expires (for always-loaded models)
 
         Returns:
             Dict with lease_id, granted status, and wait info
         """
-        logger.info(f"Requesting GPU access: {vram_mb:.0f}MB VRAM, priority={priority}")
+        lease_type = "perpetual " if perpetual else ""
+        logger.info(f"Requesting {lease_type}GPU access: {vram_mb:.0f}MB VRAM, priority={priority}")
 
         response = await self._request(
             "POST",
@@ -117,7 +120,8 @@ class ResourceManagerClient:
                 "service_name": self.service_name,
                 "vram_required_mb": vram_mb,
                 "priority": priority,
-                "timeout_seconds": timeout_seconds
+                "timeout_seconds": timeout_seconds,
+                "perpetual": perpetual,
             }
         )
 

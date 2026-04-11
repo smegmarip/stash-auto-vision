@@ -236,7 +236,8 @@ async def request_gpu(request: GPURequestInput):
             vram_required_mb=request.vram_required_mb,
             priority=request.priority,
             timeout_seconds=request.timeout_seconds,
-            job_id=request.job_id
+            job_id=request.job_id,
+            perpetual=request.perpetual,
         )
 
         return GPURequestResponse(

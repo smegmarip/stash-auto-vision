@@ -31,8 +31,11 @@ class GPULease:
     expires_at: datetime
     last_heartbeat: datetime
     job_id: Optional[str] = None
+    perpetual: bool = False  # Perpetual leases never expire (for always-loaded models)
 
     def is_expired(self) -> bool:
+        if self.perpetual:
+            return False
         return datetime.utcnow() > self.expires_at
 
     def to_dict(self) -> Dict[str, Any]:
@@ -43,7 +46,8 @@ class GPULease:
             "granted_at": self.granted_at.isoformat() + "Z",
             "expires_at": self.expires_at.isoformat() + "Z",
             "last_heartbeat": self.last_heartbeat.isoformat() + "Z",
-            "job_id": self.job_id
+            "job_id": self.job_id,
+            "perpetual": self.perpetual,
         }
 
 
@@ -177,7 +181,8 @@ class GPUManager:
         vram_required_mb: float,
         priority: int = 5,
         timeout_seconds: float = 300.0,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        perpetual: bool = False,
     ) -> Dict[str, Any]:
         """
         Request GPU access
@@ -198,10 +203,11 @@ class GPUManager:
             # Check if request can be immediately granted
             if vram_required_mb <= self.available_vram_mb:
                 lease = await self._create_lease(
-                    service_name, vram_required_mb, job_id
+                    service_name, vram_required_mb, job_id, perpetual=perpetual
                 )
+                lease_type = "perpetual " if perpetual else ""
                 logger.info(
-                    f"GPU request granted immediately: {service_name} "
+                    f"GPU {lease_type}request granted immediately: {service_name} "
                     f"({vram_required_mb:.0f}MB)"
                 )
                 return {
@@ -400,7 +406,8 @@ class GPUManager:
         self,
         service_name: str,
         vram_mb: float,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        perpetual: bool = False,
     ) -> GPULease:
         """Create a new GPU lease"""
         now = datetime.utcnow()
@@ -411,7 +418,8 @@ class GPUManager:
             granted_at=now,
             expires_at=now + self.lease_duration,
             last_heartbeat=now,
-            job_id=job_id
+            job_id=job_id,
+            perpetual=perpetual,
         )
         self.active_leases[lease.lease_id] = lease
         return lease
@@ -474,8 +482,10 @@ class GPUManager:
         async with self._lock:
             expired = [
                 lease_id for lease_id, lease in self.active_leases.items()
-                if lease.is_expired() or
-                (datetime.utcnow() - lease.last_heartbeat) > self.heartbeat_timeout
+                if not lease.perpetual and (
+                    lease.is_expired() or
+                    (datetime.utcnow() - lease.last_heartbeat) > self.heartbeat_timeout
+                )
             ]
 
             if expired and self._get_actual_vram:

@@ -176,6 +176,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load classifier model: {e}", exc_info=True)
         logger.warning("Classifier will be unavailable until model is loaded")
 
+    # Request perpetual GPU lease for the classifier (always loaded)
+    try:
+        await resource_client.request_gpu(vram_mb=1400, priority=1, perpetual=True)
+        logger.info("Perpetual GPU lease acquired for classifier")
+    except Exception as e:
+        logger.warning(f"Could not acquire perpetual GPU lease: {e}")
+
     # Model manager with idle-timeout unloading
     model_manager = ModelManager(idle_timeout=MODEL_IDLE_TIMEOUT)
     # Both models are exclusive — even quantized, they can't safely coexist
