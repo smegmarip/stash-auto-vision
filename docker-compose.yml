@@ -77,6 +77,8 @@ services:
       - MAX_ENHANCEMENT_PIXELS=${MAX_ENHANCEMENT_PIXELS:-2073600}
       - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
       - STASH_API_KEY=${STASH_API_KEY:-}
+      - RESOURCE_MANAGER_URL=http://resource-manager:5007
+      - FRAME_SERVER_VRAM_MB=${FRAME_SERVER_VRAM_MB:-1200}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro

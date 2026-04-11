@@ -29,6 +29,7 @@ from .models import (
 from .cache_manager import CacheManager
 from .frame_extractor import FrameExtractor
 from .sprite_parser import SpriteParser
+from .gpu_client import GPUClient
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,8 @@ CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
 ENABLE_FALLBACK = os.getenv("ENABLE_FALLBACK", "true").lower() == "true"
 ENABLE_ENHANCEMENT = os.getenv("ENABLE_ENHANCEMENT", "false").lower() == "true"
 ENHANCEMENT_MODEL = os.getenv("ENHANCEMENT_MODEL", "gfpgan")
+RESOURCE_MANAGER_URL = os.getenv("RESOURCE_MANAGER_URL", "http://resource-manager:5007")
+FRAME_SERVER_VRAM_MB = float(os.getenv("FRAME_SERVER_VRAM_MB", "1200"))  # measured ~1158 MB
 
 # Thread pool and concurrency configuration
 FRAME_THREAD_POOL_SIZE = int(os.getenv("FRAME_THREAD_POOL_SIZE", "40"))
@@ -59,6 +62,7 @@ sprite_parser: Optional[SpriteParser] = None
 face_enhancer: Optional['FaceEnhancer'] = None
 thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
 enhancement_semaphore: Optional[asyncio.Semaphore] = None
+gpu_client: Optional[GPUClient] = None
 
 
 @asynccontextmanager
@@ -67,7 +71,7 @@ async def lifespan(app: FastAPI):
     Application lifespan manager
     Initialize services on startup, cleanup on shutdown
     """
-    global cache_manager, frame_extractor, sprite_parser, face_enhancer, thread_pool, enhancement_semaphore
+    global cache_manager, frame_extractor, sprite_parser, face_enhancer, thread_pool, enhancement_semaphore, gpu_client
     global HAS_CUDA, MAX_CONCURRENT_ENHANCEMENTS
 
     logger.info("Starting Frame Server...")
@@ -119,10 +123,26 @@ async def lifespan(app: FastAPI):
     enhancement_semaphore = asyncio.Semaphore(MAX_CONCURRENT_ENHANCEMENTS)
     logger.info(f"Thread pool: {FRAME_THREAD_POOL_SIZE} workers, Enhancement concurrency: {MAX_CONCURRENT_ENHANCEMENTS} (CUDA: {HAS_CUDA})")
 
+    # Request perpetual GPU lease for resident CUDA allocations
+    gpu_client = GPUClient(
+        resource_manager_url=RESOURCE_MANAGER_URL,
+        service_name="frame-server",
+        service_url=f"http://frame-server:{os.getenv('FRAME_SERVER_PORT', '5001')}",
+    )
+    if HAS_CUDA:
+        try:
+            lease_id = await gpu_client.lease(vram_mb=FRAME_SERVER_VRAM_MB, priority=1, perpetual=True)
+            if lease_id:
+                logger.info(f"Perpetual GPU lease acquired for frame-server ({FRAME_SERVER_VRAM_MB:.0f} MB)")
+        except Exception as e:
+            logger.warning(f"Could not acquire perpetual GPU lease: {e}")
+
     yield
 
     # Cleanup
     logger.info("Shutting down Frame Server...")
+    if gpu_client:
+        await gpu_client.close()
     if thread_pool:
         thread_pool.shutdown(wait=True)
     if face_enhancer:
@@ -743,6 +763,30 @@ async def get_frame(job_id: str, frame_index: int, wait: bool = True):
     except Exception as e:
         logger.error(f"Error serving frame: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/resources/{lease_id}/status")
+async def get_lease_status(lease_id: str):
+    """Return internal lease state for resource-manager revocation protocol."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"lease_id": lease_id, "state": "unknown"}
+    return rec.to_dict()
+
+
+@app.post("/resources/{lease_id}/release")
+async def release_lease(lease_id: str):
+    """Attempt to release a lease (perpetual leases cannot be evicted)."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"accepted": False, "reason": "Lease not found"}
+    if rec.perpetual:
+        return {"accepted": False, "reason": "Cannot evict perpetual lease"}
+    return {"accepted": False, "reason": "Frame-server leases are perpetual"}
 
 
 @app.get("/frames/health", response_model=HealthResponse)
