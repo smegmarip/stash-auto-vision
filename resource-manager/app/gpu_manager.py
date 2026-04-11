@@ -1,12 +1,18 @@
 """
 Resource Manager Service - GPU Manager
-Core GPU resource orchestration logic
+Core GPU resource orchestration logic.
+
+Uses actual hardware VRAM readings (via a callback into pynvml) as the
+ground truth for available memory, rather than relying solely on lease
+accounting.  An "unaccounted" bucket tracks VRAM consumed outside the
+lease system (CUDA context overhead, bitsandbytes leaked memory, services
+that load models without requesting leases, etc.).
 """
 
 import asyncio
 import uuid
 import time
-from typing import Optional, List, Dict, Any
+from typing import Callable, Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
@@ -84,24 +90,33 @@ class GPUManager:
         total_vram_mb: float = 16384.0,  # 16GB default (RTX A4000)
         lease_duration_seconds: float = 600.0,  # 10 minutes
         heartbeat_timeout_seconds: float = 60.0,  # 1 minute without heartbeat
-        cleanup_interval_seconds: float = 10.0
+        cleanup_interval_seconds: float = 10.0,
+        get_actual_vram: Optional[Callable[[], Tuple[float, float]]] = None,
     ):
         """
         Initialize GPU manager
 
         Args:
-            total_vram_mb: Total available VRAM
+            total_vram_mb: Total available VRAM (fallback if hardware read unavailable)
             lease_duration_seconds: Default lease duration
             heartbeat_timeout_seconds: Time before lease expires without heartbeat
             cleanup_interval_seconds: Interval for cleanup task
+            get_actual_vram: Optional callback returning (used_mb, total_mb) from hardware.
+                When provided, available VRAM is based on actual hardware readings
+                rather than lease accounting alone.
         """
         self.total_vram_mb = total_vram_mb
         self.lease_duration = timedelta(seconds=lease_duration_seconds)
         self.heartbeat_timeout = timedelta(seconds=heartbeat_timeout_seconds)
         self.cleanup_interval = cleanup_interval_seconds
+        self._get_actual_vram = get_actual_vram
 
         # Active leases: lease_id -> GPULease
         self.active_leases: Dict[str, GPULease] = {}
+
+        # VRAM used outside the lease system (CUDA context, leaked memory,
+        # services that don't request leases, etc.)
+        self.unaccounted_vram_mb: float = 0.0
 
         # Request queue (priority heap)
         self.request_queue: List[GPURequest] = []
@@ -135,13 +150,25 @@ class GPUManager:
             logger.info("GPU Manager cleanup task stopped")
 
     @property
-    def allocated_vram_mb(self) -> float:
-        """Currently allocated VRAM"""
+    def leased_vram_mb(self) -> float:
+        """VRAM accounted for by active leases."""
         return sum(lease.vram_allocated_mb for lease in self.active_leases.values())
 
     @property
+    def allocated_vram_mb(self) -> float:
+        """Total VRAM considered in use (leases + unaccounted)."""
+        return self.leased_vram_mb + self.unaccounted_vram_mb
+
+    @property
     def available_vram_mb(self) -> float:
-        """Available VRAM"""
+        """Available VRAM based on hardware readings when possible."""
+        if self._get_actual_vram:
+            try:
+                used_mb, total_mb = self._get_actual_vram()
+                if total_mb > 0:
+                    return max(0, total_mb - used_mb)
+            except Exception:
+                pass
         return max(0, self.total_vram_mb - self.allocated_vram_mb)
 
     async def request_gpu(
@@ -443,13 +470,20 @@ class GPUManager:
             heapq.heappush(self.request_queue, req)
 
     async def _cleanup_expired_leases(self):
-        """Remove expired leases"""
+        """Remove expired leases, reconciling with actual VRAM usage."""
         async with self._lock:
             expired = [
                 lease_id for lease_id, lease in self.active_leases.items()
                 if lease.is_expired() or
                 (datetime.utcnow() - lease.last_heartbeat) > self.heartbeat_timeout
             ]
+
+            if expired and self._get_actual_vram:
+                # Snapshot VRAM before removing leases
+                try:
+                    used_before, _ = self._get_actual_vram()
+                except Exception:
+                    used_before = None
 
             for lease_id in expired:
                 lease = self.active_leases.pop(lease_id)
@@ -460,12 +494,42 @@ class GPUManager:
             if expired:
                 await self._process_queue()
 
+    async def _reconcile_vram(self):
+        """Reconcile lease-based accounting with actual hardware VRAM usage.
+
+        Updates the unaccounted bucket to reflect VRAM consumed outside the
+        lease system (CUDA context, leaked memory, unleased services, etc.).
+        """
+        if not self._get_actual_vram:
+            return
+
+        try:
+            actual_used, actual_total = self._get_actual_vram()
+        except Exception:
+            return
+
+        if actual_total <= 0:
+            return
+
+        self.total_vram_mb = actual_total
+        leased = self.leased_vram_mb
+        unaccounted = max(0, actual_used - leased)
+
+        if abs(unaccounted - self.unaccounted_vram_mb) > 50:  # 50 MB noise threshold
+            logger.info(
+                f"VRAM reconciliation: actual_used={actual_used:.0f}MB, "
+                f"leased={leased:.0f}MB, unaccounted={unaccounted:.0f}MB "
+                f"(was {self.unaccounted_vram_mb:.0f}MB)"
+            )
+            self.unaccounted_vram_mb = unaccounted
+
     async def _cleanup_loop(self):
-        """Background cleanup task"""
+        """Background cleanup and reconciliation task"""
         while True:
             try:
                 await asyncio.sleep(self.cleanup_interval)
                 await self._cleanup_expired_leases()
+                await self._reconcile_vram()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -485,12 +549,23 @@ class GPUManager:
         return position * 60.0
 
     def get_status(self) -> Dict[str, Any]:
-        """Get current GPU status"""
+        """Get current GPU status with hardware-reconciled VRAM info."""
+        actual_used: Optional[float] = None
+        actual_total: Optional[float] = None
+        if self._get_actual_vram:
+            try:
+                actual_used, actual_total = self._get_actual_vram()
+            except Exception:
+                pass
+
         return {
             "status": "in_use" if self.active_leases else "available",
-            "total_vram_mb": self.total_vram_mb,
+            "total_vram_mb": actual_total or self.total_vram_mb,
             "available_vram_mb": self.available_vram_mb,
             "allocated_vram_mb": self.allocated_vram_mb,
+            "leased_vram_mb": self.leased_vram_mb,
+            "unaccounted_vram_mb": round(self.unaccounted_vram_mb, 1),
+            "actual_used_vram_mb": round(actual_used, 1) if actual_used is not None else None,
             "active_leases": [lease.to_dict() for lease in self.active_leases.values()],
             "queue_length": len(self.request_queue),
             "queue": [

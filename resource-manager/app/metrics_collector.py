@@ -10,7 +10,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,17 @@ class MetricsCollector:
             ram_used_mb=ram_used,
             ram_total_mb=ram_total,
         )
+
+    def get_actual_vram(self) -> Tuple[float, float]:
+        """Return (used_mb, total_mb) from hardware. For use by GPUManager."""
+        if not self._nvml_initialized:
+            return 0.0, 0.0
+        try:
+            import pynvml
+            mem_info = pynvml.nvmlDeviceGetMemoryInfo(self._gpu_handle)
+            return mem_info.used / (1024 * 1024), mem_info.total / (1024 * 1024)
+        except Exception:
+            return 0.0, 0.0
 
     async def start(self) -> None:
         """Start the background sampling loop."""

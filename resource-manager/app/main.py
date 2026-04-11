@@ -186,20 +186,21 @@ async def lifespan(app: FastAPI):
     device_desc = f"{gpu_info.device_type.value.upper()}: {gpu_info.device_name}"
     logger.info(f"Compute device: {device_desc} ({total_memory:.0f}MB)")
 
-    # Initialize GPU manager (works for any device type)
-    gpu_manager = GPUManager(
-        total_vram_mb=total_memory,
-        lease_duration_seconds=LEASE_DURATION_SECONDS,
-        heartbeat_timeout_seconds=HEARTBEAT_TIMEOUT_SECONDS
-    )
-    await gpu_manager.start()
-
-    logger.info(f"Resource Manager initialized with {total_memory:.0f}MB memory budget")
-
-    # Start metrics collector
+    # Start metrics collector first (provides hardware VRAM readings to GPU manager)
     metrics_interval = float(os.getenv("METRICS_INTERVAL_SECONDS", "5"))
     metrics_collector = MetricsCollector(interval=metrics_interval)
     await metrics_collector.start()
+
+    # Initialize GPU manager with hardware VRAM callback for reconciliation
+    gpu_manager = GPUManager(
+        total_vram_mb=total_memory,
+        lease_duration_seconds=LEASE_DURATION_SECONDS,
+        heartbeat_timeout_seconds=HEARTBEAT_TIMEOUT_SECONDS,
+        get_actual_vram=metrics_collector.get_actual_vram,
+    )
+    await gpu_manager.start()
+
+    logger.info(f"Resource Manager initialized with {total_memory:.0f}MB memory budget (hardware-reconciled)")
 
     yield
 
