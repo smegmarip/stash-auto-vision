@@ -48,6 +48,7 @@ from .frame_client import FrameServerClient
 from .resource_client import ResourceManagerClient
 from .scenes_client import ScenesServerClient
 from .model_manager import ModelManager
+from .gpu_subprocess import run_gpu_pipeline
 from .job_queue import JobQueue
 from .worker import SemanticsWorker
 
@@ -329,11 +330,12 @@ async def _extract_frame_images(
     ctx: SceneContext,
     params,
     scene_boundaries: Optional[List[Dict]],
-) -> Tuple[List[Image.Image], List[float]]:
+) -> Tuple[List[Image.Image], List[float], List[str]]:
     """Extract frames from sprite sheets (default) or video via frame-server.
 
     Returns:
-        Tuple of (images, timestamps) where timestamps are in seconds.
+        Tuple of (images, timestamps, file_paths) where timestamps are in seconds
+        and file_paths are local paths for subprocess use.
     """
     use_sprites = params.frame_selection == FrameSelectionMethod.SPRITE_SHEET and ctx.sprite_vtt_url and ctx.sprite_image_url
 
@@ -361,22 +363,31 @@ async def _extract_frame_images(
     if not frames_data:
         raise RuntimeError("No frames extracted")
 
-    # Fetch actual frame images and timestamps
+    # Fetch actual frame images, timestamps, and file paths
     frames = frames_data if isinstance(frames_data, list) else frames_data.get("frames", [])
     images = []
     timestamps = []
+    file_paths = []
     for frame_info in frames:
         try:
             url = frame_info.get("url") if isinstance(frame_info, dict) else None
             if not url:
                 continue
             if url.startswith("file://"):
-                img = Image.open(url[7:]).convert("RGB")
+                path = url[7:]
+                img = Image.open(path).convert("RGB")
+                file_paths.append(path)
             else:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.get(url)
                     resp.raise_for_status()
                     img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+                # Save to temp file so subprocess can access it
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(suffix=".jpg", dir="/tmp/frames", delete=False)
+                img.save(tmp, format="JPEG", quality=95)
+                file_paths.append(tmp.name)
+                tmp.close()
             images.append(img)
             timestamps.append(frame_info.get("timestamp", 0.0) if isinstance(frame_info, dict) else 0.0)
         except Exception as e:
@@ -385,7 +396,7 @@ async def _extract_frame_images(
     if not images:
         raise RuntimeError("Failed to load any frame images")
 
-    return images, timestamps
+    return images, timestamps, file_paths
 
 
 async def _run_pipeline(job_id: str, request_payload: dict):
@@ -484,7 +495,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
 
         # --- Step 2: Extract frames ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.05, stage="extracting_frames", message="Extracting frames")
-        frame_images, frame_timestamps = await _extract_frame_images(ctx, params, scene_boundaries)
+        frame_images, frame_timestamps, frame_paths = await _extract_frame_images(ctx, params, scene_boundaries)
         num_frames = len(frame_images)
         logger.info(f"Extracted {num_frames} frames")
 
@@ -495,11 +506,13 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             while len(frame_images) < target_frames:
                 frame_images.append(frame_images[-1])
                 frame_timestamps.append(frame_timestamps[-1] if frame_timestamps else 0.0)
+                frame_paths.append(frame_paths[-1] if frame_paths else "")
         elif num_frames > target_frames:
             import numpy as np
             indices = np.linspace(0, num_frames - 1, target_frames, dtype=int)
             frame_images = [frame_images[i] for i in indices]
             frame_timestamps = [frame_timestamps[i] for i in indices]
+            frame_paths = [frame_paths[i] for i in indices]
 
         # --- Step 3: Request GPU ---
         await cache_manager.update_job_status(job_id, JobStatus.WAITING_FOR_GPU.value, progress=0.10, stage="requesting_gpu", message="Requesting GPU access")
@@ -515,105 +528,46 @@ async def _run_pipeline(job_id: str, request_payload: dict):
         except Exception as e:
             logger.warning(f"GPU resource manager unavailable: {e}. Proceeding without lease.")
 
-        # --- Step 4: Generate captions ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Generating frame captions with JoyCaption")
+        # --- Steps 4-6: GPU subprocess (captioning + summary + title) ---
+        # Run all bitsandbytes model work in an isolated subprocess so the
+        # CUDA context is fully destroyed on exit, reclaiming all VRAM.
+        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Starting GPU subprocess for captioning + summarization")
 
-        def _generate_captions():
-            with model_manager.using("caption"):
-                return caption_generator.generate_captions(frame_images)
+        # Heartbeat the lease during subprocess execution via progress callback
+        async def _gpu_progress(progress: float, message: str):
+            await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=progress, stage="gpu_processing", message=message)
+            if lease_id:
+                try:
+                    await resource_client.heartbeat(lease_id)
+                except Exception:
+                    pass
 
-        raw_captions = await asyncio.to_thread(_generate_captions)
-        fixed_captions = [CaptionGenerator.fix_caption(c, i) for i, c in enumerate(raw_captions)]
-        logger.info(f"Generated {len(fixed_captions)} captions")
+        gpu_result = await run_gpu_pipeline(
+            frame_paths=frame_paths,
+            frame_timestamps=frame_timestamps,
+            promo_desc=ctx.promo_desc,
+            duration=ctx.duration,
+            performer_count=ctx.performer_count,
+            performer_genders=ctx.performer_genders,
+            resolution=ctx.resolution,
+            source=request.source,
+            llm_device=CLASSIFIER_DEVICE,
+            progress_callback=_gpu_progress,
+        )
 
-        # Heartbeat GPU lease
+        fixed_captions = gpu_result["captions"]
+        scene_summary = gpu_result["summary"]
+        suggested_title = gpu_result["title"]
+
+        logger.info(f"GPU subprocess complete: {len(fixed_captions)} captions, summary={len(scene_summary)} chars, title={suggested_title!r}")
+
+        # Release GPU lease now — subprocess has exited, VRAM is freed
         if lease_id:
             try:
-                await resource_client.heartbeat(lease_id)
+                await resource_client.release_gpu(lease_id)
+                lease_id = None  # prevent double-release in finally block
             except Exception:
                 pass
-
-        # --- Step 5: Generate scene summary ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.60, stage="summarizing", message="Preparing summary prompt")
-
-        frame_caption_dicts = [{"frame_index": i, "timestamp": frame_timestamps[i], "caption": c} for i, c in enumerate(fixed_captions)]
-
-        # Progress callback: map token count to the 0.60-0.79 range.
-        # Runs in the generation thread, so it schedules the async status
-        # update back on the main event loop. Throttled to avoid spamming Redis.
-        event_loop = asyncio.get_running_loop()
-        _last_update_ts: List[float] = [0.0]
-        _update_interval = 1.0  # seconds
-
-        def _update_summary_progress(tokens: int, max_tokens: int) -> None:
-            now = time.monotonic()
-            if now - _last_update_ts[0] < _update_interval:
-                return
-            _last_update_ts[0] = now
-            pct = 0.60 + 0.19 * min(1.0, tokens / max(1, max_tokens))
-            msg = f"Generating scene summary ({tokens}/{max_tokens} tokens)"
-            asyncio.run_coroutine_threadsafe(
-                cache_manager.update_job_status(
-                    job_id, JobStatus.PROCESSING.value,
-                    progress=pct, stage="summarizing", message=msg,
-                ),
-                event_loop,
-            )
-
-        def _generate_summary():
-            with model_manager.using("llm"):
-                return summary_generator.generate_summary(
-                    frame_caption_dicts,
-                    ctx.promo_desc,
-                    ctx.duration,
-                    ctx.performer_count,
-                    ctx.performer_genders,
-                    ctx.resolution,
-                    progress_callback=_update_summary_progress,
-                )
-
-        await cache_manager.update_job_status(
-            job_id, JobStatus.PROCESSING.value,
-            progress=0.61, stage="summarizing",
-            message="Processing input (prefill — can take several minutes on CPU)",
-        )
-
-        try:
-            scene_summary = await asyncio.to_thread(_generate_summary)
-        except Exception as e:
-            logger.warning(f"Summary generation failed: {e}. Using concatenated captions as fallback.", exc_info=True)
-            scene_summary = " ".join(c for c in fixed_captions)
-
-        logger.info(f"Summary generated ({len(scene_summary)} chars)")
-
-        # --- Step 6: Generate suggested title (reuses the already-loaded Llama runtime) ---
-        await cache_manager.update_job_status(
-            job_id, JobStatus.PROCESSING.value,
-            progress=0.80, stage="titling",
-            message="Generating scene title",
-        )
-
-        def _generate_title():
-            with model_manager.using("llm"):
-                return title_generator.generate_title(
-                    scene_source=request.source,
-                    scene_summary=scene_summary,
-                    promo_desc=ctx.promo_desc,
-                    duration=ctx.duration,
-                    performer_count=ctx.performer_count,
-                    performer_genders=ctx.performer_genders,
-                    resolution=ctx.resolution,
-                )
-
-        suggested_title: Optional[str] = None
-        try:
-            suggested_title = await asyncio.to_thread(_generate_title)
-        except Exception as e:
-            logger.warning(f"Title generation failed: {e}. Continuing without suggested_title.", exc_info=True)
-            suggested_title = None
-
-        if suggested_title:
-            logger.info(f"Suggested title: {suggested_title!r}")
 
         # --- Step 7: Run tag classifier ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
