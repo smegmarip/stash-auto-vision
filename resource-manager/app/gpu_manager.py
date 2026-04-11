@@ -573,30 +573,66 @@ class GPUManager:
             heapq.heappush(self.request_queue, req)
 
     async def _cleanup_expired_leases(self):
-        """Remove expired leases, reconciling with actual VRAM usage."""
+        """Remove expired leases, confirming status before premature expiry.
+
+        Before deleting a lease that missed its heartbeat, queries the
+        service's /resources/{lease_id}/status endpoint. If the service
+        reports busy or is unreachable (timeout), the lease is assumed
+        active and kept alive.
+        """
         async with self._lock:
-            expired = [
-                lease_id for lease_id, lease in self.active_leases.items()
+            candidates = [
+                (lease_id, lease) for lease_id, lease in self.active_leases.items()
                 if not lease.perpetual and (
                     lease.is_expired() or
                     (datetime.utcnow() - lease.last_heartbeat) > self.heartbeat_timeout
                 )
             ]
 
-            if expired and self._get_actual_vram:
-                # Snapshot VRAM before removing leases
+        # Check each candidate outside the lock (HTTP calls)
+        confirmed_expired = []
+        for lease_id, lease in candidates:
+            # If the lease duration has fully expired, remove regardless
+            if lease.is_expired():
+                confirmed_expired.append(lease_id)
+                continue
+
+            # Lease still has time but missed heartbeat — confirm status
+            if lease.callback_url:
                 try:
-                    used_before, _ = self._get_actual_vram()
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        resp = await client.get(f"{lease.callback_url.rstrip('/')}/resources/{lease_id}/status")
+                        if resp.status_code == 404:
+                            # Service doesn't recognize this lease — confirm expired
+                            confirmed_expired.append(lease_id)
+                            continue
+                        data = resp.json()
+                        state = data.get("state", "unknown")
+                        if state in ("busy", "active"):
+                            async with self._lock:
+                                if lease_id in self.active_leases:
+                                    self.active_leases[lease_id].last_heartbeat = datetime.utcnow()
+                            logger.debug(f"Lease {lease_id} ({lease.service_name}) confirmed {state}, keeping alive")
+                            continue
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    # Unreachable or timeout — assume busy (GIL contention during model load)
+                    async with self._lock:
+                        if lease_id in self.active_leases:
+                            self.active_leases[lease_id].last_heartbeat = datetime.utcnow()
+                    logger.debug(f"Lease {lease_id} ({lease.service_name}) unreachable, assuming busy")
+                    continue
                 except Exception:
-                    used_before = None
+                    # Other errors — don't assume anything, let it fall through to expire
+                    pass
+            confirmed_expired.append(lease_id)
 
-            for lease_id in expired:
-                lease = self.active_leases.pop(lease_id)
-                logger.warning(
-                    f"Lease expired: {lease.service_name} ({lease.vram_allocated_mb:.0f}MB)"
-                )
-
-            if expired:
+        # Remove confirmed-expired leases
+        if confirmed_expired:
+            async with self._lock:
+                for lease_id in confirmed_expired:
+                    lease = self.active_leases.pop(lease_id, None)
+                    if lease:
+                        logger.warning(f"Lease expired: {lease.service_name} ({lease.vram_allocated_mb:.0f}MB)")
                 await self._process_queue()
 
     async def _reconcile_vram(self):
