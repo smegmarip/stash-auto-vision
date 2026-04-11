@@ -40,7 +40,7 @@ from .cache_manager import CacheManager
 from .face_recognizer import FaceRecognizer
 from .recognition_manager import RecognitionManager
 from .frame_client import FrameServerClient
-from .resource_client import ResourceManagerClient
+from .gpu_client import GPUClient
 from .image_utils import normalize_image_if_needed, get_image_area
 
 # Environment configuration
@@ -63,54 +63,42 @@ logger = logging.getLogger(__name__)
 cache_manager: Optional[CacheManager] = None
 face_recognizer: Optional[FaceRecognizer] = None
 frame_client: Optional[FrameServerClient] = None
-resource_client: Optional[ResourceManagerClient] = None
+gpu_client: Optional[GPUClient] = None
 
-# GPU model lifecycle state
+# Current active lease for face models
+_active_lease_id: Optional[str] = None
+_idle_cleanup_task: Optional[asyncio.Task] = None
 _models_last_used: float = 0.0
-_models_busy: int = 0
-_cleanup_task: Optional[asyncio.Task] = None
-_heartbeat_task: Optional[asyncio.Task] = None
 
 
-async def _gpu_heartbeat_loop(interval: float = 30.0):
-    """Send periodic heartbeats to keep the GPU lease alive."""
-    while True:
-        try:
-            await asyncio.sleep(interval)
-            if resource_client and resource_client.has_gpu_lease:
-                result = await resource_client.heartbeat()
-                if not result.get("success"):
-                    logger.warning(f"GPU heartbeat failed: {result.get('message')}")
-            else:
-                break
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.warning(f"GPU heartbeat error: {e}")
+async def _evict_faces_models(lease_id: str) -> bool:
+    """Eviction callback: unload face models and free VRAM."""
+    global _active_lease_id
+    if face_recognizer and face_recognizer.is_loaded:
+        face_recognizer.unload()
+        logger.info(f"Face models unloaded via eviction (lease {lease_id})")
+    _active_lease_id = None
+    return True
 
 
 async def _idle_cleanup_loop(check_interval: float = 30.0):
-    """Periodically check for idle models and unload them to free VRAM."""
+    """Periodically check for idle models and release the lease."""
+    global _active_lease_id
     while True:
         try:
             await asyncio.sleep(check_interval)
-            if _models_busy > 0 or not face_recognizer or not face_recognizer.is_loaded:
+            if not face_recognizer or not face_recognizer.is_loaded or not _active_lease_id:
+                continue
+            if gpu_client and gpu_client.is_busy(_active_lease_id):
                 continue
             idle_time = time.monotonic() - _models_last_used
             if _models_last_used > 0 and idle_time > MODEL_IDLE_TIMEOUT:
                 logger.info(f"Unloading idle face models (idle {idle_time:.0f}s > {MODEL_IDLE_TIMEOUT}s)")
                 face_recognizer.unload()
-                if resource_client and resource_client.has_gpu_lease:
-                    try:
-                        await resource_client.release_gpu()
-                        logger.info("GPU lease released after idle unload")
-                    except Exception as e:
-                        logger.warning(f"Failed to release GPU lease: {e}")
-                # Stop heartbeat since lease is released
-                global _heartbeat_task
-                if _heartbeat_task and not _heartbeat_task.done():
-                    _heartbeat_task.cancel()
-                    _heartbeat_task = None
+                if gpu_client and _active_lease_id:
+                    gpu_client.mark_released(_active_lease_id)
+                    await gpu_client.release(_active_lease_id)
+                _active_lease_id = None
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -119,29 +107,19 @@ async def _idle_cleanup_loop(check_interval: float = 30.0):
 
 async def ensure_models_loaded():
     """Acquire GPU lease (if needed) and load face models on demand."""
-    global _models_last_used, _heartbeat_task
+    global _active_lease_id, _models_last_used
 
     if face_recognizer.is_loaded:
         _models_last_used = time.monotonic()
         return
 
-    # Request GPU lease from resource manager
-    if resource_client and not resource_client.has_gpu_lease:
-        try:
-            gpu_result = await resource_client.request_gpu(vram_mb=MODEL_VRAM_MB, priority=3)
-            if gpu_result.get("granted"):
-                logger.info(f"GPU lease acquired: {resource_client.current_lease_id}")
-            else:
-                request_id = gpu_result.get("request_id")
-                if request_id:
-                    wait_result = await resource_client.wait_for_gpu(request_id, max_wait=300.0)
-                    if wait_result.get("granted"):
-                        logger.info(f"GPU lease acquired after wait: {resource_client.current_lease_id}")
-            # Start heartbeat if we got a lease
-            if resource_client.has_gpu_lease:
-                _heartbeat_task = asyncio.create_task(_gpu_heartbeat_loop())
-        except Exception as e:
-            logger.warning(f"Resource manager unavailable: {e}. Proceeding without GPU lease.")
+    # Request GPU lease via GPUClient
+    if gpu_client:
+        lease_id = await gpu_client.lease(vram_mb=MODEL_VRAM_MB, priority=5)
+        if lease_id:
+            _active_lease_id = lease_id
+            gpu_client.on_evict(lease_id, _evict_faces_models)
+            gpu_client.mark_busy(lease_id)
 
     face_recognizer.load()
     _models_last_used = time.monotonic()
@@ -152,24 +130,22 @@ def mark_models_done():
     """Mark models as no longer busy, starting the idle timer."""
     global _models_last_used
     _models_last_used = time.monotonic()
+    if gpu_client and _active_lease_id:
+        gpu_client.mark_idle(_active_lease_id)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: create components (deferred model loading), cleanup on shutdown."""
-    global cache_manager, face_recognizer, frame_client, resource_client, _cleanup_task
+    global cache_manager, face_recognizer, frame_client, gpu_client, _idle_cleanup_task
 
     logger.info("Starting Faces Service...")
 
-    # Initialize cache manager
     cache_manager = CacheManager(REDIS_URL, module="faces", ttl=CACHE_TTL)
     await cache_manager.connect()
     logger.info("Cache manager initialized")
 
-    # Create recognition manager (deferred loading — models loaded on first job)
     recognition_manager = RecognitionManager(model_name=INSIGHTFACE_MODEL, device=INSIGHTFACE_DEVICE)
-
-    # Create face recognizer (deferred loading)
     face_recognizer = FaceRecognizer(
         model_name=INSIGHTFACE_MODEL,
         device=INSIGHTFACE_DEVICE,
@@ -177,38 +153,28 @@ async def lifespan(app: FastAPI):
         recognition_manager=recognition_manager,
     )
 
-    # Initialize frame-server client for enhancement
     frame_client = FrameServerClient(FRAME_SERVER_URL)
 
-    # Initialize resource manager client
-    resource_client = ResourceManagerClient(resource_manager_url=RESOURCE_MANAGER_URL, service_name="faces-service")
+    gpu_client = GPUClient(
+        resource_manager_url=RESOURCE_MANAGER_URL,
+        service_name="faces-service",
+        service_url=f"http://faces-service:{os.getenv('FACES_PORT', '5003')}",
+    )
 
-    # Start idle cleanup loop
-    _cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+    _idle_cleanup_task = asyncio.create_task(_idle_cleanup_loop())
     logger.info(f"Faces Service ready (models deferred, idle_timeout={MODEL_IDLE_TIMEOUT}s)")
 
     yield
 
-    # Shutdown
     logger.info("Shutting down Faces Service...")
-
-    # Cancel background tasks
-    if _cleanup_task and not _cleanup_task.done():
-        _cleanup_task.cancel()
-    if _heartbeat_task and not _heartbeat_task.done():
-        _heartbeat_task.cancel()
-
-    # Unload models and release GPU lease
+    if _idle_cleanup_task and not _idle_cleanup_task.done():
+        _idle_cleanup_task.cancel()
     if face_recognizer and face_recognizer.is_loaded:
         face_recognizer.unload()
-    if resource_client:
-        if resource_client.has_gpu_lease:
-            try:
-                await resource_client.release_gpu()
-            except Exception:
-                pass
-        await resource_client.close()
-
+    if gpu_client:
+        if _active_lease_id:
+            await gpu_client.release(_active_lease_id)
+        await gpu_client.close()
     if cache_manager:
         await cache_manager.disconnect()
     if frame_client:
@@ -389,8 +355,6 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
         cache_key: Content-based cache key
         request: Analysis request parameters
     """
-    global _models_busy
-
     try:
         logger.info(f"Starting job {job_id}")
 
@@ -414,7 +378,8 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
 
         # Ensure GPU models are loaded (acquires lease on first call)
         await ensure_models_loaded()
-        _models_busy += 1
+        if gpu_client and _active_lease_id:
+            gpu_client.mark_busy(_active_lease_id)
 
         await cache_manager.update_job_status(
             job_id, status=JobStatus.PROCESSING.value, progress=0.1, stage="detecting_faces"
@@ -682,7 +647,6 @@ async def process_analysis_job(job_id: str, cache_key: str, request: AnalyzeFace
         await cache_manager.update_job_status(job_id, status=JobStatus.FAILED.value, progress=0.0, error=str(e))
 
     finally:
-        _models_busy = max(0, _models_busy - 1)
         mark_models_done()
 
 
@@ -816,6 +780,32 @@ async def get_job_results(job_id: str):
     except Exception as e:
         logger.error(f"Error getting job results: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/resources/{lease_id}/status")
+async def get_lease_status(lease_id: str):
+    """Return internal lease state for resource-manager revocation protocol."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"lease_id": lease_id, "state": "unknown"}
+    return rec.to_dict()
+
+
+@app.post("/resources/{lease_id}/release")
+async def release_lease(lease_id: str):
+    """Attempt to release a lease (called by resource-manager for eviction)."""
+    if not gpu_client:
+        raise HTTPException(status_code=503, detail="GPU client not initialized")
+    rec = gpu_client.get_lease(lease_id)
+    if not rec:
+        return {"accepted": False, "reason": "Lease not found"}
+    if gpu_client.is_busy(lease_id):
+        return {"accepted": False, "reason": "Lease is busy"}
+    # Trigger async eviction
+    asyncio.create_task(gpu_client.evict(lease_id))
+    return {"accepted": True}
 
 
 @app.get("/faces/health", response_model=HealthResponse)
