@@ -28,6 +28,7 @@ A modular, high-performance video analysis platform providing face recognition, 
 - **Flash Attention 2** — Enable the `flash_attention_2` kernel on the `LlamaRuntime` and JoyCaption loads. Lossless ~500 MB – 1.5 GB VRAM savings and 1.5–2× speedup on the semantics pipeline, zero quality impact. Lowers the effective semantics-alone VRAM floor into the 10–11 GB range so 12 GB consumer GPUs become comfortable.
 - **Production Hardening** — Retry logic, metrics, stress testing
 - **Compreface Plugin Finalization** — Complete end-to-end testing of the partially-integrated [stash-compreface-plugin](https://github.com/smegmarip/stash-compreface-plugin) video recognition path
+- **ASR Audio Transcription** — Speech recognition module feeding transcripts into the semantics pipeline for dialogue-aware classification (requires classifier retraining)
 
 ---
 
@@ -473,6 +474,14 @@ docker exec -it vision-redis redis-cli KEYS "*"
 
 - [ ] End-to-end validation of the `stash-compreface-plugin` video recognition path
 - [ ] Real-world benchmarks against live Stash instances
+
+### Phase 7: ASR Audio Transcription 🔄
+
+- [ ] ASR microservice (Whisper or equivalent) with GPU lease integration
+- [ ] Transcript extraction from video audio tracks
+- [ ] Feed transcripts into the semantics pipeline alongside frame captions
+- [ ] Retrain the bi-encoder classifier with a transcript input view (current model is trained on frame captions + scene metadata only)
+- Dialogue-heavy scenes (interviews, narration) are the primary use case — video frames alone carry almost no useful signal for these
 
 ---
 

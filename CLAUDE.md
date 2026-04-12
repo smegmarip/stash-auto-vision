@@ -47,6 +47,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - **Phase 4:** YOLO-World open-vocabulary object detection **and** Flash Attention 2 integration for the semantics runtimes (LlamaRuntime + JoyCaption) — lossless VRAM savings and 1.5–2× speedup
 - **Phase 5:** Production hardening (retries, metrics, stress tests)
 - **Phase 6:** Finalize `stash-compreface-plugin` video-path integration (end-to-end testing)
+- **Phase 7:** ASR (audio speech recognition) module feeding transcripts into the semantics pipeline for dialogue-aware classification
 
 ---
 
@@ -237,7 +238,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 - [x] Sequential workflow validated
 - [x] Test data generated from Charades dataset
 
-### Phase 4-6: Planned 🔄
+### Phase 4-7: Planned 🔄
 
 See [Future Work](#future-work) section below.
 
@@ -369,6 +370,29 @@ The `stash-compreface-plugin` (see `../stash-compreface-plugin/`) is **partially
 - End-to-end validation of the compreface plugin's video recognition path against a live Stash instance
 - Benchmark performance vs. the plugin's legacy dlib path
 - Document remaining rough edges discovered during testing
+
+### Phase 7: ASR Audio Transcription
+
+Add an audio speech recognition module that feeds transcripts into the semantics pipeline as an additional classification signal alongside frame captions. A Discord user prototyped this (vibe-coded, unpolished) and demonstrated end-to-end success — on an interview-only scene it made a "huge difference" since video frames carry almost no useful signal for dialogue-heavy content.
+
+**Deliverables:**
+
+- ASR service (Whisper or equivalent) as a new microservice with GPU lease integration
+- Transcript extraction from video audio tracks
+- Integration with the semantics pipeline (transcript fed alongside frame captions into the LLM summary step)
+- Classifier retraining to include a transcript input view — the current bi-encoder was trained on frame captions + scene metadata only; a new encoder channel and paired (caption + transcript) → tag training data are required for the transcript to directly improve tag classification scores
+
+**Use Cases:**
+
+- Dialogue-heavy scenes where visual frames alone are insufficient for accurate classification
+- Interview, conversation, and narration-driven content
+- Scenes where the audio track carries the primary semantic signal
+
+**Open Questions:**
+
+- Which ASR model (Whisper small/medium/large, distil-whisper, etc.) balances accuracy vs. VRAM
+- Separate microservice vs. integrated into semantics-service
+- Training data sourcing: need tagged scenes with transcripts, not just visual pairs
 
 ---
 
