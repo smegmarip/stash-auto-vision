@@ -127,6 +127,7 @@ class GPUClient:
         priority: int = 5,
         perpetual: bool = False,
         timeout_seconds: float = 600.0,
+        ttl: Optional[float] = None,
     ) -> Optional[str]:
         """Request a GPU lease from the resource manager.
 
@@ -135,6 +136,8 @@ class GPUClient:
             priority: 1 (highest) to 10 (lowest).
             perpetual: If True, lease never expires.
             timeout_seconds: Max wait if queued.
+            ttl: Local lease TTL in seconds (overrides default). The server-side
+                lease is kept alive via heartbeats; this controls the local expiry.
 
         Returns:
             lease_id if granted, None if failed.
@@ -156,7 +159,7 @@ class GPUClient:
 
             if data.get("granted"):
                 lease_id = data["lease_id"]
-                self._register_lease(lease_id, vram_mb, perpetual)
+                self._register_lease(lease_id, vram_mb, perpetual, ttl)
                 logger.info(f"GPU lease granted: {lease_id} ({vram_mb:.0f} MB, {'perpetual' if perpetual else 'standard'})")
                 self._ensure_heartbeat()
                 return lease_id
@@ -166,7 +169,7 @@ class GPUClient:
             if request_id:
                 lease_id = await self._wait_for_grant(request_id, timeout_seconds)
                 if lease_id:
-                    self._register_lease(lease_id, vram_mb, perpetual)
+                    self._register_lease(lease_id, vram_mb, perpetual, ttl)
                     logger.info(f"GPU lease granted after wait: {lease_id} ({vram_mb:.0f} MB)")
                     self._ensure_heartbeat()
                     return lease_id
@@ -200,16 +203,17 @@ class GPUClient:
         logger.warning(f"GPU lease request timed out after {max_wait}s")
         return None
 
-    def _register_lease(self, lease_id: str, vram_mb: float, perpetual: bool):
+    def _register_lease(self, lease_id: str, vram_mb: float, perpetual: bool, ttl: Optional[float] = None):
         """Record a newly granted lease."""
         now = time.monotonic()
+        effective_ttl = ttl or self.lease_ttl
         self._leases[lease_id] = LeaseRecord(
             lease_id=lease_id,
             vram_mb=vram_mb,
             state=LeaseState.ACTIVE,
             perpetual=perpetual,
             granted_at=now,
-            expires_at=None if perpetual else now + self.lease_ttl,
+            expires_at=None if perpetual else now + effective_ttl,
             last_heartbeat=now,
         )
 
@@ -348,8 +352,20 @@ class GPUClient:
                 client = await self._get_client()
                 for rec in active_leases:
                     if rec.is_expired():
+                        if rec.state == LeaseState.BUSY:
+                            # Don't expire mid-job — wait until idle
+                            logger.debug(f"Lease {rec.lease_id} expired but busy, deferring")
+                            continue
                         rec.state = LeaseState.EXPIRED
                         logger.info(f"Lease {rec.lease_id} expired locally")
+                        # Trigger eviction callback if registered (e.g. BnB leak restart)
+                        callback = self._evict_callbacks.get(rec.lease_id)
+                        if callback:
+                            try:
+                                await callback(rec.lease_id)
+                            except Exception as e:
+                                logger.debug(f"Expiry callback error for {rec.lease_id}: {e}")
+                        await self._release_on_manager(rec.lease_id)
                         continue
                     try:
                         success = False

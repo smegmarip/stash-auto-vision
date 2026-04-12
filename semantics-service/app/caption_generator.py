@@ -78,14 +78,18 @@ class CaptionGenerator:
         try:
             from transformers import (
                 AutoProcessor,
-                BitsAndBytesConfig,
                 LlavaForConditionalGeneration,
             )
 
             # Configure optional 4-bit quantization
+            # JoyCaption uses bitsandbytes NF4 quantization. TorchAO int4
+            # OOMs during v5 materialization on 16GB cards. The bitsandbytes
+            # leak (~5GB after unload) is accounted for via a long-lived
+            # lease and container restart on eviction/expiry.
             quantization_config = None
             if self.use_quantization and self.device == "cuda":
                 logger.info("Using 4-bit NF4 quantization")
+                from transformers import BitsAndBytesConfig
                 quantization_config = BitsAndBytesConfig(
                     load_in_4bit=True,
                     bnb_4bit_compute_dtype=torch.float16,

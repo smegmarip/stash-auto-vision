@@ -45,7 +45,7 @@ from .summary_generator import SummaryGenerator
 from .title_generator import TitleGenerator
 from .taxonomy_builder import TaxonomyBuilder
 from .frame_client import FrameServerClient
-from .gpu_client import GPUClient
+from .gpu_client import GPUClient, LeaseState
 from .scenes_client import ScenesServerClient
 from .model_manager import ModelManager
 from .job_queue import JobQueue
@@ -80,6 +80,8 @@ tag_classifier: Optional[TagClassifier] = None
 frame_client: Optional[FrameServerClient] = None
 gpu_client: Optional[GPUClient] = None
 _classifier_lease_id: Optional[str] = None
+_gpu_lease_id: Optional[str] = None  # Long-lived lease: max(joycaption, bnb_leak + llama)
+_restart_pending: bool = False  # Set when eviction/expiry requires container restart
 llama_runtime: Optional[LlamaRuntime] = None
 summary_generator: Optional[SummaryGenerator] = None
 title_generator: Optional[TitleGenerator] = None
@@ -128,6 +130,41 @@ async def _load_taxonomy_background():
         taxonomy_status.source = f"error: {str(e)[:100]}"
 
 
+
+
+# Single GPU lease covering the entire semantics pipeline:
+# JoyCaption BnB NF4 leaks ALL its VRAM on unload (~7 GB measured).
+# peak = max(joycaption, bnb_leak + llama) = max(7GB, 7GB + 2.5GB) ≈ 10GB
+GPU_LEASE_VRAM_MB = 10000
+GPU_LEASE_TTL = 6 * 3600  # 6 hours — consecutive jobs reuse BnB leaked VRAM
+
+
+async def _evict_gpu_lease(lease_id: str) -> bool:
+    """Eviction callback for the GPU lease.
+    Triggers a graceful container restart since the bitsandbytes VRAM
+    leak can only be reclaimed by process exit.
+    Sets _restart_pending; actual restart is triggered from the
+    /resources/{lease_id}/status endpoint when polled by the
+    resource manager."""
+    global _restart_pending
+    logger.info(f"GPU lease {lease_id} evicted — scheduling container restart")
+    _restart_pending = True
+    return True
+
+
+async def _check_restart_needed():
+    """Check if a restart is pending and no jobs are active."""
+    global _restart_pending
+    if not _restart_pending:
+        return
+    # Only restart if no lease is busy
+    if gpu_client:
+        for rec in gpu_client.get_all_leases().values():
+            if rec.state.value == "busy":
+                return
+    logger.info("No busy leases — restarting container to reclaim bitsandbytes VRAM")
+    import os, signal
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 @asynccontextmanager
@@ -528,13 +565,25 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             frame_paths = [frame_paths[i] for i in indices]
 
         # --- Step 3: Request GPU lease ---
+        # Single long-lived lease (6h) covering peak(JoyCaption, BnB_leak + Llama).
+        # Persists after the job to cover the BnB VRAM leak. Consecutive
+        # jobs reuse it. On eviction or expiry, container restarts to
+        # reclaim the leaked VRAM.
+        global _gpu_lease_id
         await cache_manager.update_job_status(job_id, JobStatus.WAITING_FOR_GPU.value, progress=0.10, stage="requesting_gpu", message="Requesting GPU access")
-        try:
-            lease_id = await gpu_client.lease(vram_mb=9000, priority=3, timeout_seconds=600)
-            if lease_id:
-                gpu_client.mark_busy(lease_id)
-        except Exception as e:
-            logger.warning(f"GPU lease request failed: {e}. Proceeding without lease.")
+        if gpu_client and not _gpu_lease_id:
+            try:
+                _gpu_lease_id = await gpu_client.lease(
+                    vram_mb=GPU_LEASE_VRAM_MB, priority=3, timeout_seconds=600,
+                    ttl=GPU_LEASE_TTL,
+                )
+                if _gpu_lease_id:
+                    gpu_client.on_evict(_gpu_lease_id, _evict_gpu_lease)
+                    logger.info(f"GPU lease acquired: {_gpu_lease_id} ({GPU_LEASE_VRAM_MB} MB, {GPU_LEASE_TTL//3600}h TTL)")
+            except Exception as e:
+                logger.warning(f"GPU lease request failed: {e}. Proceeding without lease.")
+        if _gpu_lease_id and gpu_client:
+            gpu_client.mark_busy(_gpu_lease_id)
 
         # --- Step 4: Generate captions ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.15, stage="captioning", message="Generating frame captions with JoyCaption")
@@ -567,7 +616,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
 
         logger.info(f"Summary generated ({len(scene_summary)} chars)")
 
-        # --- Step 6: Generate suggested title ---
+        # --- Step 6: Generate suggested title (reuses loaded Llama) ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="titling", message="Generating scene title")
 
         def _generate_title():
@@ -588,10 +637,6 @@ async def _run_pipeline(job_id: str, request_payload: dict):
 
         if suggested_title:
             logger.info(f"Suggested title: {suggested_title!r}")
-
-        # Mark GPU lease idle (models stay loaded with idle timeout)
-        if lease_id:
-            gpu_client.mark_idle(lease_id)
 
         # --- Step 7: Run tag classifier ---
         await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
@@ -691,13 +736,13 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             pass
 
     finally:
-        if lease_id and gpu_client:
-            gpu_client.mark_released(lease_id)
-            try:
-                await gpu_client.release(lease_id)
-            except Exception:
-                pass
+        # GPU lease persists (BnB leak). Mark idle so it's evictable.
+        if _gpu_lease_id and gpu_client:
+            gpu_client.mark_idle(_gpu_lease_id)
         gc.collect()
+
+        # Check if eviction/expiry requires container restart
+        await _check_restart_needed()
 
 
 # ---------------------------------------------------------------------------
@@ -819,12 +864,18 @@ async def get_job_results(job_id: str):
 
 @app.get("/resources/{lease_id}/status")
 async def get_lease_status(lease_id: str):
-    """Return internal lease state for resource-manager revocation protocol."""
+    """Return internal lease state for resource-manager revocation protocol.
+    Also triggers pending restart if the lease is not busy."""
     if not gpu_client:
         raise HTTPException(status_code=503, detail="GPU client not initialized")
     rec = gpu_client.get_lease(lease_id)
     if not rec:
         return {"lease_id": lease_id, "state": "unknown"}
+
+    # If a restart is pending and this lease isn't busy, restart now
+    if _restart_pending and rec.state != LeaseState.BUSY:
+        asyncio.create_task(_check_restart_needed())
+
     return rec.to_dict()
 
 

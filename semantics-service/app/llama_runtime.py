@@ -92,7 +92,7 @@ class LlamaRuntime:
         start = time.time()
 
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+            from transformers import AutoModelForCausalLM, AutoTokenizer
 
             model_kwargs: Dict[str, Any] = {"trust_remote_code": True}
             if self.cache_dir:
@@ -109,8 +109,14 @@ class LlamaRuntime:
                     **model_kwargs,
                 )
             else:
-                logger.info("Using 8-bit quantization for Llama runtime")
-                quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                # Use TorchAO int8 weight-only quantization instead of
+                # bitsandbytes. TorchAO uses PyTorch's native allocator so
+                # memory is properly freed on model deletion — no VRAM leak.
+                logger.info("Using TorchAO int8 weight-only quantization for Llama runtime")
+                from transformers import TorchAoConfig
+                from torchao.quantization import Int8WeightOnlyConfig
+
+                quantization_config = TorchAoConfig(Int8WeightOnlyConfig())
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     quantization_config=quantization_config,

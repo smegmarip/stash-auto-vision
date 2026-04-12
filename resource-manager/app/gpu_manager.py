@@ -167,15 +167,14 @@ class GPUManager:
 
     @property
     def available_vram_mb(self) -> float:
-        """Available VRAM based on hardware readings when possible."""
-        if self._get_actual_vram:
-            try:
-                used_mb, total_mb = self._get_actual_vram()
-                if total_mb > 0:
-                    return max(0, total_mb - used_mb)
-            except Exception:
-                pass
-        return max(0, self.total_vram_mb - self.allocated_vram_mb)
+        """Available VRAM based on lease accounting.
+
+        Uses total_vram - leased as the primary check for grant decisions.
+        Hardware readings are used for reconciliation only, not for
+        availability — leaked VRAM that's covered by a lease should not
+        appear as "free" for new allocations.
+        """
+        return max(0, self.total_vram_mb - self.leased_vram_mb)
 
     async def request_gpu(
         self,
