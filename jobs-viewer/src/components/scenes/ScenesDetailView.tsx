@@ -1,8 +1,9 @@
-import { useJobResults } from '@/hooks/useJobs'
+import { useJobResults, useJobStatus } from '@/hooks/useJobs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SceneCard } from './SceneCard'
 import { SceneTimeline } from './SceneTimeline'
+import { JobOverviewCard } from '@/components/jobs/JobOverviewCard'
 import { formatDuration, formatNumber } from '@/lib/formatters'
 import { Film, Clock, Layers, Settings } from 'lucide-react'
 import { ScenesResult } from '@/api/types'
@@ -12,8 +13,18 @@ interface ScenesDetailViewProps {
 }
 
 export function ScenesDetailView({ jobId }: ScenesDetailViewProps) {
-  const { data: jobResults, isLoading, error } = useJobResults(jobId)
+  const { data: status, isLoading: statusLoading } = useJobStatus(jobId)
+  const isCompleted = status?.status === 'completed'
+  const { data: jobResults, isLoading, error } = useJobResults(jobId, { enabled: isCompleted })
   const results = jobResults as ScenesResult | undefined
+
+  if (statusLoading) {
+    return <ScenesDetailSkeleton />
+  }
+
+  if (!isCompleted && status) {
+    return <JobOverviewCard status={status} />
+  }
 
   if (isLoading) {
     return <ScenesDetailSkeleton />

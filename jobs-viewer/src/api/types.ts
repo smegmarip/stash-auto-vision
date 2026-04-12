@@ -2,7 +2,7 @@
 // Job Types
 // ============================================
 
-export type JobStatus = "queued" | "processing" | "completed" | "failed";
+export type JobStatus = "queued" | "processing" | "completed" | "failed" | "waiting_for_gpu";
 
 export interface JobSummary {
   job_id: string;

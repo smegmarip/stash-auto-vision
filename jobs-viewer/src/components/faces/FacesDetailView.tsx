@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useJobResults } from '@/hooks/useJobs'
+import { useJobResults, useJobStatus } from '@/hooks/useJobs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FaceCard } from './FaceCard'
+import { JobOverviewCard } from '@/components/jobs/JobOverviewCard'
 import { formatDuration, formatNumber } from '@/lib/formatters'
 import { Eye, EyeOff, Users, Clock, Film, Layers } from 'lucide-react'
 
@@ -12,8 +13,18 @@ interface FacesDetailViewProps {
 }
 
 export function FacesDetailView({ jobId }: FacesDetailViewProps) {
-  const { data: results, isLoading, error } = useJobResults(jobId)
+  const { data: status, isLoading: statusLoading } = useJobStatus(jobId)
+  const isCompleted = status?.status === 'completed'
+  const { data: results, isLoading, error } = useJobResults(jobId, { enabled: isCompleted })
   const [showOverlays, setShowOverlays] = useState(true)
+
+  if (statusLoading) {
+    return <FacesDetailSkeleton />
+  }
+
+  if (!isCompleted && status) {
+    return <JobOverviewCard status={status} />
+  }
 
   if (isLoading) {
     return <FacesDetailSkeleton />

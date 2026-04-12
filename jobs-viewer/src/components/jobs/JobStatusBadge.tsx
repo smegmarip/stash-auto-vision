@@ -11,6 +11,7 @@ const statusConfig: Record<JobStatus, { label: string; variant: 'success' | 'pro
   processing: { label: 'Processing', variant: 'processing' },
   queued: { label: 'Queued', variant: 'secondary' },
   failed: { label: 'Failed', variant: 'destructive' },
+  waiting_for_gpu: { label: 'Pending', variant: 'warning' },
 }
 
 export function JobStatusBadge({ status, className }: JobStatusBadgeProps) {

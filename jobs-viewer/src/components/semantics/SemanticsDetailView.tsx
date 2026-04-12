@@ -1,7 +1,8 @@
-import { useJobResults } from '@/hooks/useJobs'
+import { useJobResults, useJobStatus } from '@/hooks/useJobs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { JobOverviewCard } from '@/components/jobs/JobOverviewCard'
 import { formatNumber } from '@/lib/formatters'
 import {
   Film, Clock, Tags, Sparkles, FileText,
@@ -100,12 +101,20 @@ interface SemanticsDetailViewProps {
 }
 
 export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
-  const { data: results, isLoading, error } = useJobResults(jobId)
+  const { data: status, isLoading: statusLoading } = useJobStatus(jobId)
+  const isCompleted = status?.status === 'completed'
+  const { data: results, isLoading, error } = useJobResults(jobId, { enabled: isCompleted })
   const [showCaptions, setShowCaptions] = useState(false)
   const [showSummary, setShowSummary] = useState(true)
   const [stashUrl, setStashUrl] = useState<string>('')
 
   useEffect(() => { getStashUrl().then(setStashUrl) }, [])
+
+  if (statusLoading) return <SemanticsDetailSkeleton />
+
+  if (!isCompleted && status) {
+    return <JobOverviewCard status={status} />
+  }
 
   if (isLoading) return <SemanticsDetailSkeleton />
 
