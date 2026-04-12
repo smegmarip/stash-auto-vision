@@ -78,7 +78,7 @@ services:
       - STASH_URL=${STASH_URL:-http://host.docker.internal:9999}
       - STASH_API_KEY=${STASH_API_KEY:-}
       - RESOURCE_MANAGER_URL=http://resource-manager:5007
-      - FRAME_SERVER_VRAM_MB=${FRAME_SERVER_VRAM_MB:-1200}
+      - FRAME_SERVER_VRAM_MB=${FRAME_SERVER_VRAM_MB:-1800}
     volumes:
       - ${TEST_MEDIA_PATH}:/media/videos:ro
       - ${SERVER_MEDIA_PATH}:/data:ro
@@ -279,7 +279,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${SEMANTICS_MEMORY_LIMIT:-40G}
+          memory: ${SEMANTICS_MEMORY_LIMIT:-20G}
 
   objects-service:
     build:

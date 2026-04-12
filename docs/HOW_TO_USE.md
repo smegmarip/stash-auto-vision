@@ -208,6 +208,7 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 | `FRAME_TTL_HOURS`         | Hours before extracted frames are auto-cleaned                                 | `2`           |
 | `FRAME_DIR`               | Frame storage directory inside the container                                   | `/tmp/frames` |
 | `FRAME_THREAD_POOL_SIZE`  | Worker threads for parallel frame extraction                                   | `4`           |
+| `FRAME_SERVER_VRAM_MB`    | VRAM budget (MB) for perpetual GPU lease to the resource-manager               | `1800`        |
 
 ### Scenes Service
 
@@ -229,7 +230,7 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 | `FACES_MIN_QUALITY`                 | Minimum quality to retain a face (0.0-1.0, `0.0` = no filtering)                                          | `0.0`                              |
 | `FACES_ENHANCEMENT_QUALITY_TRIGGER` | Quality threshold below which enhancement is triggered                                                    | `0.5`                              |
 | `FACES_HF_REPO`                     | HuggingFace repo hosting occlusion + IQA ONNX weights                                                     | `smegmarip/face-recognition`       |
-| `FACES_HF_OCCLUSION_MODEL`          | Path within the repo for the occlusion classifier (**required** — missing = 503 on `/faces/health`)      | `models/occlusion_classifier.onnx` |
+| `FACES_HF_OCCLUSION_MODEL`          | Path within the repo for the occlusion classifier (**required** — missing = 503 on `/faces/health`)       | `models/occlusion_classifier.onnx` |
 | `FACES_HF_TOPIQ_MODEL`              | Path within the repo for TOPIQ-NR IQA model (optional, best-effort)                                       | `models/topiq_nr.onnx`             |
 | `FACES_HF_CLIPIQA_MODEL`            | Path within the repo for CLIP-IQA+ IQA model (optional, best-effort)                                      | `models/clipiqa_plus.onnx`         |
 | `FACES_HF_TOKEN`                    | Optional HF token for gated / private forks                                                               | _(empty)_                          |
@@ -266,11 +267,11 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 
 ### Semantics Service — Job Queue
 
-| Variable                 | Description                                                            | Default      |
-| ------------------------ | ---------------------------------------------------------------------- | ------------ |
-| `SEMANTICS_JOB_LOCK_TTL` | Max seconds a single job may hold the worker lock                      | `3600`       |
-| `SEMANTICS_WORKER_ID`    | Worker identifier (defaults to container hostname)                     | _(hostname)_ |
-| `SEMANTICS_MEMORY_LIMIT` | Container RAM limit (Llama 3.1 8B bfloat16 + peak overhead needs ~40G) | `40G`        |
+| Variable                 | Description                                                 | Default      |
+| ------------------------ | ----------------------------------------------------------- | ------------ |
+| `SEMANTICS_JOB_LOCK_TTL` | Max seconds a single job may hold the worker lock           | `3600`       |
+| `SEMANTICS_WORKER_ID`    | Worker identifier (defaults to container hostname)          | _(hostname)_ |
+| `SEMANTICS_MEMORY_LIMIT` | Container RAM limit (Llama 3.1 8B + model loading overhead) | `20G`        |
 
 ### Objects Service (Phase 4, stub)
 
@@ -284,10 +285,10 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 
 ### Stash Integration
 
-| Variable        | Description                                                            | Default                 |
-| --------------- | ---------------------------------------------------------------------- | ----------------------- |
-| `STASH_URL`     | Stash instance base URL (used for taxonomy and scene metadata fetches) | `http://localhost:9999` |
-| `STASH_API_KEY` | Stash GraphQL API key (empty if the instance has no auth)              | _(empty)_               |
+| Variable        | Description                                                            | Default                            |
+| --------------- | ---------------------------------------------------------------------- | ---------------------------------- |
+| `STASH_URL`     | Stash instance base URL (used for taxonomy and scene metadata fetches) | `http://host.docker.internal:9999` |
+| `STASH_API_KEY` | Stash GraphQL API key (empty if the instance has no auth)              | _(empty)_                          |
 
 ### Resource Manager
 
