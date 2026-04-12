@@ -18,12 +18,15 @@ from fastapi.responses import JSONResponse
 import logging
 import redis.asyncio as aioredis
 
+from pydantic import ValidationError
+
 from .models import (
     AnalyzeVideoRequest,
     AnalyzeJobResponse,
     AnalyzeJobStatus,
     AnalyzeJobResults,
     ServiceJobInfo,
+    SubServiceStatus,
     HealthResponse,
     JobSummary,
     ListJobsResponse,
@@ -163,33 +166,47 @@ async def call_service(
             logger.info(f"{service_name} job submitted: {job_id}")
 
             # Poll for completion
+            MAX_POLL_ERRORS = 5
+            consecutive_errors = 0
             while True:
                 status_response = await client.get(f"{service_url}/{service_name}/jobs/{job_id}/status")
 
-                status = status_response.json()
+                if status_response.status_code != 200:
+                    consecutive_errors += 1
+                    logger.warning(f"{service_name} status poll returned HTTP {status_response.status_code} ({consecutive_errors}/{MAX_POLL_ERRORS})")
+                    if consecutive_errors >= MAX_POLL_ERRORS:
+                        raise ValueError(f"{service_name} status poll failed {MAX_POLL_ERRORS} times (last HTTP {status_response.status_code})")
+                    await asyncio.sleep(2)
+                    continue
+
+                try:
+                    status = SubServiceStatus.model_validate(status_response.json())
+                except ValidationError as e:
+                    consecutive_errors += 1
+                    logger.warning(f"{service_name} status response invalid ({consecutive_errors}/{MAX_POLL_ERRORS}): {e}")
+                    if consecutive_errors >= MAX_POLL_ERRORS:
+                        raise ValueError(f"{service_name} status response failed validation {MAX_POLL_ERRORS} times")
+                    await asyncio.sleep(2)
+                    continue
+
+                consecutive_errors = 0  # reset on successful parse
 
                 # Update orchestrator progress based on sub-service progress
                 if orchestrator_job_id and orchestrator_metadata:
-                    sub_progress = status.get("progress", 0.0)
-                    # Calculate overall progress: base + (sub_progress * weight)
-                    overall_progress = base_progress + (sub_progress * progress_weight)
-
-                    sub_stage = status.get("stage", "")
-                    sub_message = status.get("message", "")
-
+                    overall_progress = base_progress + (status.progress * progress_weight)
                     await update_metadata(
                         orchestrator_job_id,
                         orchestrator_metadata,
                         progress=overall_progress,
-                        message=f"{service_name}: {sub_message}" if sub_message else f"Processing {service_name}...",
+                        message=f"{service_name}: {status.message}" if status.message else f"Processing {service_name}...",
                     )
-                    logger.debug(f"{service_name} progress: {sub_progress:.1%} -> overall: {overall_progress:.1%}")
+                    logger.debug(f"{service_name} progress: {status.progress:.1%} -> overall: {overall_progress:.1%}")
 
-                if status["status"] == "completed":
+                if status.status == "completed":
                     break
-                elif status["status"] == "failed":
-                    raise ValueError(f"{service_name} job failed: {status.get('error')}")
-                elif status["status"] == "not_implemented":
+                elif status.status == "failed":
+                    raise ValueError(f"{service_name} job failed: {status.error}")
+                elif status.status == "not_implemented":
                     logger.info(f"{service_name} not implemented (stub)")
                     return {"status": "not_implemented", "job_id": job_id}
 

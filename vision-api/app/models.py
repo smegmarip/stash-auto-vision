@@ -7,6 +7,20 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class SubServiceStatus(BaseModel):
+    """Common status shape returned by all sub-service status endpoints.
+
+    Used by call_service() to validate polling responses. Extra fields
+    returned by individual services are silently ignored.
+    """
+
+    status: str
+    progress: float = 0.0
+    stage: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
 class ModuleConfig(BaseModel):
     """Configuration for a single module"""
 
