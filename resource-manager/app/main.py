@@ -293,6 +293,25 @@ async def wait_for_gpu(request_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/resources/gpu/release-service")
+async def release_service_leases(request: dict):
+    """
+    Release all leases held by a service.
+
+    Called by services on (re)startup to clear stale leases from a previous
+    incarnation. Also called internally during eviction-triggered restarts.
+    """
+    service_name = request.get("service_name")
+    if not service_name:
+        raise HTTPException(status_code=400, detail="service_name required")
+    try:
+        result = await gpu_manager.release_service_leases(service_name)
+        return result
+    except Exception as e:
+        logger.error(f"Error releasing service leases: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/resources/gpu/release", response_model=GPUReleaseResponse)
 async def release_gpu(request: GPUReleaseInput):
     """

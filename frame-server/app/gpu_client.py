@@ -119,6 +119,30 @@ class GPUClient:
             await self._client.aclose()
             self._client = None
 
+    # ----- Service startup announcement -----
+
+    async def announce_startup(self):
+        """Notify the resource manager that this service is (re)starting.
+
+        Clears any stale leases from a previous incarnation of this service
+        (e.g. after a container restart triggered by eviction, crash, or
+        manual restart). Must be called before acquiring new leases.
+        """
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                f"{self.resource_manager_url}/resources/gpu/release-service",
+                json={"service_name": self.service_name},
+            )
+            data = resp.json()
+            released = data.get("released_count", 0)
+            if released:
+                logger.info(f"Startup: cleared {released} stale lease(s) from resource manager")
+            else:
+                logger.debug("Startup: no stale leases to clear")
+        except Exception as e:
+            logger.warning(f"Startup: could not clear stale leases: {e}")
+
     # ----- Lease acquisition -----
 
     async def lease(

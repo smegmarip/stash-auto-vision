@@ -96,6 +96,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      resource-manager:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/frames/health"]

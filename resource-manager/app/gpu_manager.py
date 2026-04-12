@@ -402,6 +402,41 @@ class GPUManager:
                 "message": "GPU access released"
             }
 
+    async def release_service_leases(self, service_name: str) -> Dict[str, Any]:
+        """Release all leases held by a service.
+
+        Called when a service (re)starts to clear stale leases from a
+        previous incarnation, or during eviction-triggered restarts to
+        ensure sibling leases (e.g. perpetual classifier lease) are also
+        cleaned up.
+
+        Returns:
+            Dict with count of released leases.
+        """
+        async with self._lock:
+            to_remove = [
+                lid for lid, lease in self.active_leases.items()
+                if lease.service_name == service_name
+            ]
+            released = 0
+            for lid in to_remove:
+                lease = self.active_leases.pop(lid, None)
+                if lease:
+                    logger.info(
+                        f"Service reset: released {lease.service_name} lease {lid} "
+                        f"({lease.vram_allocated_mb:.0f}MB, {'perpetual' if lease.perpetual else 'standard'})"
+                    )
+                    released += 1
+
+            if released:
+                await self._process_queue()
+
+        return {
+            "service_name": service_name,
+            "released_count": released,
+            "message": f"Released {released} lease(s) for {service_name}",
+        }
+
     async def heartbeat(self, lease_id: str) -> Dict[str, Any]:
         """
         Refresh lease with heartbeat
@@ -499,18 +534,41 @@ class GPUManager:
                     continue
 
                 # Poll status until released or timeout (30s)
+                # Track consecutive connection failures to distinguish a
+                # container restart from transient unreachability (GIL
+                # contention during model load, network blip, etc.).
+                service_restarting = False
+                consecutive_conn_failures = 0
+                RESTART_THRESHOLD = 3  # 3 consecutive failures ≈ 6s unreachable
                 for _ in range(15):
                     await asyncio.sleep(2.0)
                     try:
                         poll_resp = await client.get(f"{base}/resources/{lease.lease_id}/status")
                         poll_data = poll_resp.json()
+                        consecutive_conn_failures = 0  # reset on any successful response
                         if poll_data.get("state") == "released":
                             async with self._lock:
                                 self.active_leases.pop(lease.lease_id, None)
                             logger.info(f"Evicted lease {lease.lease_id} ({lease.service_name}, {lease.vram_allocated_mb:.0f}MB)")
                             break
+                    except (httpx.ConnectError, httpx.RemoteProtocolError):
+                        consecutive_conn_failures += 1
+                        if consecutive_conn_failures >= RESTART_THRESHOLD:
+                            service_restarting = True
+                            async with self._lock:
+                                self.active_leases.pop(lease.lease_id, None)
+                            logger.info(f"Service {lease.service_name} unreachable ({consecutive_conn_failures} consecutive failures) during eviction poll — treating as restarted")
+                            break
+                        logger.debug(f"Service {lease.service_name} unreachable during eviction poll ({consecutive_conn_failures}/{RESTART_THRESHOLD})")
+                    except httpx.TimeoutException:
+                        # Timeout likely means GIL contention — do NOT count as restart
+                        logger.debug(f"Timeout polling {lease.service_name} during eviction — assuming busy")
                     except Exception:
                         pass
+
+                # If the service is restarting, all its leases are stale
+                if service_restarting:
+                    await self.release_service_leases(lease.service_name)
 
                 # Check if we now have enough
                 if self.available_vram_mb >= vram_needed:

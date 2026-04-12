@@ -160,6 +160,7 @@ async def lifespan(app: FastAPI):
         service_name="faces-service",
         service_url=f"http://faces-service:{os.getenv('FACES_PORT', '5003')}",
     )
+    await gpu_client.announce_startup()
 
     _idle_cleanup_task = asyncio.create_task(_idle_cleanup_loop())
     logger.info(f"Faces Service ready (models deferred, idle_timeout={MODEL_IDLE_TIMEOUT}s)")

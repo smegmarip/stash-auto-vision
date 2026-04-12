@@ -195,6 +195,7 @@ async def lifespan(app: FastAPI):
         service_name="semantics-service",
         service_url=f"http://semantics-service:{os.getenv('SEMANTICS_PORT', '5004')}",
     )
+    await gpu_client.announce_startup()
     logger.info("GPU client initialized")
 
     # Caption generator (JoyCaption, 4-bit NF4 — fits 15.6GB VRAM alongside classifier)

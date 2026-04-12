@@ -129,6 +129,7 @@ async def lifespan(app: FastAPI):
         service_name="frame-server",
         service_url=f"http://frame-server:{os.getenv('FRAME_SERVER_PORT', '5001')}",
     )
+    await gpu_client.announce_startup()
     if HAS_CUDA:
         try:
             lease_id = await gpu_client.lease(vram_mb=FRAME_SERVER_VRAM_MB, priority=1, perpetual=True)
