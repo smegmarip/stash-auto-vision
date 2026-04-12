@@ -73,7 +73,7 @@ Stash Auto Vision is a standalone microservices platform that processes video co
 │                                                             │
 │  ┌──────────────┐         ┌──────────────────────────┐    │
 │  │resource-mgr  │ :5007   │   - GPU orchestration    │    │
-│  │              │◄────────┤   - VRAM allocation      │    │
+│  │              │◄────────┤   - VRAM reservation     │    │
 │  └──────────────┘         │   - Lease management     │    │
 │                           └──────────────────────────┘    │
 │                                                             │

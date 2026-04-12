@@ -255,7 +255,7 @@ interface VramSegment {
   perpetual?: boolean
 }
 
-function VramAllocationBar({ status }: { status: GpuStatusResponse }) {
+function VramReservationBar({ status }: { status: GpuStatusResponse }) {
   const total = status.total_vram_mb
   if (total <= 0) return null
 
@@ -293,7 +293,7 @@ function VramAllocationBar({ status }: { status: GpuStatusResponse }) {
     <Card>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium text-sm">VRAM Allocation</h3>
+          <h3 className="font-medium text-sm">VRAM Reservation</h3>
           <span className="text-xs text-muted-foreground">{formatMB(total)} total</span>
         </div>
 
@@ -448,8 +448,8 @@ export function ResourcesPage() {
         />
       </div>
 
-      {/* VRAM allocation bar */}
-      {gpuStatus && <VramAllocationBar status={gpuStatus} />}
+      {/* VRAM reservation bar */}
+      {gpuStatus && <VramReservationBar status={gpuStatus} />}
 
       {/* Detail charts */}
       <div className="grid gap-4 md:grid-cols-2">
