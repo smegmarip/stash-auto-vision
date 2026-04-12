@@ -467,6 +467,8 @@ services:
       - ./schema-service/template.yaml:/config/template.yaml
     networks:
       - vision_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       frame-server:
         condition: service_started
