@@ -99,6 +99,7 @@ Submits an asynchronous tag classification job.
 | `select_sharpest`                | bool   | true         | Filter by sharpness (video frame modes)                              |
 | `sharpness_candidate_multiplier` | int    | 3            | Extract N \* frames_per_scene candidates for sharpness selection     |
 | `min_frame_quality`              | float  | 0.05         | Minimum quality threshold (0-1)                                      |
+| `operations`                     | list   | null (all)   | Operations to perform: `["title"]`, `["summary"]`, `["tags"]`, `["all"]`, or combinations like `["tags", "title"]`. Default (null) performs all. Note: `tags` generates a summary internally but does not return it unless `summary` is also listed. |
 | `use_quantization`               | bool   | true         | Use 4-bit quantization for JoyCaption VLM                            |
 | `details`                        | string | -            | Promotional/editorial description (overrides Stash data)             |
 | `sprite_vtt_url`                 | string | -            | URL to sprite VTT file (overrides Stash data)                        |
@@ -115,6 +116,19 @@ curl -X POST http://localhost:5004/semantics/analyze \
     "parameters": {
       "min_confidence": 0.75,
       "top_k_tags": 30
+    }
+  }'
+```
+
+**Example (tags only):**
+
+```bash
+curl -X POST http://localhost:5004/semantics/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_id": "12345",
+    "parameters": {
+      "operations": ["tags"]
     }
   }'
 ```
@@ -200,9 +214,12 @@ curl http://localhost:5004/semantics/jobs/semantics-550e8400.../results | jq .
     }
   ],
   "scene_summary": "A woman relaxes in a warmly decorated living room, seated on a beige couch near a coffee table. The scene is shot at eye level with natural afternoon light...",
+  "suggested_title": "Afternoon Relaxation on the Couch",
   "scene_embedding": [0.012, -0.034, 0.078, "..."]
 }
 ```
+
+> **Note:** `scene_summary`, `suggested_title`, and `tags` are conditional on the `operations` parameter. When an operation is not requested, `scene_summary` and `suggested_title` return `null` and `tags` returns `[]`. `frame_captions` are always returned.
 
 ### Health Check
 

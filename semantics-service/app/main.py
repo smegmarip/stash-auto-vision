@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 import httpx
@@ -36,6 +37,7 @@ from .models import (
     TaxonomyStatus,
     JobStatus,
     FrameSelectionMethod,
+    SemanticsOperation,
 )
 from .cache_manager import CacheManager
 from .classifier import TagClassifier
@@ -272,6 +274,7 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +457,14 @@ async def _extract_frame_images(
     return images, timestamps, file_paths
 
 
+def _resolve_operations(params) -> set:
+    """Return the set of active operation names from SemanticsParameters."""
+    ops = params.operations
+    if not ops or SemanticsOperation.ALL in ops:
+        return {"title", "summary", "tags"}
+    return {op.value for op in ops}
+
+
 async def _run_pipeline(job_id: str, request_payload: dict):
     """Worker callback: full tag classification pipeline for a single job.
 
@@ -472,6 +483,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
     try:
         logger.info(f"Starting semantics analysis job {job_id} for scene {request.source_id}")
         params = request.parameters
+        active_ops = _resolve_operations(params)
 
         # Initialize job metadata
         now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
@@ -481,6 +493,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
             "top_k": params.top_k_tags,
             "frames_per_scene": params.frames_per_scene,
             "hierarchical": params.use_hierarchical_decoding,
+            "operations": sorted(active_ops),
         }
         cache_key = cache_manager.generate_cache_key(request.source, cache_params)
 
@@ -618,51 +631,58 @@ async def _run_pipeline(job_id: str, request_payload: dict):
         logger.info(f"Summary generated ({len(scene_summary)} chars)")
 
         # --- Step 6: Generate suggested title (reuses loaded Llama) ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="titling", message="Generating scene title")
-
-        def _generate_title():
-            with model_manager.using("llm"):
-                return title_generator.generate_title(
-                    scene_source=request.source, scene_summary=scene_summary,
-                    promo_desc=ctx.promo_desc, duration=ctx.duration,
-                    performer_count=ctx.performer_count,
-                    performer_genders=ctx.performer_genders,
-                    resolution=ctx.resolution,
-                )
-
         suggested_title: Optional[str] = None
-        try:
-            suggested_title = await asyncio.to_thread(_generate_title)
-        except Exception as e:
-            logger.warning(f"Title generation failed: {e}. Continuing without suggested_title.", exc_info=True)
+        if "title" in active_ops:
+            await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.80, stage="titling", message="Generating scene title")
 
-        if suggested_title:
-            logger.info(f"Suggested title: {suggested_title!r}")
+            def _generate_title():
+                with model_manager.using("llm"):
+                    return title_generator.generate_title(
+                        scene_source=request.source, scene_summary=scene_summary,
+                        promo_desc=ctx.promo_desc, duration=ctx.duration,
+                        performer_count=ctx.performer_count,
+                        performer_genders=ctx.performer_genders,
+                        resolution=ctx.resolution,
+                    )
+
+            try:
+                suggested_title = await asyncio.to_thread(_generate_title)
+            except Exception as e:
+                logger.warning(f"Title generation failed: {e}. Continuing without suggested_title.", exc_info=True)
+
+            if suggested_title:
+                logger.info(f"Suggested title: {suggested_title!r}")
+        else:
+            logger.info("Skipping title generation (not in operations)")
 
         # --- Step 7: Run tag classifier ---
-        await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
-
-        prediction = await asyncio.to_thread(
-            tag_classifier.predict,
-            frame_captions=fixed_captions,
-            summary=scene_summary,
-            promo_desc=ctx.promo_desc,
-            has_promo=ctx.has_promo,
-            top_k=params.top_k_tags,
-            min_score=params.min_confidence,
-            use_hierarchical_decoding=params.use_hierarchical_decoding,
-        )
-
-        tags = prediction["tags"]
-        logger.info(f"Classifier returned {len(tags)} tags")
-
-        # Optional: scene embedding
+        tags = []
         scene_embedding = None
-        if params.generate_embeddings:
-            try:
-                scene_embedding = tag_classifier.get_scene_embedding(fixed_captions, scene_summary, ctx.promo_desc, ctx.has_promo)
-            except Exception as e:
-                logger.warning(f"Embedding generation failed: {e}")
+        if "tags" in active_ops:
+            await cache_manager.update_job_status(job_id, JobStatus.PROCESSING.value, progress=0.85, stage="classifying", message="Running tag classifier")
+
+            prediction = await asyncio.to_thread(
+                tag_classifier.predict,
+                frame_captions=fixed_captions,
+                summary=scene_summary,
+                promo_desc=ctx.promo_desc,
+                has_promo=ctx.has_promo,
+                top_k=params.top_k_tags,
+                min_score=params.min_confidence,
+                use_hierarchical_decoding=params.use_hierarchical_decoding,
+            )
+
+            tags = prediction["tags"]
+            logger.info(f"Classifier returned {len(tags)} tags")
+
+            # Optional: scene embedding
+            if params.generate_embeddings:
+                try:
+                    scene_embedding = tag_classifier.get_scene_embedding(fixed_captions, scene_summary, ctx.promo_desc, ctx.has_promo)
+                except Exception as e:
+                    logger.warning(f"Embedding generation failed: {e}")
+        else:
+            logger.info("Skipping tag classification (not in operations)")
 
         # --- Build results ---
         processing_time = time.time() - start_time
@@ -684,11 +704,11 @@ async def _run_pipeline(job_id: str, request_payload: dict):
         ]
 
         outcome = SemanticsOutcome(
-            tags=classifier_tags,
+            tags=classifier_tags if "tags" in active_ops else [],
             frame_captions=frame_caption_results,
-            scene_summary=scene_summary,
-            suggested_title=suggested_title,
-            scene_embedding=scene_embedding,
+            scene_summary=scene_summary if "summary" in active_ops else None,
+            suggested_title=suggested_title if "title" in active_ops else None,
+            scene_embedding=scene_embedding if "tags" in active_ops else None,
         )
 
         tag_name_to_id = {str(t.get("name", "")): str(t["id"]) for t in active_taxonomy.get("tags", []) if t.get("name")}
@@ -773,6 +793,7 @@ async def analyze_semantics(request: AnalyzeSemanticsRequest):
             "top_k": request.parameters.top_k_tags,
             "frames_per_scene": request.parameters.frames_per_scene,
             "hierarchical": request.parameters.use_hierarchical_decoding,
+            "operations": sorted(_resolve_operations(request.parameters)),
         }
         cache_key = cache_manager.generate_cache_key(request.source, cache_params)
         cached_job_id = await cache_manager.get_cached_job_id(cache_key)

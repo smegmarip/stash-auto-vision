@@ -34,6 +34,14 @@ class FrameSelectionMethod(str, Enum):
     SPRITE_SHEET = "sprite_sheet"
 
 
+class SemanticsOperation(str, Enum):
+    """Selectable pipeline operations"""
+    TITLE = "title"
+    SUMMARY = "summary"
+    TAGS = "tags"
+    ALL = "all"
+
+
 # ---------------------------------------------------------------------------
 # Tag taxonomy models (from Stash GraphQL schema)
 # ---------------------------------------------------------------------------
@@ -130,6 +138,13 @@ class SemanticsParameters(BaseModel):
         default=0.05,
         ge=0.0, le=1.0,
         description="Minimum quality score to accept a frame (filters black/blank frames)"
+    )
+
+    # --- Operation selection ---
+    operations: Optional[List[SemanticsOperation]] = Field(
+        default=None,
+        description="Operations to perform: 'title', 'summary', 'tags', or 'all'. "
+                    "Default (null) performs all operations. Accepts a list of values."
     )
 
     # --- Captioning parameters ---
@@ -271,9 +286,9 @@ class FrameCaptionResult(BaseModel):
 
 class SemanticsOutcome(BaseModel):
     """Complete tag classification results for a scene"""
-    tags: List[ClassifierTag] = Field(description="Predicted tags sorted by score (descending)")
+    tags: List[ClassifierTag] = Field(default_factory=list, description="Predicted tags sorted by score (descending)")
     frame_captions: List[FrameCaptionResult] = Field(description="Per-frame captions (16 frames)")
-    scene_summary: str = Field(description="LLM narrative summary of the scene")
+    scene_summary: Optional[str] = Field(default=None, description="LLM narrative summary of the scene (null when summary not in operations)")
     suggested_title: Optional[str] = Field(
         default=None,
         description="LLM-generated catchy scene title derived from summary and promotional description"

@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import redis.asyncio as aioredis
@@ -117,6 +118,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 async def call_service(
@@ -473,6 +475,7 @@ async def process_video_analysis(job_id: str, request: AnalyzeVideoRequest):
                         "select_sharpest": semantics_params.get("select_sharpest", True),
                         "sharpness_candidate_multiplier": semantics_params.get("sharpness_candidate_multiplier", 3),
                         "min_frame_quality": semantics_params.get("min_frame_quality", 0.05),
+                        "operations": semantics_params.get("operations"),
                         "use_quantization": semantics_params.get("use_quantization", True),
                         "details": semantics_params.get("details"),
                         "sprite_vtt_url": semantics_params.get("sprite_vtt_url"),
