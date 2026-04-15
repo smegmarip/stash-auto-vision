@@ -506,6 +506,58 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       tags:
       - frames
+  /resources/{lease_id}/status:
+    get:
+      summary: Get Lease Status
+      description: Return internal lease state for resource-manager revocation protocol.
+      operationId: get_lease_status_resources__lease_id__status_get
+      parameters:
+      - name: lease_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Lease Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - faces
+  /resources/{lease_id}/release:
+    post:
+      summary: Release Lease
+      description: Attempt to release a lease (called by resource-manager for eviction).
+      operationId: release_lease_resources__lease_id__release_post
+      parameters:
+      - name: lease_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Lease Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - faces
   /frames/health:
     get:
       summary: Health Check
@@ -701,7 +753,8 @@ paths:
   /faces/health:
     get:
       summary: Health Check
-      description: Service health check
+      description: "Service health check.\n\nReturns HTTP 503 when any required component is missing:\n- occlusion classifier
+        ONNX model failed to load (bootstrap failure\n  or corrupted file in the faces_models_cache volume)"
       operationId: health_check_faces_health_get
       responses:
         '200':
@@ -712,103 +765,6 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
       tags:
       - faces
-      - health
-  /semantics/analyze:
-    post:
-      summary: Analyze Semantics
-      description: "Submit tag classification analysis job to the Redis-backed queue.\n\nThe endpoint never touches GPU code.
-        It stores the request payload in\nRedis and pushes the job_id to the pending queue. The worker (a single\nbackground
-        task) pulls jobs serially using an atomic Lua script."
-      operationId: analyze_semantics_semantics_analyze_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnalyzeSemanticsRequest'
-        required: true
-      responses:
-        '202':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnalyzeSemanticsResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      tags:
-      - semantics
-  /semantics/jobs/{job_id}/status:
-    get:
-      summary: Get Job Status
-      description: Get job status.
-      operationId: get_job_status_semantics_jobs__job_id__status_get
-      parameters:
-      - name: job_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Job Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/JobStatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      tags:
-      - semantics
-  /semantics/jobs/{job_id}/results:
-    get:
-      summary: Get Job Results
-      description: Get job results.
-      operationId: get_job_results_semantics_jobs__job_id__results_get
-      parameters:
-      - name: job_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Job Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SemanticsResults'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      tags:
-      - semantics
-  /semantics/health:
-    get:
-      summary: Health Check
-      description: Health check endpoint.
-      operationId: health_check_semantics_health_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-      tags:
-      - semantics
       - health
   /objects/analyze:
     post:
@@ -982,6 +938,33 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       tags:
       - resources
+  /resources/gpu/release-service:
+    post:
+      summary: Release Service Leases
+      description: "Release all leases held by a service.\n\nCalled by services on (re)startup to clear stale leases from
+        a previous\nincarnation. Also called internally during eviction-triggered restarts."
+      operationId: release_service_leases_resources_gpu_release_service_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Request
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      tags:
+      - resources
   /resources/gpu/release:
     post:
       summary: Release Gpu
@@ -1046,6 +1029,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GPUStatusResponse'
+      tags:
+      - resources
+  /resources/metrics:
+    get:
+      summary: Get Metrics
+      description: Get current and historical system metrics (GPU, VRAM, CPU, RAM).
+      operationId: get_metrics_resources_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
       tags:
       - resources
   /resources/health:
@@ -2384,439 +2380,6 @@ components:
           type: number
         sharpness:
           type: number
-    AnalyzeSemanticsRequest:
-      properties:
-        source:
-          type: string
-          title: Source
-          description: Video path or URL (resolved from Stash if empty)
-          default: ''
-        source_id:
-          type: string
-          title: Source Id
-          description: Scene identifier (required)
-        job_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Job Id
-          description: Parent job ID for tracking
-        frame_extraction_job_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Frame Extraction Job Id
-          description: Job ID from Frame Server (reuse extracted frames)
-        scenes_job_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Scenes Job Id
-          description: Job ID from Scenes Service (fetch pre-computed scene boundaries)
-        custom_taxonomy:
-          anyOf:
-          - type: string
-          - items:
-              type: object
-            type: array
-          - type: 'null'
-          title: Custom Taxonomy
-          description: 'Custom taxonomy override: URL to fetch JSON, or inline array of Stash Tag objects (from findTags query).
-            Overrides the taxonomy loaded at startup.'
-        parameters:
-          $ref: '#/components/schemas/SemanticsParameters'
-      type: object
-      required:
-      - source_id
-      title: AnalyzeSemanticsRequest
-      description: Request to analyze scene semantics via tag classification pipeline.
-    AnalyzeSemanticsResponse:
-      properties:
-        job_id:
-          type: string
-          title: Job Id
-        status:
-          $ref: '#/components/schemas/JobStatus'
-        message:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Message
-        created_at:
-          type: string
-          title: Created At
-        cache_hit:
-          type: boolean
-          title: Cache Hit
-          default: false
-      type: object
-      required:
-      - job_id
-      - status
-      - created_at
-      title: AnalyzeSemanticsResponse
-      description: Response for semantics analysis job submission
-    ClassifierTag:
-      properties:
-        tag_id:
-          type: string
-          title: Tag Id
-          description: Stash tag ID
-        tag_name:
-          type: string
-          title: Tag Name
-          description: Tag name
-        score:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          title: Score
-          description: Classifier confidence score
-        path:
-          type: string
-          title: Path
-          description: Taxonomy path (e.g., 'Semantics > Apparel > Accessories')
-          default: ''
-        decode_type:
-          type: string
-          title: Decode Type
-          description: "How this tag was selected: 'direct' (above threshold) or 'parent_only' (activated by child)"
-          default: direct
-      type: object
-      required:
-      - tag_id
-      - tag_name
-      - score
-      title: ClassifierTag
-      description: A tag prediction from the trained classifier
-    FrameCaptionResult:
-      properties:
-        frame_index:
-          type: integer
-          title: Frame Index
-        timestamp:
-          type: number
-          title: Timestamp
-        caption:
-          type: string
-          title: Caption
-          description: JoyCaption taxonomy-prompt output
-      type: object
-      required:
-      - frame_index
-      - timestamp
-      - caption
-      title: FrameCaptionResult
-      description: Caption for a single frame
-    FrameSelectionMethod:
-      type: string
-      enum:
-      - scene_based
-      - interval
-      - sprite_sheet
-      title: FrameSelectionMethod
-      description: Frame selection strategies
-    JobStatusResponse:
-      type: object
-      properties:
-        job_id:
-          type: string
-        status:
-          $ref: '#/components/schemas/JobStatus'
-        progress:
-          type: number
-          minimum: 0
-          maximum: 1
-        processing_mode:
-          type: string
-        stage:
-          type: string
-        message:
-          type: string
-        services:
-          type: array
-          items:
-            $ref: '#/components/schemas/ServiceJobInfo'
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-        completed_at:
-          type: string
-          format: date-time
-        result_summary:
-          type: object
-        error:
-          type: string
-      required:
-      - job_id
-      - status
-      - progress
-      - processing_mode
-      - services
-      - created_at
-    SceneMetadata:
-      properties:
-        title:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Title
-        duration:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Duration
-          description: Duration in seconds
-        resolution:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Resolution
-          description: Video resolution (e.g. 1920x1080)
-        frame_rate:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Frame Rate
-        performer_count:
-          type: integer
-          title: Performer Count
-          default: 0
-        performer_genders:
-          items:
-            type: string
-          type: array
-          title: Performer Genders
-      type: object
-      title: SceneMetadata
-      description: Scene metadata resolved from Stash via findScene.
-    SemanticsMetadata:
-      type: object
-      properties:
-        source:
-          type: string
-        source_id:
-          type: string
-        total_frames_extracted:
-          type: integer
-        frames_captioned:
-          type: integer
-        classifier_model:
-          type: string
-        caption_model:
-          type: string
-        summary_model:
-          type: string
-        processing_time_seconds:
-          type: number
-        device:
-          type: string
-        taxonomy_size:
-          type: integer
-        has_promo:
-          type: boolean
-        sprite_image_url:
-          type:
-          - string
-          - 'null'
-        sprite_vtt_url:
-          type:
-          - string
-          - 'null'
-    SemanticsOutcome:
-      properties:
-        tags:
-          items:
-            $ref: '#/components/schemas/ClassifierTag'
-          type: array
-          title: Tags
-          description: Predicted tags sorted by score (descending)
-        frame_captions:
-          items:
-            $ref: '#/components/schemas/FrameCaptionResult'
-          type: array
-          title: Frame Captions
-          description: Per-frame captions (16 frames)
-        scene_summary:
-          type: string
-          title: Scene Summary
-          description: LLM narrative summary of the scene
-        suggested_title:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Suggested Title
-          description: LLM-generated catchy scene title derived from summary and promotional description
-        scene_embedding:
-          anyOf:
-          - items:
-              type: number
-            type: array
-          - type: 'null'
-          title: Scene Embedding
-          description: 512-D scene embedding from classifier (if generate_embeddings=True)
-      type: object
-      required:
-      - tags
-      - frame_captions
-      - scene_summary
-      title: SemanticsOutcome
-      description: Complete tag classification results for a scene
-    SemanticsParameters:
-      properties:
-        model_variant:
-          type: string
-          title: Model Variant
-          description: "Classifier model variant: 'vision', 'text-only', or path to checkpoint"
-          default: text-only
-        min_confidence:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          title: Min Confidence
-          description: Minimum confidence threshold for tag predictions
-          default: 0.75
-        top_k_tags:
-          type: integer
-          maximum: 100.0
-          minimum: 1.0
-          title: Top K Tags
-          description: Maximum number of tags to return
-          default: 30
-        generate_embeddings:
-          type: boolean
-          title: Generate Embeddings
-          description: Return 512-D scene embeddings from the classifier
-          default: false
-        use_hierarchical_decoding:
-          type: boolean
-          title: Use Hierarchical Decoding
-          description: Apply taxonomy-consistent post-processing (parent thresholds, child competition)
-          default: true
-        frame_selection:
-          allOf:
-          - $ref: '#/components/schemas/FrameSelectionMethod'
-          description: How to select frames for captioning
-          default: sprite_sheet
-        frames_per_scene:
-          type: integer
-          maximum: 32.0
-          minimum: 1.0
-          title: Frames Per Scene
-          description: Frames to extract per scene (classifier trained on 16)
-          default: 16
-        sampling_interval:
-          type: number
-          maximum: 60.0
-          minimum: 0.1
-          title: Sampling Interval
-          description: Frame sampling interval in seconds (interval mode)
-          default: 2.0
-        select_sharpest:
-          type: boolean
-          title: Select Sharpest
-          description: Select sharpest frames per scene using Laplacian variance
-          default: true
-        sharpness_candidate_multiplier:
-          type: integer
-          maximum: 10.0
-          minimum: 1.0
-          title: Sharpness Candidate Multiplier
-          description: Extract N * frames_per_scene candidates for sharpness selection
-          default: 3
-        min_frame_quality:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          title: Min Frame Quality
-          description: Minimum quality score to accept a frame (filters black/blank frames)
-          default: 0.05
-        use_quantization:
-          type: boolean
-          title: Use Quantization
-          description: Use 4-bit quantization for JoyCaption VLM (reduces VRAM ~17GB to ~8GB)
-          default: true
-        details:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Details
-          description: Promotional/editorial scene description (promo_desc)
-        sprite_vtt_url:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Sprite Vtt Url
-          description: URL to sprite VTT file for sprite_sheet frame selection
-        sprite_image_url:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Sprite Image Url
-          description: URL to sprite grid image for sprite_sheet frame selection
-        scene_boundaries:
-          anyOf:
-          - items:
-              additionalProperties:
-                type: number
-              type: object
-            type: array
-          - type: 'null'
-          title: Scene Boundaries
-          description: Pre-computed scene boundaries [{start_timestamp, end_timestamp}, ...]
-      type: object
-      title: SemanticsParameters
-      description: "Unified parameters for the tag classification pipeline.\n\nCovers frame extraction, captioning, summarization,
-        and classification."
-    SemanticsResults:
-      properties:
-        job_id:
-          type: string
-          title: Job Id
-        source_id:
-          type: string
-          title: Source Id
-        status:
-          $ref: '#/components/schemas/JobStatus'
-        semantics:
-          $ref: '#/components/schemas/SemanticsOutcome'
-        metadata:
-          $ref: '#/components/schemas/SemanticsMetadata'
-      type: object
-      required:
-      - job_id
-      - source_id
-      - status
-      - semantics
-      - metadata
-      title: SemanticsResults
-      description: Complete semantics analysis results
-    TaxonomyStatus:
-      properties:
-        loaded:
-          type: boolean
-          title: Loaded
-        tag_count:
-          type: integer
-          title: Tag Count
-          default: 0
-        source:
-          type: string
-          title: Source
-          default: none
-        last_loaded:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Last Loaded
-      type: object
-      required:
-      - loaded
-      title: TaxonomyStatus
-      description: Taxonomy loading status
     DeviceType:
       type: string
       enum:
@@ -2916,6 +2479,10 @@ components:
           - type: string
           - type: 'null'
           title: Job Id
+        perpetual:
+          type: boolean
+          title: Perpetual
+          default: false
       type: object
       required:
       - lease_id
@@ -3016,6 +2583,17 @@ components:
           - type: 'null'
           title: Job Id
           description: Associated job ID for tracking
+        perpetual:
+          type: boolean
+          title: Perpetual
+          description: Perpetual lease that never expires (for always-loaded models)
+          default: false
+        callback_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Callback Url
+          description: Service base URL for revocation callbacks (e.g. http://faces-service:5003)
       type: object
       required:
       - service_name
@@ -3068,6 +2646,19 @@ components:
         allocated_vram_mb:
           type: number
           title: Allocated Vram Mb
+        leased_vram_mb:
+          type: number
+          title: Leased Vram Mb
+          default: 0
+        unaccounted_vram_mb:
+          type: number
+          title: Unaccounted Vram Mb
+          default: 0
+        actual_used_vram_mb:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Actual Used Vram Mb
         active_leases:
           items:
             $ref: '#/components/schemas/GPULease'
@@ -3130,6 +2721,47 @@ components:
       required:
       - total
       - by_service
+    JobStatusResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        processing_mode:
+          type: string
+        stage:
+          type: string
+        message:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceJobInfo'
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        result_summary:
+          type: object
+        error:
+          type: string
+      required:
+      - job_id
+      - status
+      - progress
+      - processing_mode
+      - services
+      - created_at
     JobResults:
       type: object
       properties:
@@ -3331,6 +2963,39 @@ components:
           type: integer
         avg_confidence:
           type: number
+    SemanticsMetadata:
+      type: object
+      properties:
+        source:
+          type: string
+        source_id:
+          type: string
+        total_frames_extracted:
+          type: integer
+        frames_captioned:
+          type: integer
+        classifier_model:
+          type: string
+        caption_model:
+          type: string
+        summary_model:
+          type: string
+        processing_time_seconds:
+          type: number
+        device:
+          type: string
+        taxonomy_size:
+          type: integer
+        has_promo:
+          type: boolean
+        sprite_image_url:
+          type:
+          - string
+          - 'null'
+        sprite_vtt_url:
+          type:
+          - string
+          - 'null'
   securitySchemes: {}
 security: []
 tags:
@@ -3356,11 +3021,6 @@ tags:
   externalDocs:
     description: Learn more about Faces Service
     url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/FACES_SERVICE.md
-- name: semantics
-  description: Tag classification with trained multi-view bi-encoder
-  externalDocs:
-    description: Learn more about Semantics Service
-    url: https://github.com/smegmarip/stash-auto-vision/blob/main/docs/SEMANTICS_SERVICE.md
 - name: objects
   description: Object detection and classification
   externalDocs:
@@ -3374,19 +3034,17 @@ tags:
 - name: jobs-viewer
   description: Job management and monitoring
 servers:
-- url: http://localhost:5010
+- url: http://192.168.50.93:5010
   description: Vision API (Rollup/Orchestrator)
-- url: http://localhost:5001
+- url: http://192.168.50.93:5001
   description: Frame Server Service
-- url: http://localhost:5002
+- url: http://192.168.50.93:5002
   description: Scenes Service
-- url: http://localhost:5003
+- url: http://192.168.50.93:5003
   description: Faces Service
-- url: http://localhost:5004
-  description: Semantics Service
-- url: http://localhost:5005
+- url: http://192.168.50.93:5005
   description: Objects Service
-- url: http://localhost:5007
+- url: http://192.168.50.93:5007
   description: Resource Manager Service
-- url: http://localhost:5020
+- url: http://192.168.50.93:5020
   description: Jobs Viewer Service
