@@ -60,21 +60,29 @@ export function ServiceSummary({ service, label, data, className }: ServiceSumma
       case 'semantics': {
         type TagItem = { tag_name: string; score: number; decode_type: string }
         const sem = data as {
-          semantics?: { tags?: TagItem[] };
+          semantics?: { tags?: TagItem[]; scene_summary?: string | null; suggested_title?: string | null };
           metadata?: { classifier_model?: string; processing_time_seconds?: number }
         }
         const tags = sem.semantics?.tags || []
         const directCount = tags.filter((t: TagItem) => t.decode_type === 'direct').length
+        const hasSummary = sem.semantics?.scene_summary != null
+        const hasTitle = sem.semantics?.suggested_title != null
         return (
           <div className="flex flex-wrap gap-2 mt-2">
-            <Badge variant="outline">
-              {tags.length} tags
-            </Badge>
-            {directCount > 0 && directCount !== tags.length && (
-              <Badge variant="secondary">
-                {directCount} direct
-              </Badge>
-            )}
+            {tags.length > 0 ? (
+              <>
+                <Badge variant="outline">
+                  {tags.length} tags
+                </Badge>
+                {directCount > 0 && directCount !== tags.length && (
+                  <Badge variant="secondary">
+                    {directCount} direct
+                  </Badge>
+                )}
+              </>
+            ) : null}
+            {hasSummary && <Badge variant="outline">summary</Badge>}
+            {hasTitle && <Badge variant="outline">title</Badge>}
             {sem.metadata?.classifier_model && (
               <Badge variant="secondary">
                 {sem.metadata.classifier_model}

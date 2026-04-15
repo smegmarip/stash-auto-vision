@@ -154,6 +154,11 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
   const suggestedTitle: string = outcome.suggested_title || ''
   const scene = metadata?.scene
 
+  // Detect which operations were requested (null = not requested, vs empty = requested but no results)
+  const tagsRequested = outcome.tags !== undefined
+  const summaryRequested = outcome.scene_summary !== undefined && outcome.scene_summary !== null
+  const titleRequested = outcome.suggested_title !== undefined && outcome.suggested_title !== null
+
   const directTags = tags.filter(t => t.decode_type === 'direct')
   const competitionTags = tags.filter(t => t.decode_type === 'competition')
   const parentTags = tags.filter(t => t.decode_type === 'parent_only')
@@ -189,8 +194,8 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard icon={<Tags className="h-5 w-5" />} label="Tags Predicted" value={formatNumber(tags.length)} />
-        <StatCard icon={<Sparkles className="h-5 w-5" />} label="Direct Tags" value={formatNumber(directTags.length)} />
+        <StatCard icon={<Tags className="h-5 w-5" />} label="Tags Predicted" value={tagsRequested ? formatNumber(tags.length) : '—'} />
+        <StatCard icon={<Sparkles className="h-5 w-5" />} label="Direct Tags" value={tagsRequested ? formatNumber(directTags.length) : '—'} />
         <StatCard icon={<Film className="h-5 w-5" />} label="Frames Captioned" value={formatNumber(metadata?.frames_captioned ?? frameCaptions.length)} />
         <StatCard icon={<Clock className="h-5 w-5" />} label="Frames Extracted" value={formatNumber(metadata?.total_frames_extracted ?? 0)} />
       </div>
@@ -242,7 +247,7 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
       </div>
 
       {/* Tags grouped by taxonomy */}
-      {tags.length > 0 && (
+      {tags.length > 0 ? (
         <TagsSection
           tags={tags}
           directCount={directTags.length}
@@ -251,10 +256,12 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
           stashUrl={stashUrl}
           tagNameToId={metadata?.tag_name_to_id}
         />
-      )}
+      ) : !tagsRequested ? (
+        <SkippedSection icon={<Tags className="h-4 w-4" />} label="Tag Classification" />
+      ) : null}
 
       {/* Suggested title */}
-      {suggestedTitle && (
+      {suggestedTitle ? (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -266,10 +273,12 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
             </p>
           </CardContent>
         </Card>
-      )}
+      ) : !titleRequested ? (
+        <SkippedSection icon={<Sparkles className="h-4 w-4" />} label="Suggested Title" />
+      ) : null}
 
       {/* Scene summary */}
-      {sceneSummary && (
+      {sceneSummary ? (
         <Card>
           <CardContent className="p-4">
             <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-2 w-full text-left">
@@ -284,7 +293,9 @@ export function SemanticsDetailView({ jobId }: SemanticsDetailViewProps) {
             )}
           </CardContent>
         </Card>
-      )}
+      ) : !summaryRequested ? (
+        <SkippedSection icon={<FileText className="h-4 w-4" />} label="Scene Summary" />
+      ) : null}
 
       {/* Frame captions */}
       {frameCaptions.length > 0 && (
@@ -469,6 +480,20 @@ function formatTimestamp(seconds: number): string {
 // ---------------------------------------------------------------------------
 // Stat card
 // ---------------------------------------------------------------------------
+
+function SkippedSection({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {icon}
+          <h3 className="font-medium">{label}</h3>
+          <Badge variant="secondary" className="ml-auto text-xs">Not requested</Badge>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (

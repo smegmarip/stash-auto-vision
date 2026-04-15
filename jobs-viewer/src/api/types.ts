@@ -262,8 +262,8 @@ export interface SemanticsMetadata {
 export interface SemanticsOutcome {
   tags: ClassifierTag[];
   frame_captions: FrameCaptionResult[];
-  scene_summary: string;
-  suggested_title?: string;
+  scene_summary?: string | null;
+  suggested_title?: string | null;
   scene_embedding?: number[];
 }
 
