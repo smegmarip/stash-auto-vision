@@ -4,7 +4,6 @@ FastAPI server for serving combined OpenAPI schema in JSON and YAML formats.
 """
 
 import os
-import socket
 import yaml
 import json
 import httpx
@@ -12,6 +11,7 @@ import logging
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional
 from pathlib import Path
@@ -26,11 +26,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 CONFIG_PATH = "/config/config.yaml"
 TEMPLATE_PATH = "/config/template.yaml"
 
-# Resolve Docker host IP for Swagger UI server URLs
-try:
-    _host_ip = socket.gethostbyname("host.docker.internal")
-except socket.gaierror:
-    _host_ip = "localhost"
+_schema_host = os.getenv("SCHEMA_HOST", "localhost")
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -76,6 +72,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/vision_openapi.json",
 )
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 async def generate_openapi_schema():
@@ -134,7 +131,7 @@ async def generate_openapi_schema():
 
                         combined["paths"].update(paths)
                         server_entry = {k: svr[k] for k in svr if not k.startswith("x-")}
-                        server_entry["url"] = server_entry["url"].replace("localhost", _host_ip)
+                        server_entry["url"] = server_entry["url"].replace("localhost", _schema_host)
                         combined["servers"].append(server_entry)
                         combined["tags"].extend(svc_tags)
                         combined["components"]["schemas"].update(data.get("components", {}).get("schemas", {}))

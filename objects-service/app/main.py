@@ -6,6 +6,7 @@ Placeholder for YOLO-World-based object detection (Phase 4)
 import os
 import time
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
@@ -20,6 +21,7 @@ app = FastAPI(
     description="Object detection service - not yet implemented",
     version="1.0.0"
 )
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.post("/objects/analyze", status_code=202)

@@ -461,14 +461,13 @@ services:
       - "${SCHEMA_PORT:-5009}:5009"
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SCHEMA_HOST=${SCHEMA_HOST:-localhost}
     volumes:
       - ./schema-service/app:/app/app
       - ./schema-service/config.yaml:/config/config.yaml
       - ./schema-service/template.yaml:/config/template.yaml
     networks:
       - vision_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       frame-server:
         condition: service_started

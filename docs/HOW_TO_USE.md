@@ -194,6 +194,12 @@ All variables below are set in `.env` (copy from `.env.example` or `.env.cpu.exa
 | `JOBS_VIEWER_PORT`      | Jobs Viewer React UI                          | `5020`  |
 | `REDIS_PORT`            | Redis                                         | `6379`  |
 
+### Schema Service
+
+| Variable      | Description                                                                             | Default     |
+| ------------- | --------------------------------------------------------------------------------------- | ----------- |
+| `SCHEMA_HOST` | Hostname used in Swagger UI server URLs (set to your server's LAN IP for remote access) | `localhost` |
+
 ### Frame Server
 
 | Variable                  | Description                                                                    | Default       |

@@ -15,6 +15,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
@@ -186,6 +187,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Faces Service", description="Face recognition service using InsightFace", version="1.0.0", lifespan=lifespan
 )
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 def detect_source_type(source: str, source_type: Optional[str] = None) -> str:

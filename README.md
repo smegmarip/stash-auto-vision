@@ -142,7 +142,7 @@ To enable tag classification add `"semantics": { "enabled": true }` to `modules`
 - **objects-service** — Stubbed (Phase 4, YOLO-World planned)
 - **resource-manager** — GPU/VRAM lease orchestration
 - **vision-api** — Rollup orchestrator and cross-namespace job listing
-- **schema-service** — Aggregates per-service OpenAPI into a unified Swagger UI
+- **schema-service** — Aggregates per-service OpenAPI into a unified Swagger UI (set SCHEMA_HOST env variable for testing)
 - **jobs-viewer** — React UI for browsing jobs and inspecting results
 
 ---
