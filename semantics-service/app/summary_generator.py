@@ -191,5 +191,4 @@ class SummaryGenerator:
                 return summary
             logger.warning("Summary generation refused (attempt %d/%d): %s", attempt, MAX_REFUSAL_RETRIES, summary[:120])
 
-        logger.error("Summary generation refused after %d attempts, returning last output", MAX_REFUSAL_RETRIES)
-        return summary
+        raise RuntimeError(f"Summary generation refused after {MAX_REFUSAL_RETRIES} attempts: {summary[:120]}")

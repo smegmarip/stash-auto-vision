@@ -622,11 +622,7 @@ async def _run_pipeline(job_id: str, request_payload: dict):
                     ctx.performer_count, ctx.performer_genders, ctx.resolution,
                 )
 
-        try:
-            scene_summary = await asyncio.to_thread(_generate_summary)
-        except Exception as e:
-            logger.warning(f"Summary generation failed: {e}. Using concatenated captions as fallback.", exc_info=True)
-            scene_summary = " ".join(c for c in fixed_captions)
+        scene_summary = await asyncio.to_thread(_generate_summary)
 
         logger.info(f"Summary generated ({len(scene_summary)} chars)")
 

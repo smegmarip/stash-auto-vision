@@ -177,5 +177,4 @@ class TitleGenerator:
                 return title
             logger.warning("Title generation refused (attempt %d/%d): %s", attempt, MAX_REFUSAL_RETRIES, raw[:120])
 
-        logger.error("Title generation refused after %d attempts, returning last output", MAX_REFUSAL_RETRIES)
-        return title
+        raise RuntimeError(f"Title generation refused after {MAX_REFUSAL_RETRIES} attempts: {raw[:120]}")
