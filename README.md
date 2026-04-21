@@ -446,6 +446,7 @@ docker exec -it vision-redis redis-cli KEYS "*"
 - [x] Schema-service aggregated Swagger UI
 - [x] `stash-auto-vision-tagging` plugin integration (fully complete)
 - [~] `stash-compreface-plugin` integration (video path wired, testing pending)
+- [ ] Visual grounding via SigLIP ViT-B (vision model trained, inference pipeline not yet wired)
 
 ### Phase 4: Object Detection 🔄
 

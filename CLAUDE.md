@@ -293,6 +293,10 @@ See [Future Work](#future-work) section below.
   - Standalone scenes_job_id parameter (optional method)
 - Content-based caching via Redis
 
+**Partially implemented:**
+
+- Vision variant of the classifier (SigLIP ViT-B visual grounding) — model trained and published to HF (`vision/best_model.pt`), checkpoint loads correctly with `use_vision=True`, but the inference pipeline does not pass `frame_images` to the model. The `_build_batch` method in `classifier.py` constructs text-only batches; wiring sprite frame pixels through SigLIP's image processor and into the batch dict is required. The vision encoder is gated (`has_images` mask) so it degrades gracefully to text-only when images are absent. See "Visual Grounding" under Future Work.
+
 **Achieved Use Cases:**
 
 - Auto-tag scenes against Stash taxonomy with high accuracy (99.2% match rate)
@@ -302,6 +306,24 @@ See [Future Work](#future-work) section below.
 ---
 
 ## Future Work
+
+### Phase 2 & 3 (Incomplete): Visual Grounding for Tag Classifier
+
+The vision variant of the multi-view bi-encoder is trained and published (`vision/best_model.pt`) but not wired into the inference pipeline. The model architecture supports optional SigLIP ViT-B visual grounding via per-frame gated fusion — the vision encoder is frozen, and a learned gate blends visual and text frame embeddings before the temporal transformer. When `frame_images` is absent from the batch, the model falls back to text-only behavior automatically.
+
+**What exists:**
+
+- Trained vision checkpoint on HF (99.2% match rate, marginal improvement over text-only)
+- `MultiViewClassifier` in `train/model.py` with `use_vision` flag, SigLIP encoder, gated fusion, `has_images` mask
+- `classifier.py` loads the vision encoder when the checkpoint contains `vision_encoder.*` weights
+
+**What needs implementation:**
+
+- Wire sprite frame pixels into the inference pipeline: load frames, preprocess with SigLIP's image processor, add `frame_images` and `has_images` tensors to the batch dict in `_build_batch`
+- Update `CLASSIFIER_VRAM_MB` lease from 3800 to ~4200 MB to account for the SigLIP ViT-B weights (~170 MB bf16) and forward pass activations
+- Validate on the 16GB A4000: estimated headroom drops to ~1000 MB during semantics pipeline peak, which is tight but feasible since faces-service is evicted during semantics jobs
+
+**Why it's low priority:** The text-only variant already achieves 99.2% match rate. The vision variant adds direct pixel grounding (useful for appearance-dependent tags like hair color, lighting, composition) but the measured delta is marginal. The implementation effort is moderate and the VRAM cost is non-trivial on 16GB cards.
 
 ### Phase 4: Object Detection (YOLO-World Integration)
 
